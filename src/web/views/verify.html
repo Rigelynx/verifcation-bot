@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>USMC // TERMINAL DE VERIFICACIÓN MILITAR</title>
+    <link rel="stylesheet" href="/military-retro.css">
+    <script src="/terminal-effects.js"></script>
+</head>
+<body>
+    <div class="crt-overlay"></div>
+    <div class="crt-vignette"></div>
+
+    <div class="terminal-wrapper">
+        <!-- VENTANA RETRO PRINCIPAL -->
+        <div class="retro-window">
+            <!-- BARRA DE TÍTULO RETRO -->
+            <div class="window-titlebar">
+                <div class="titlebar-left">
+                    <span class="led-indicator led-green" title="Conexión Segura Encriptada"></span>
+                    <span>TERMINAL TÁCTICA USMC // REGISTRO DE PERSONAL v2.4</span>
+                </div>
+                <div class="window-controls">
+                    <button class="win-btn" onclick="TerminalFX.toggleAudio()" title="Activar/Silenciar Sonido Audio">🔊</button>
+                    <button class="win-btn" onclick="TerminalFX.toggleScanlines()" title="Alternar Scanlines CRT">📺</button>
+                    <button class="win-btn" title="Minimizar">_</button>
+                    <button class="win-btn" title="Cerrar">X</button>
+                </div>
+            </div>
+
+            <!-- ENCABEZADO MILITAR -->
+            <div class="military-header">
+                <div class="header-meta">
+                    <div>DIVISIÓN: <strong>UNITED STATES MARINE CORPS // SECTOR DISCORD</strong></div>
+                    <div>FRECUENCIA: <strong>142.85 MHz [SECURE]</strong></div>
+                    <div id="utc-clock">RELOJ ZULU: --:--:-- UTC</div>
+                </div>
+
+                <div class="base-branding">
+                    <div class="military-insignia">⚓</div>
+                    <div class="branding-text">
+                        <h1 id="base-name">USMC CLASSIFIED ACCESS TERMINAL</h1>
+                        <p id="base-subtitle">DIVISIÓN DE INTELIGENCIA, SEGURIDAD Y ADMISIÓN DE RECLUTAS</p>
+                    </div>
+                </div>
+
+                <div class="classified-stamp" id="main-stamp">
+                    TOP SECRET // CLASIFICADO
+                </div>
+            </div>
+
+            <!-- TARJETA DEL RECLUTA (IDENTIDAD DISCORD) -->
+            <div class="recruit-badge" id="user-badge">
+                <img src="/default-avatar.png" id="recruit-avatar" class="recruit-avatar" alt="Insignia del Recluta" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+                <div class="recruit-info">
+                    <h3 id="recruit-username">RECLUTA: CARGANDO DATOS...</h3>
+                    <p>IDENTIFICADOR DISCORD: <span class="badge-tag" id="recruit-id">------------------</span></p>
+                    <p>ESTADO DE EXPEDIENTE: <span style="color: var(--usmc-amber);">EN ESPERA DE DECLARACIÓN JURADA</span></p>
+                </div>
+            </div>
+
+            <!-- CUERPO DEL DOSSIER / FORMULARIO -->
+            <div class="dossier-body">
+                <form id="verification-form">
+                    <div id="questions-container">
+                        <div style="padding: 30px; text-align: center; color: var(--usmc-gold);">
+                            [ ESTABLECIENDO CONEXIÓN CON EL ARCHIVO DE INTELIGENCIA... ]
+                        </div>
+                    </div>
+
+                    <div class="btn-command-group">
+                        <button type="button" class="btn-retro danger" onclick="resetForm()">
+                            <span>✕</span> ABORTAR / BORRAR
+                        </button>
+                        <button type="submit" class="btn-retro primary" id="btn-submit">
+                            <span>►</span> TRANSMITIR EXPEDIENTE A COMANDO
+                        </button>
+                    </div>
+                </form>
+
+                <!-- PANTALLA DE YA VERIFICADO (ACCESO CONCEDIDO) -->
+                <div id="already-verified-screen" style="display: none; padding: 35px 15px; text-align: center;">
+                    <div class="classified-stamp approved" style="position: static; transform: rotate(-2deg); margin: 0 auto 20px auto; display: inline-block;">
+                        ACCESO AUTORIZADO // YA VERIFICADO
+                    </div>
+                    <div style="margin: 15px auto; width: 70px; height: 70px; border: 2px solid var(--usmc-green); background: #0c180e; display: flex; align-items: center; justify-content: center; font-size: 2.2rem; box-shadow: 0 0 20px var(--usmc-green-glow);">
+                        🎖️
+                    </div>
+                    <h2 style="color: #fff; font-family: var(--font-tech); font-size: 1.6rem; margin-bottom: 12px; letter-spacing: 1px;">
+                        EXPEDIENTE MILITAR ACREDITADO Y ACTIVO
+                    </h2>
+                    <p style="color: #a4caa8; max-width: 620px; margin: 0 auto 20px auto; line-height: 1.6; font-size: 0.95rem;">
+                        Atención, aspirante: Tu identidad militar ya figura como <strong style="color: var(--usmc-green);">APROBADA</strong> en el Cuartel General. Ya posees autorización oficial y acceso a los canales del servidor en Discord.
+                    </p>
+                    <div style="background: #080d09; border: 1px solid var(--usmc-green); display: inline-block; padding: 15px 30px; color: var(--usmc-green); margin-bottom: 25px; text-align: left; font-size: 0.85rem; box-shadow: inset 0 0 15px rgba(0,0,0,0.8);">
+                        <div>ESTADO: <strong style="color: #fff;">APROBADO &bull; ACREDITACIÓN ACTIVA</strong></div>
+                        <div>NIVEL DE CLEARANCE: <strong style="color: var(--usmc-gold);">CLASSIFIED LEVEL 4</strong></div>
+                        <div>IDENTIFICADOR MILITAR: <span id="already-verified-id" style="color: var(--usmc-amber);">------------------</span></div>
+                    </div>
+                    <div>
+                        <a href="https://discord.com/app" class="btn-retro primary">
+                            <span>◄</span> REGRESAR A DISCORD
+                        </a>
+                    </div>
+                </div>
+
+                <!-- PANTALLA DE EN REVISIÓN (PENDIENTE) -->
+                <div id="pending-review-screen" style="display: none; padding: 35px 15px; text-align: center;">
+                    <div class="classified-stamp" style="position: static; transform: rotate(-2deg); margin: 0 auto 20px auto; display: inline-block; border-color: var(--usmc-amber); color: var(--usmc-amber); box-shadow: 0 0 15px var(--usmc-amber-glow);">
+                        EXPEDIENTE EN REVISIÓN // PENDIENTE
+                    </div>
+                    <div style="margin: 15px auto; width: 70px; height: 70px; border: 2px solid var(--usmc-amber); background: #161208; display: flex; align-items: center; justify-content: center; font-size: 2.2rem; box-shadow: 0 0 20px var(--usmc-amber-glow);">
+                        ⏳
+                    </div>
+                    <h2 style="color: #fff; font-family: var(--font-tech); font-size: 1.6rem; margin-bottom: 12px; letter-spacing: 1px;">
+                        SOLICITUD EN PROCESO DE EVALUACIÓN
+                    </h2>
+                    <p style="color: #d1b894; max-width: 620px; margin: 0 auto 20px auto; line-height: 1.6; font-size: 0.95rem;">
+                        Tu formulario militar ya fue recibido previamente y se encuentra en revisión por el Estado Mayor de Oficiales. No requieres volver a enviarlo.
+                    </p>
+                    <div style="background: #0d0b07; border: 1px dashed var(--usmc-amber); display: inline-block; padding: 15px 30px; color: var(--usmc-amber); margin-bottom: 25px; text-align: left; font-size: 0.85rem;">
+                        <div>ESTADO: <strong style="color: #fff;">EN ESPERA DE RESOLUCIÓN DE MANDO</strong></div>
+                        <div>NOTIFICACIÓN: Se te enviará un mensaje directo (MD) cuando se resuelva.</div>
+                    </div>
+                    <div>
+                        <a href="https://discord.com/app" class="btn-retro amber">
+                            <span>◄</span> REGRESAR A DISCORD
+                        </a>
+                    </div>
+                </div>
+
+                <!-- PANTALLA DE CONFIRMACIÓN / ÉXITO MILITAR -->
+                <div id="success-screen" style="display: none; padding: 30px 10px; text-align: center;">
+                    <div class="classified-stamp approved" id="success-stamp" style="position: static; transform: rotate(-3deg); margin: 0 auto 20px auto; display: inline-block;">
+                        TRANSMISIÓN EXITOSA // EXPEDIENTE RADICADO
+                    </div>
+                    <h2 id="success-title" style="color: #fff; font-family: var(--font-tech); font-size: 1.6rem; margin-bottom: 15px;">
+                        INFORMACIÓN REGISTRADA EN EL CENTRO DE MANDO
+                    </h2>
+                    <p id="success-desc" style="color: #a4caa8; max-width: 600px; margin: 0 auto 25px auto; line-height: 1.6;">
+                        Tu solicitud ha sido encriptada y archivada en la base de datos central. 
+                        El Estado Mayor o el sistema de escaneo automático evaluará tu acceso en breve. 
+                        Puedes regresar a Discord y verificar tu nuevo estatus militar.
+                    </p>
+                    <div style="background: #090e0a; border: 1px dashed var(--usmc-gold); display: inline-block; padding: 15px 30px; color: var(--usmc-gold); margin-bottom: 20px;">
+                        CÓDIGO DE RADICACIÓN TÁCTICO: <strong id="receipt-code">USMC-XXXX-XXXX</strong>
+                    </div>
+                    <div>
+                        <a href="https://discord.com/app" class="btn-retro primary">
+                            <span>◄</span> REGRESAR A DISCORD
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PIE DE PÁGINA MILITAR RETRO -->
+            <div class="military-footer">
+                SISTEMA AUTÓNOMO DE DEFENSA Y VERIFICACIÓN MILITAR &bull; CLASSIFIED LEVEL 4 CLEARANCE &bull; ALMACENAMIENTO LOCAL SEGURO
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Reloj Zulu en vivo
+        function updateClock() {
+            const now = new Date();
+            const zulu = now.toUTCString().split(' ')[4] + ' UTC';
+            document.getElementById('utc-clock').textContent = 'RELOJ ZULU: ' + zulu;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // Extraer Token de la URL
+        const pathParts = window.location.pathname.split('/');
+        const token = pathParts[pathParts.length - 1];
+
+        let questionsData = [];
+
+        // Cargar datos del usuario y preguntas
+        async function loadTerminal() {
+            try {
+                const res = await fetch(`/api/verify-data/${token}`);
+                const data = await res.json();
+
+                if (!res.ok || !data.success) {
+                    TerminalFX.playBeepError();
+                    document.getElementById('questions-container').innerHTML = `
+                        <div style="padding: 40px; text-align: center; color: var(--usmc-red); background: rgba(255,0,0,0.05); border: 2px solid var(--usmc-red);">
+                            <h2 style="font-family: var(--font-tech); margin-bottom: 10px;">ACCESO DENEGADO / TOKEN INVÁLIDO O EXPIRADO</h2>
+                            <p style="color: #ff9999;">El enlace de verificación ha expirado o ya fue utilizado por razones de seguridad militar.</p>
+                            <p style="margin-top: 15px; color: #fff;">Regresa al servidor de Discord y pulsa nuevamente el botón de [ VERIFICARSE ].</p>
+                        </div>
+                    `;
+                    document.getElementById('btn-submit').style.display = 'none';
+                    return;
+                }
+
+                // Cargar datos del recluta
+                const user = data.user;
+                document.getElementById('recruit-username').textContent = 'ASPIRANTE: ' + user.username.toUpperCase();
+                document.getElementById('recruit-id').textContent = user.discord_id;
+                if (user.avatar) {
+                    document.getElementById('recruit-avatar').src = user.avatar;
+                }
+
+                // Cargar información de base militar
+                if (data.config) {
+                    if (data.config.military_base_name) document.getElementById('base-name').textContent = data.config.military_base_name;
+                    if (data.config.military_subtitle) document.getElementById('base-subtitle').textContent = data.config.military_subtitle;
+                }
+
+                // 1. CASO: YA ESTÁ VERIFICADO
+                if (data.already_verified) {
+                    TerminalFX.playBeepSuccess();
+                    document.getElementById('verification-form').style.display = 'none';
+                    document.getElementById('already-verified-id').textContent = user.discord_id;
+                    document.getElementById('already-verified-screen').style.display = 'block';
+                    
+                    const stamp = document.getElementById('main-stamp');
+                    stamp.textContent = 'AUTORIZADO // YA VERIFICADO';
+                    stamp.className = 'classified-stamp approved';
+                    return;
+                }
+
+                // 2. CASO: ESTÁ PENDIENTE DE REVISIÓN
+                if (data.pending_review) {
+                    TerminalFX.playBeepSuccess();
+                    document.getElementById('verification-form').style.display = 'none';
+                    document.getElementById('pending-review-screen').style.display = 'block';
+
+                    const stamp = document.getElementById('main-stamp');
+                    stamp.textContent = 'EN REVISIÓN // PENDIENTE';
+                    stamp.className = 'classified-stamp';
+                    stamp.style.borderColor = 'var(--usmc-amber)';
+                    stamp.style.color = 'var(--usmc-amber)';
+                    return;
+                }
+
+                // 3. CASO NUEVO: Renderizar preguntas dinámicas
+                questionsData = data.questions;
+                renderQuestions(questionsData);
+                TerminalFX.playBeepSuccess();
+
+            } catch (err) {
+                console.error(err);
+                document.getElementById('questions-container').innerHTML = `
+                    <div style="padding: 20px; text-align: center; color: var(--usmc-red);">
+                        ERROR CRÍTICO AL CONECTAR CON EL SERVIDOR CENTRAL.
+                    </div>
+                `;
+            }
+        }
+
+        function renderQuestions(questions) {
+            const container = document.getElementById('questions-container');
+            container.innerHTML = '';
+
+            questions.forEach((q, idx) => {
+                const div = document.createElement('div');
+                div.className = 'form-group';
+
+                const reqLabel = q.required ? '<span class="req-star">* [REQUERIDO]</span>' : '<span style="color: #728c75;">[OPCIONAL]</span>';
+
+                let inputHtml = '';
+                if (q.field_type === 'select') {
+                    let options = '<option value="">-- SELECCIONE UNA DIRECTIVA --</option>';
+                    (q.options || []).forEach(opt => {
+                        options += `<option value="${opt}">${opt}</option>`;
+                    });
+                    inputHtml = `<select name="q_${q.id}" class="retro-select" ${q.required ? 'required' : ''}>${options}</select>`;
+                } else if (q.field_type === 'radio') {
+                    // Opciones de selección única (Radio buttons)
+                    const opts = (q.options && q.options.length > 0) ? q.options : ['Sí / Afirmativo', 'No / Negativo'];
+                    let radioItems = '';
+                    opts.forEach(opt => {
+                        radioItems += `
+                            <label class="retro-option-item">
+                                <input type="radio" name="q_${q.id}" value="${opt}" ${q.required ? 'required' : ''} onchange="TerminalFX.playKeyClick()">
+                                <span class="retro-option-text">${opt}</span>
+                            </label>
+                        `;
+                    });
+                    inputHtml = `<div class="retro-options-list">${radioItems}</div>`;
+                } else if (q.field_type === 'checkbox') {
+                    // Casillas de verificación para marcar
+                    const opts = q.options || [];
+                    if (opts.length > 1) {
+                        // Selección múltiple
+                        let checkItems = '';
+                        opts.forEach(opt => {
+                            checkItems += `
+                                <label class="retro-option-item">
+                                    <input type="checkbox" name="q_${q.id}_multi" value="${opt}" onchange="TerminalFX.playKeyClick()">
+                                    <span class="retro-option-text">${opt}</span>
+                                </label>
+                            `;
+                        });
+                        inputHtml = `<div class="retro-options-list" data-required="${q.required ? '1' : '0'}" data-qid="${q.id}">${checkItems}</div>`;
+                    } else {
+                        // Casilla única de confirmación
+                        const labelText = opts[0] || 'Marcar casilla para confirmar y declarar conformidad';
+                        inputHtml = `
+                            <div class="retro-options-list">
+                                <label class="retro-option-item">
+                                    <input type="checkbox" name="q_${q.id}" value="Afirmativo / Marcado" ${q.required ? 'required' : ''} onchange="TerminalFX.playKeyClick()">
+                                    <span class="retro-option-text">${labelText}</span>
+                                </label>
+                            </div>
+                        `;
+                    }
+                } else if (q.field_type === 'textarea') {
+                    inputHtml = `<textarea name="q_${q.id}" class="retro-textarea" placeholder="Ingrese su declaración detallada..." ${q.required ? 'required' : ''}></textarea>`;
+                } else if (q.field_type === 'number') {
+                    inputHtml = `<input type="number" name="q_${q.id}" class="retro-input" placeholder="Ej: 18" ${q.required ? 'required' : ''}>`;
+                } else {
+                    inputHtml = `<input type="text" name="q_${q.id}" class="retro-input" placeholder="Escriba su respuesta táctica..." ${q.required ? 'required' : ''}>`;
+                }
+
+                div.innerHTML = `
+                    <label class="form-label">
+                        [SECCIÓN 0${idx + 1}] &bull; ${q.label} ${reqLabel}
+                    </label>
+                    ${q.description ? `<p class="form-help">${q.description}</p>` : ''}
+                    ${inputHtml}
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function resetForm() {
+            if (confirm("¿CONFIRMAR CANCELACIÓN Y BORRADO DE DATOS INGRESADOS?")) {
+                document.getElementById('verification-form').reset();
+                TerminalFX.playBeepError();
+            }
+        }
+
+        // Envío del formulario
+        document.getElementById('verification-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            TerminalFX.playKeyClick();
+
+            const submitBtn = document.getElementById('btn-submit');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'TRANSMITIENDO A CENTRO DE COMANDO...';
+
+            const formData = new FormData(e.target);
+            const answers = {};
+            let hasValidationError = false;
+
+            questionsData.forEach(q => {
+                if (q.field_type === 'checkbox') {
+                    if (q.options && q.options.length > 1) {
+                        const checkedBoxes = Array.from(document.querySelectorAll(`input[name="q_${q.id}_multi"]:checked`)).map(cb => cb.value);
+                        if (q.required && checkedBoxes.length === 0) {
+                            hasValidationError = true;
+                            alert(`DEBES MARCAR AL MENOS UNA OPCIÓN EN: "${q.label}"`);
+                        }
+                        answers[q.label] = checkedBoxes.length > 0 ? checkedBoxes.join(' • ') : 'Ninguna marcada';
+                    } else {
+                        const singleChecked = document.querySelector(`input[name="q_${q.id}"]:checked`);
+                        answers[q.label] = singleChecked ? (q.options?.[0] || 'Afirmativo / Marcado') : 'No marcado';
+                    }
+                } else if (q.field_type === 'radio') {
+                    const selected = document.querySelector(`input[name="q_${q.id}"]:checked`);
+                    answers[q.label] = selected ? selected.value : 'No seleccionado';
+                } else {
+                    answers[q.label] = formData.get(`q_${q.id}`) || 'No proporcionado';
+                }
+            });
+
+            if (hasValidationError) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '► TRANSMITIR EXPEDIENTE A COMANDO';
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/verify/${token}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ answers })
+                });
+
+                const result = await res.json();
+
+                if (res.ok && result.success) {
+                    TerminalFX.playBeepSuccess();
+                    document.getElementById('verification-form').style.display = 'none';
+                    document.getElementById('success-screen').style.display = 'block';
+                    document.getElementById('receipt-code').textContent = 'USMC-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+                    
+                    const stamp = document.getElementById('main-stamp');
+                    if (result.status === 'APROBADO') {
+                        stamp.textContent = 'VERIFICADO // APROBADO';
+                        stamp.className = 'classified-stamp approved';
+                        document.getElementById('success-stamp').textContent = 'VERIFICACIÓN APROBADA // ACCESO CONCEDIDO';
+                        document.getElementById('success-title').textContent = '¡HAS SIDO ACREDITADO EN EL CUARTEL GENERAL!';
+                        document.getElementById('success-desc').innerHTML = 'Tu expediente fue verificado y aprobado de forma inmediata. <strong style="color:#fff;">Ya posees tu rango y rol oficial en Discord.</strong> Puedes ingresar ahora mismo a los canales.';
+                    } else {
+                        stamp.textContent = 'PROCESADO // EN REVISIÓN';
+                        stamp.className = 'classified-stamp approved';
+                    }
+                } else {
+                    TerminalFX.playBeepError();
+                    alert("ERROR AL ENVIAR: " + (result.message || "Error desconocido."));
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = '► TRANSMITIR EXPEDIENTE A COMANDO';
+                }
+            } catch (err) {
+                TerminalFX.playBeepError();
+                alert("ERROR EN LA CONEXIÓN: " + err.message);
+                submitBtn.disabled = false;
+                submitBtn.textContent = '► TRANSMITIR EXPEDIENTE A COMANDO';
+            }
+        });
+
+        loadTerminal();
+    </script>
+</body>
+</html>
