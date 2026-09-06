@@ -1,9 +1,9 @@
 const path = require('path');
 const fs = require('fs');
-const { DatabaseSync } = require('node:sqlite');
+const Database = require('better-sqlite3');
 
 const dbPath = path.join(__dirname, '../../database.sqlite');
-const db = new DatabaseSync(dbPath);
+const db = new Database(dbPath);
 
 // Activar modo WAL para alta velocidad y concurrencia
 db.exec('PRAGMA journal_mode = WAL;');
@@ -26,8 +26,8 @@ function initDatabase() {
     `);
 
     // Migraciones automáticas seguras para bases de datos existentes
-    try { db.exec("ALTER TABLE config ADD COLUMN officer_role_id TEXT DEFAULT NULL;"); } catch (e) {}
-    try { db.exec("ALTER TABLE config ADD COLUMN admin_role_id TEXT DEFAULT NULL;"); } catch (e) {}
+    try { db.exec("ALTER TABLE config ADD COLUMN officer_role_id TEXT DEFAULT NULL;"); } catch (e) { }
+    try { db.exec("ALTER TABLE config ADD COLUMN admin_role_id TEXT DEFAULT NULL;"); } catch (e) { }
 
     // 2. Tabla de preguntas personalizables para el cuestionario
     db.exec(`
