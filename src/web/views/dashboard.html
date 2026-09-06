@@ -136,10 +136,16 @@
             </div>
 
             <!-- NAVEGACIÓN POR PESTAÑAS RETRO -->
-            <div class="admin-nav">
+            <div class="admin-nav" style="display: flex; flex-wrap: wrap; gap: 4px;">
                 <button class="nav-tab active" onclick="switchTab('expedientes')">📋 EXPEDIENTES (<span id="count-total">0</span>)</button>
-                <button class="nav-tab" onclick="switchTab('cuestionario')">⚙️ CONFIGURAR CUESTIONARIO</button>
-                <button class="nav-tab" onclick="switchTab('bot-config')">🎛️ PARÁMETROS DEL BOT</button>
+                <button class="nav-tab" onclick="switchTab('cuestionario')">⚙️ CUESTIONARIO</button>
+                <button class="nav-tab" onclick="switchTab('bot-config')">🎛️ BOT & PERMISOS</button>
+                <button class="nav-tab" onclick="switchTab('economia')">💰 ECONOMÍA</button>
+                <button class="nav-tab" onclick="switchTab('tienda')">🛒 ARMERÍA (SHOP)</button>
+                <button class="nav-tab" onclick="switchTab('roles')">🎖️ RANGOS & MULTIPLICADORES</button>
+                <button class="nav-tab" onclick="switchTab('eventos')">📡 PAGOS DE EVENTOS (VOZ/CHAT)</button>
+                <button class="nav-tab" onclick="switchTab('comandos')">🛡️ PERMISOS DE COMANDOS</button>
+                <button class="nav-tab" onclick="switchTab('auditoria')">📜 AUDITORÍA & REGISTRO CONTABLE</button>
             </div>
 
             <div class="dossier-body">
@@ -372,6 +378,498 @@
                         </div>
                     </form>
                 </div>
+
+                <!-- ========================================================================= -->
+                <!-- TAB 4: ECONOMÍA MILITAR                                                  -->
+                <!-- ========================================================================= -->
+                <div id="tab-economia" class="tab-pane" style="display: none;">
+                    <div style="margin-bottom: 25px; border-left: 3px solid var(--usmc-green); padding-left: 15px;">
+                        <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.1rem; margin-bottom: 4px;">
+                            💰 CONFIGURACIÓN DE DIVISA Y ECONOMÍA GLOBAL
+                        </h4>
+                        <p style="color: #728c75; font-size: 0.85rem;">
+                            Parámetros del motor de salarios, guardias (/work), crímenes (/crime) y asaltos (/rob).
+                        </p>
+                    </div>
+
+                    <form id="economy-settings-form">
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label class="form-label">NOMBRE DE LA DIVISA:</label>
+                                <input type="text" id="eco-currency-name" class="retro-input" value="Créditos USMC" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">SÍMBOLO MONETARIO:</label>
+                                <input type="text" id="eco-currency-symbol" class="retro-input" value="$" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">SALDO INICIAL PARA RECLUTAS:</label>
+                                <input type="number" id="eco-starting-balance" class="retro-input" value="100" min="0" required>
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label class="form-label">PAGA DE GUARDIA (/work) MÍNIMA:</label>
+                                <input type="number" id="eco-work-min" class="retro-input" value="50" min="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">PAGA DE GUARDIA (/work) MÁXIMA:</label>
+                                <input type="number" id="eco-work-max" class="retro-input" value="250" min="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">COOLDOWN DE /work (SEGUNDOS):</label>
+                                <input type="number" id="eco-work-cooldown" class="retro-input" value="3600" min="10" required>
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label class="form-label">BOTÍN /crime MÍN:</label>
+                                <input type="number" id="eco-crime-min" class="retro-input" value="100" min="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">BOTÍN /crime MÁX:</label>
+                                <input type="number" id="eco-crime-max" class="retro-input" value="600" min="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">TASA FALLO /crime (%):</label>
+                                <input type="number" id="eco-crime-fail" class="retro-input" value="45" min="0" max="100" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">COOLDOWN /crime (SEG):</label>
+                                <input type="number" id="eco-crime-cooldown" class="retro-input" value="7200" min="10" required>
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label class="form-label">TASA FALLO ASALTO /rob (%):</label>
+                                <input type="number" id="eco-rob-fail" class="retro-input" value="50" min="0" max="100" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">COOLDOWN ASALTO /rob (SEGUNDOS):</label>
+                                <input type="number" id="eco-rob-cooldown" class="retro-input" value="14400" min="10" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group" style="border-left-color: var(--usmc-green); margin-top: 15px;">
+                            <label class="form-label">📡 CANAL DE DISCORD PARA LOGS / AUDITORÍA DE ECONOMÍA:</label>
+                            <p style="color: #728c75; font-size: 0.75rem; margin-bottom: 8px;">
+                                Selecciona el canal donde el bot transmitirá en tiempo real los registros de transacciones financieras. Déjalo vacío si solo deseas logs en el panel web.
+                            </p>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <div style="flex: 1;">
+                                    <select id="picker-economy-log-channel" class="retro-select" onchange="document.getElementById('eco-log-channel').value = this.value">
+                                        <option value="">-- DESACTIVADO (SOLO PANEL WEB) --</option>
+                                    </select>
+                                </div>
+                                <div style="flex: 1;">
+                                    <input type="text" id="eco-log-channel" class="retro-input" placeholder="ID manual (Ej: 121548796541258969)">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="btn-command-group" style="margin-top: 15px; margin-bottom: 25px;">
+                            <button type="submit" class="btn-retro primary">💾 GUARDAR PARÁMETROS DE ECONOMÍA</button>
+                        </div>
+                    </form>
+
+                    <!-- ========================================================================= -->
+                    <!-- SECCIÓN: PANEL DE BONOS MILITARES (INTERACTIVO CON BOTÓN EN DISCORD)      -->
+                    <!-- ========================================================================= -->
+                    <div style="margin-top: 25px; margin-bottom: 15px; border-left: 3px solid var(--usmc-gold); padding-left: 15px;">
+                        <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.15rem; margin-bottom: 4px; display: flex; align-items: center; gap: 8px;">
+                            <span>🎁</span> PANEL DE BONOS MILITARES Y RECLAMO INTERACTIVO
+                        </h4>
+                        <p style="color: #728c75; font-size: 0.85rem;">
+                            Configura el panel militar de bonificación extraordinaria que se desplegará en Discord con un botón interactivo de 1 clic (Modo "Una sola vez" o "Con Cooldown").
+                        </p>
+                    </div>
+
+                    <!-- TARJETAS DE ESTADÍSTICAS DE BONO -->
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                        <div class="stat-card">
+                            <div class="stat-label">TOTAL RECLAMOS EJECUTADOS</div>
+                            <div id="stat-bonus-claims" class="stat-value" style="color: var(--usmc-gold);">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">TOTAL FONDOS DISPERSADOS</div>
+                            <div id="stat-bonus-distributed" class="stat-value" style="color: #38e54d;">$0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">MODALIDAD DE CONCESIÓN</div>
+                            <div id="stat-bonus-mode-label" class="stat-value" style="font-size: 1.1rem; color: #afffba;">UNA SOLA VEZ</div>
+                        </div>
+                    </div>
+
+                    <form id="bonus-panel-form" onsubmit="event.preventDefault(); saveBonusConfig();" style="background: rgba(18, 32, 22, 0.4); border: 1px solid rgba(46, 82, 54, 0.5); padding: 20px; border-radius: 4px; margin-bottom: 30px;">
+                        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label class="form-label">TÍTULO DEL PANEL MILITAR EN DISCORD:</label>
+                                <input type="text" id="bonus-panel-title" class="retro-input" value="🎖️ [BONO MILITAR EXTRAORDINARIO // ASIGNACIÓN DE MANDO]" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">MONTO DE ASIGNACIÓN ($):</label>
+                                <input type="number" id="bonus-panel-amount" class="retro-input" value="500" min="1" required>
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label class="form-label">COMUNICADO / DESCRIPCIÓN DEL PANEL:</label>
+                            <textarea id="bonus-panel-desc" class="retro-input" rows="2" style="resize: vertical;">El Estado Mayor de la Base USMC ha autorizado una asignación financiera especial para el personal militar en servicio activo.</textarea>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label class="form-label">MODALIDAD DE RECLAMO:</label>
+                                <select id="bonus-panel-mode" class="retro-select" onchange="toggleBonusCooldownInput()">
+                                    <option value="ONCE">🔒 Una sola vez por recluta (Asignación Única)</option>
+                                    <option value="COOLDOWN">⏱️ Frecuencia periódica (Con Cooldown)</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="group-bonus-cooldown">
+                                <label class="form-label">COOLDOWN DE RECLAMO (HORAS):</label>
+                                <input type="number" id="bonus-panel-cooldown-hours" class="retro-input" value="24" min="1">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">TEXTO DEL BOTÓN INTERACTIVO:</label>
+                                <div style="display: flex; gap: 6px;">
+                                    <input type="text" id="bonus-panel-btn-emoji" class="retro-input" value="🎁" style="width: 50px; text-align: center;">
+                                    <input type="text" id="bonus-panel-btn-label" class="retro-input" value="RECLAMAR BONO MILITAR" style="flex: 1;" required>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 15px; margin-top: 10px; align-items: end;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">CANAL DE DISCORD PARA DESPLEGAR EL PANEL:</label>
+                                <select id="bonus-panel-channel" class="retro-select">
+                                    <option value="">-- SELECCIONAR CANAL DE TEXTO --</option>
+                                </select>
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <button type="submit" class="btn-retro" style="flex: 1; padding: 10px 14px; font-size: 0.85rem;">
+                                    💾 GUARDAR PANEL
+                                </button>
+                                <button type="button" class="btn-retro primary" style="flex: 1; padding: 10px 14px; font-size: 0.85rem;" onclick="deployBonusPanel()">
+                                    🚀 DESPLEGAR EN DISCORD
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <!-- TABLA Y BUSCADOR DE CUENTAS FINANCIERAS -->
+                    <div style="margin-top: 25px; border-left: 3px solid var(--usmc-gold); padding-left: 15px;">
+                        <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.1rem; margin-bottom: 4px;">
+                            📋 LIBRO MAYOR DE CUENTAS MILITARES
+                        </h4>
+                        <p style="color: #728c75; font-size: 0.85rem;">Consulta y ajuste manual de saldos en efectivo o caja fuerte de cualquier combatiente.</p>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 10px; flex-wrap: wrap;">
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <button type="button" class="btn-retro primary" style="padding: 6px 14px; font-size: 0.85rem;" onclick="openBalanceModal('', '')">
+                                ⚡ ABONAR / AJUSTAR FONDOS
+                            </button>
+                            <button type="button" class="btn-retro" style="padding: 6px 14px; font-size: 0.85rem; border-color: var(--usmc-gold); color: var(--usmc-gold);" onclick="openDirectBonusModal()">
+                                🎁 OTORGAR BONO MILITAR DIRECTO
+                            </button>
+                        </div>
+                        <div>
+                            <input type="text" id="eco-search-input" class="retro-input" placeholder="🔍 Buscar por Discord ID o Usuario..." style="width: 320px;" oninput="searchEconomyAccounts()">
+                        </div>
+                    </div>
+
+                    <div class="retro-table-wrapper">
+                        <table class="retro-table">
+                            <thead>
+                                <tr>
+                                    <th>DISCORD ID</th>
+                                    <th>RECLUTA</th>
+                                    <th>CARTERA (EFECTIVO)</th>
+                                    <th>BANCO (CAJA FUERTE)</th>
+                                    <th>PATRIMONIO NETO</th>
+                                    <th style="text-align: right;">ACCIONES</th>
+                                </tr>
+                            </thead>
+                            <tbody id="eco-accounts-tbody">
+                                <tr><td colspan="6" style="text-align: center; color: #728c75;">Cargando registros contables...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ========================================================================= -->
+                <!-- TAB 5: ARMERÍA Y TIENDA (SHOP)                                           -->
+                <!-- ========================================================================= -->
+                <div id="tab-tienda" class="tab-pane" style="display: none;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+                        <div style="border-left: 3px solid var(--usmc-green); padding-left: 15px;">
+                            <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.1rem; margin-bottom: 4px;">
+                                🛒 CATÁLOGO DE ARMERÍA Y TIENDA MILITAR (SHOP)
+                            </h4>
+                            <p style="color: #728c75; font-size: 0.85rem;">Configura ítems que otorgan roles, retiran roles previos o exigen rangos para ser comprados.</p>
+                        </div>
+                        <div>
+                            <button class="btn-retro primary" onclick="openShopModal()">➕ NUEVO SUMINISTRO / RANGO EN TIENDA</button>
+                        </div>
+                    </div>
+
+                    <div id="shop-items-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px;">
+                        <!-- Renderizado dinámico de tarjetas de ítems -->
+                    </div>
+                </div>
+
+                <!-- ========================================================================= -->
+                <!-- TAB 6: RANGOS Y MULTIPLICADORES                                          -->
+                <!-- ========================================================================= -->
+                <div id="tab-roles" class="tab-pane" style="display: none;">
+                    <div style="margin-bottom: 20px; border-left: 3px solid var(--usmc-amber); padding-left: 15px;">
+                        <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.1rem; margin-bottom: 4px;">
+                            🎖️ MATRIZ DE BONIFICACIONES Y MULTIPLICADORES POR ROL
+                        </h4>
+                        <p style="color: #728c75; font-size: 0.85rem;">
+                            Asigna a los roles de Discord multiplicadores de paga en eventos y turnos de guardia.
+                        </p>
+                    </div>
+
+                    <form id="role-reward-form" style="background: rgba(10, 16, 11, 0.6); padding: 18px; border: 1px solid var(--border-light); margin-bottom: 25px;">
+                        <div style="display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 15px;">
+                            <div class="form-group">
+                                <label class="form-label">ROL MILITAR EN DISCORD:</label>
+                                <select id="reward-role-select" class="retro-select" required>
+                                    <option value="">-- SELECCIONAR ROL DEL SERVIDOR --</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">MULTIPLICADOR (Ej: 1.25x):</label>
+                                <input type="number" id="reward-multiplier" class="retro-input" value="1.25" step="0.05" min="1.0" max="10.0" required>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">BONO FIJO ADICIONAL ($):</label>
+                                <input type="number" id="reward-flat-bonus" class="retro-input" value="100" min="0" required>
+                            </div>
+                        </div>
+                        <div class="btn-command-group" style="margin-top: 10px;">
+                            <button type="submit" class="btn-retro amber">💾 ASIGNAR / ACTUALIZAR BONIFICACIÓN</button>
+                        </div>
+                    </form>
+
+                    <div class="retro-table-wrapper">
+                        <table class="retro-table">
+                            <thead>
+                                <tr>
+                                    <th>ROL ASIGNADO</th>
+                                    <th>MULTIPLICADOR DE EVENTOS</th>
+                                    <th>BONIFICACIÓN PLANA</th>
+                                    <th style="text-align: right;">ACCIÓN</th>
+                                </tr>
+                            </thead>
+                            <tbody id="role-rewards-tbody">
+                                <tr><td colspan="4" style="text-align: center; color: #728c75;">Sin roles bonificadores registrados.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ========================================================================= -->
+                <!-- TAB 7: OPERACIONES Y PAGOS AUTOMÁTICOS (VOZ & CHAT)                       -->
+                <!-- ========================================================================= -->
+                <div id="tab-eventos" class="tab-pane" style="display: none;">
+                    <div style="margin-bottom: 20px; border-left: 3px solid var(--usmc-green); padding-left: 15px;">
+                        <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.1rem; margin-bottom: 4px;">
+                            📡 SISTEMA DE ASISTENCIA Y PAGOS AUTOMÁTICOS (VOZ & CHAT)
+                        </h4>
+                        <p style="color: #728c75; font-size: 0.85rem;">
+                            Monitoreo en tiempo real de combatientes presentes con tolerancia a caídas de conexión y botón interactivo de cobro.
+                        </p>
+                    </div>
+
+                    <!-- CONTENEDOR DEL ESTADO ACTIVO O LANZADOR -->
+                    <div id="event-active-container">
+                        <!-- Se poblará dinámicamente con la misión activa o con el formulario para iniciar una nueva -->
+                    </div>
+
+                    <!-- HISTORIAL DE OPERACIONES MILITARES -->
+                    <div style="margin-top: 35px; border-left: 3px solid var(--usmc-gold); padding-left: 15px;">
+                        <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.1rem; margin-bottom: 4px;">
+                            📜 REGISTRO HISTÓRICO DE OPERACIONES Y PAGOS
+                        </h4>
+                    </div>
+
+                    <div class="retro-table-wrapper" style="margin-top: 12px;">
+                        <table class="retro-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>OPERACIÓN</th>
+                                    <th>TIPO</th>
+                                    <th>FECHA</th>
+                                    <th>PARTICIPANTES</th>
+                                    <th>ELEGIBLES</th>
+                                    <th>RECLAMADOS</th>
+                                    <th>TOTAL PAGADO</th>
+                                </tr>
+                            </thead>
+                            <tbody id="event-history-tbody">
+                                <tr><td colspan="8" style="text-align: center; color: #728c75;">Cargando historial de misiones...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ========================================================================= -->
+                <!-- TAB 8: CONTROL DE PERMISOS Y ACTIVACIÓN DE COMANDOS                       -->
+                <!-- ========================================================================= -->
+                <div id="tab-comandos" class="tab-pane" style="display: none;">
+                    <div style="margin-bottom: 20px; border-left: 3px solid var(--usmc-gold); padding-left: 15px;">
+                        <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.1rem; margin-bottom: 4px;">
+                            🛡️ MATRIZ DE CONTROL DE PROTOCOLOS Y PERMISOS DE COMANDOS
+                        </h4>
+                        <p style="color: #728c75; font-size: 0.85rem;">
+                            Habilita o desactiva la ejecución de comandos económicos y restringe su acceso a rangos militares específicos. (Los administradores de Discord tienen bypass total).
+                        </p>
+                    </div>
+
+                    <div class="retro-table-wrapper">
+                        <table class="retro-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 150px;">COMANDO</th>
+                                    <th>DESCRIPCIÓN OPERATIVA</th>
+                                    <th style="width: 180px;">ESTADO OPERATIVO</th>
+                                    <th>RANGOS AUTORIZADOS (VACÍO = TODOS)</th>
+                                    <th style="text-align: right; width: 130px;">ACCIÓN</th>
+                                </tr>
+                            </thead>
+                            <tbody id="command-permissions-tbody">
+                                <tr><td colspan="5" style="text-align: center; color: #728c75;">Cargando directivas de comandos...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- ========================================================================= -->
+                <!-- TAB 9: AUDITORÍA Y REGISTRO CONTABLE COMPLETO                             -->
+                <!-- ========================================================================= -->
+                <div id="tab-auditoria" class="tab-pane" style="display: none;">
+                    <div style="margin-bottom: 20px; border-left: 3px solid var(--usmc-gold); padding-left: 15px;">
+                        <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.1rem; margin-bottom: 4px;">
+                            📜 LIBRO MAYOR DE AUDITORÍA CONTABLE Y FLUJO FINANCIERO
+                        </h4>
+                        <p style="color: #728c75; font-size: 0.85rem;">
+                            Supervisión y trazabilidad completa de todos los movimientos de capital militar: pagas de operaciones, bonificaciones, gastos en armería, transferencias entre reclutas y depósitos bancarios.
+                        </p>
+                    </div>
+
+                    <!-- TELEMETRÍA FINANCIERA DE TESORERÍA -->
+                    <div class="telemetry-grid" style="margin-bottom: 20px;">
+                        <div class="telemetry-card">
+                            <div class="telemetry-label">PAGAS DE OPERACIONES</div>
+                            <div class="telemetry-value green" id="audit-stat-events">$0</div>
+                        </div>
+                        <div class="telemetry-card">
+                            <div class="telemetry-label">BONIFICACIONES ASIGNADAS</div>
+                            <div class="telemetry-value amber" id="audit-stat-bonuses">$0</div>
+                        </div>
+                        <div class="telemetry-card">
+                            <div class="telemetry-label">GASTO EN ARMERÍA (TIENDA)</div>
+                            <div class="telemetry-value" style="color: #00ccff;" id="audit-stat-shop">$0</div>
+                        </div>
+                        <div class="telemetry-card">
+                            <div class="telemetry-label">TRANSFERENCIAS ENTRE TROPAS</div>
+                            <div class="telemetry-value" style="color: #ff99ff;" id="audit-stat-transfers">$0</div>
+                        </div>
+                        <div class="telemetry-card">
+                            <div class="telemetry-label">CAPITAL TOTAL CIRCULANTE</div>
+                            <div class="telemetry-value" id="audit-stat-circulating">$0</div>
+                        </div>
+                    </div>
+
+                    <!-- VINCULACIÓN DEL CANAL DE DISCORD PARA LOGS EN TIEMPO REAL -->
+                    <div style="background: rgba(0, 255, 102, 0.04); border: 1px solid rgba(0, 255, 102, 0.25); border-left: 4px solid var(--usmc-green); padding: 12px 18px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 15px;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span style="font-size: 1.6rem;">📡</span>
+                            <div>
+                                <div style="font-weight: bold; color: #fff; font-size: 0.85rem; font-family: var(--font-tech);">CANAL DE DISCORD PARA REPORTES EN TIEMPO REAL:</div>
+                                <div style="font-size: 0.75rem; color: #728c75;">
+                                    Si vinculas un canal, cada transacción (pagas, compras, robos, transferencias) enviará un embed oficial automático a Discord.
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                            <select id="audit-log-channel-picker" class="retro-select" style="min-width: 260px;">
+                                <option value="">-- DESACTIVADO (SOLO PANEL WEB) --</option>
+                            </select>
+                            <button class="btn-retro primary" style="padding: 7px 16px; font-size: 0.8rem;" onclick="saveEconomyLogChannel()">
+                                💾 VINCULAR CANAL
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- BARRA DE FILTROS Y BÚSQUEDA TÁCTICA -->
+                    <div class="retro-window" style="padding: 15px; margin-bottom: 20px;">
+                        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
+                            <div style="flex: 2; min-width: 250px;">
+                                <label class="form-label" style="font-size: 0.75rem;">BUSCAR POR SOLDADO, DISCORD ID O CONCEPTO:</label>
+                                <input type="text" id="audit-search-input" class="retro-input" placeholder="Ej: SoldadoAlfa, 123456789, Chaleco, Operación..." oninput="filterAuditoriaDebounced()">
+                            </div>
+                            <div style="flex: 1; min-width: 200px;">
+                                <label class="form-label" style="font-size: 0.75rem;">CATEGORÍA DE OPERACIÓN:</label>
+                                <select id="audit-type-select" class="retro-select" onchange="loadAuditoriaData()">
+                                    <option value="ALL">🌐 TODAS LAS TRANSACCIONES</option>
+                                    <option value="EVENT_CLAIM">🎖️ Pagas de Operaciones Militares</option>
+                                    <option value="BUY_ITEM">🛒 Compras en Armería / Tienda</option>
+                                    <option value="PAY">💸 Transferencias entre Reclutas (/pagar)</option>
+                                    <option value="BONUS_CLAIM">🎁 Reclamos de Panel de Bono</option>
+                                    <option value="BONUS_GIVE">🎖️ Bonos Directos de Oficial</option>
+                                    <option value="MASS_BONUS">📢 Bonificaciones Masivas</option>
+                                    <option value="DEP">🏦 Depósitos en Caja Fuerte</option>
+                                    <option value="WITH">💵 Retiros de Caja Fuerte</option>
+                                    <option value="WORK">🛠️ Salarios por Trabajo</option>
+                                    <option value="CRIME">🚨 Operaciones Clandestinas</option>
+                                    <option value="ROB">⚔️ Asaltos Militares</option>
+                                    <option value="ADMIN_ADJUST">⚙️ Ajustes Administrativos</option>
+                                </select>
+                            </div>
+                            <div style="display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap;">
+                                <button class="btn-retro primary" style="padding: 9px 18px;" onclick="loadAuditoriaData()">
+                                    🔄 ACTUALIZAR LIBRO
+                                </button>
+                                <button id="btn-delete-selected-audit" class="btn-retro danger" style="padding: 9px 16px; display: none;" onclick="deleteSelectedAuditLogs()">
+                                    🗑️ BORRAR SELECCIONADOS (<span id="selected-audit-count">0</span>)
+                                </button>
+                                <button class="btn-retro danger" style="padding: 9px 14px; background: rgba(255, 51, 51, 0.15); border-color: var(--usmc-red);" onclick="clearAllAuditLogs()" title="Vaciar todos los registros contables del libro">
+                                    ⚠️ VACIAR TODO EL LIBRO
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- TABLA DE TRANSACCIONES Y AUDITORÍA -->
+                    <div class="retro-table-wrapper">
+                        <table class="retro-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 45px; text-align: center;">
+                                        <input type="checkbox" id="audit-select-all" style="cursor: pointer; accent-color: var(--usmc-green); width: 16px; height: 16px;" onchange="toggleSelectAllAudit(this)" title="Seleccionar / deseleccionar todos los visibles">
+                                    </th>
+                                    <th style="width: 70px;">ID</th>
+                                    <th>SOLDADO / IDENTIDAD</th>
+                                    <th>TIPO DE ACCIÓN</th>
+                                    <th>IMPORTE</th>
+                                    <th>CONCEPTO / DETALLES</th>
+                                    <th>FECHA Y HORA</th>
+                                    <th style="text-align: right; width: 190px;">AUDITORÍA Y ACCIONES</th>
+                                </tr>
+                            </thead>
+                            <tbody id="audit-transactions-tbody">
+                                <tr><td colspan="8" style="text-align: center; color: #728c75;">Cargando registros contables...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
 
             <!-- PIE DE PÁGINA -->
@@ -401,6 +899,29 @@
                     <button class="btn-retro" onclick="closeDossierModal()">CERRAR</button>
                     <button id="modal-btn-reject" class="btn-retro danger">DENEGAR ACCESO</button>
                     <button id="modal-btn-approve" class="btn-retro primary">APROBAR RECLUTA</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL INSPECCIÓN FINANCIERA INDIVIDUAL DE SOLDADO -->
+    <div id="financial-profile-modal" class="dossier-modal">
+        <div class="dossier-modal-content retro-window" style="max-width: 750px;">
+            <div class="window-titlebar">
+                <div class="titlebar-left">
+                    <span class="led-indicator led-green"></span>
+                    <span>EXPEDIENTE FINANCIERO MILITAR &bull; AUDITORÍA INDIVIDUAL</span>
+                </div>
+                <div class="window-controls">
+                    <button class="win-btn" onclick="closeFinancialModal()">X</button>
+                </div>
+            </div>
+            <div style="padding: 22px;">
+                <div id="financial-modal-content">
+                    <!-- Contenido dinámico -->
+                </div>
+                <div class="btn-command-group" style="margin-top: 20px;">
+                    <button class="btn-retro" onclick="closeFinancialModal()">CERRAR EXPEDIENTE</button>
                 </div>
             </div>
         </div>
@@ -485,6 +1006,233 @@
         </div>
     </div>
 
+    <!-- MODAL AGREGAR/EDITAR ÍTEM DE ARMERÍA (SHOP UNBELIEVABOAT STYLE) -->
+    <div id="shop-modal" class="dossier-modal">
+        <div class="dossier-modal-content retro-window" style="max-width: 650px;">
+            <div class="window-titlebar">
+                <div class="titlebar-left">
+                    <span class="led-indicator led-green"></span>
+                    <span id="shop-modal-title">ARMERÍA // CONFIGURACIÓN DE SUMINISTRO O RANGO</span>
+                </div>
+                <div class="window-controls">
+                    <button class="win-btn" onclick="closeShopModal()">X</button>
+                </div>
+            </div>
+            <div style="padding: 20px;">
+                <form id="shop-form">
+                    <input type="hidden" id="shop-item-id">
+                    
+                    <div style="display: grid; grid-template-columns: 80px 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label">ICONO:</label>
+                            <input type="text" id="shop-item-icon" class="retro-input" value="🎖️" style="text-align: center;" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">NOMBRE DEL ÍTEM O RANGO:</label>
+                            <input type="text" id="shop-item-name" class="retro-input" placeholder="Ej: Insignia de Sargento" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">PRECIO EN CRÉDITOS ($):</label>
+                            <input type="number" id="shop-item-price" class="retro-input" placeholder="Ej: 500" min="0" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">DESCRIPCIÓN OPERATIVA:</label>
+                        <input type="text" id="shop-item-desc" class="retro-input" placeholder="Ej: Acredita el rango de suboficial en el cuartel.">
+                    </div>
+
+                    <!-- ACCIONES DE ROL AL COMPRAR (ESTILO UNBELIEVABOAT) -->
+                    <div style="background: rgba(20, 35, 22, 0.5); padding: 12px; border: 1px solid var(--border-light); margin-bottom: 15px;">
+                        <div style="color: var(--usmc-green); font-family: var(--font-tech); font-size: 0.85rem; margin-bottom: 8px;">
+                            ⚡ ACCIONES AUTOMÁTICAS DE ROL (AL COMPRAR)
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">ROL A OTORGAR (ROLES TO GIVE):</label>
+                                <select id="shop-role-give" class="retro-select">
+                                    <option value="">-- NINGUNO (SOLO ÍTEM) --</option>
+                                </select>
+                                <p class="form-help">El bot le asignará este rol en Discord automáticamente.</p>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">ROL A RETIRAR (ROLES TO REMOVE):</label>
+                                <select id="shop-role-remove" class="retro-select">
+                                    <option value="">-- NINGUNO (NO RETIRAR) --</option>
+                                </select>
+                                <p class="form-help">El bot le quitará este rango anterior (ej. ascenso).</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- REQUISITOS DE COMPRA -->
+                    <div style="background: rgba(35, 28, 15, 0.5); padding: 12px; border: 1px solid var(--usmc-amber); margin-bottom: 15px;">
+                        <div style="color: var(--usmc-amber); font-family: var(--font-tech); font-size: 0.85rem; margin-bottom: 8px;">
+                            🔒 REQUISITOS Y RESTRICCIONES DE ACCESO
+                        </div>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">ROL REQUERIDO OBLIGATORIO:</label>
+                                <select id="shop-role-required" class="retro-select">
+                                    <option value="">-- NINGUNO (CUALQUIERA PUEDE) --</option>
+                                </select>
+                                <p class="form-help">Si no posee este rango, no podrá comprarlo.</p>
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label class="form-label">ROL BLOQUEADO / INCOMPATIBLE:</label>
+                                <select id="shop-role-blocked" class="retro-select">
+                                    <option value="">-- NINGUNO --</option>
+                                </select>
+                                <p class="form-help">Si ya tiene este rol, la compra será rechazada.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label">STOCK TOTAL:</label>
+                            <input type="number" id="shop-item-stock" class="retro-input" value="-1" required>
+                            <p class="form-help">-1 para existencias infinitas.</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">MÁXIMO POR RECLUTA:</label>
+                            <input type="number" id="shop-item-max-user" class="retro-input" value="1" required>
+                            <p class="form-help">-1 para ilimitado, o 1 para roles únicos.</p>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">ESTADO DEL SUMINISTRO:</label>
+                            <select id="shop-item-active" class="retro-select">
+                                <option value="1">DISPONIBLE EN ARMERÍA</option>
+                                <option value="0">DESACTIVADO TEMPORALMENTE</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">MENSAJE TÁCTICO AL COMPRAR (OPCIONAL):</label>
+                        <input type="text" id="shop-item-reply" class="retro-input" placeholder="Ej: ¡Felicidades por tu ascenso militar!">
+                    </div>
+
+                    <div class="btn-command-group">
+                        <button type="button" class="btn-retro danger" onclick="closeShopModal()">CANCELAR</button>
+                        <button type="submit" class="btn-retro primary">💾 GUARDAR ÍTEM EN LA ARMERÍA</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL AJUSTAR SALDO DE RECLUTA -->
+    <div id="balance-modal" class="dossier-modal">
+        <div class="dossier-modal-content retro-window" style="max-width: 480px;">
+            <div class="window-titlebar">
+                <div class="titlebar-left">
+                    <span class="led-indicator led-gold"></span>
+                    <span>TESORERÍA // AJUSTE DE FONDOS</span>
+                </div>
+                <div class="window-controls">
+                    <button class="win-btn" onclick="closeBalanceModal()">X</button>
+                </div>
+            </div>
+            <div style="padding: 20px;">
+                <form id="balance-form">
+                    <div class="form-group">
+                        <label class="form-label">DISCORD ID DEL COMBATIENTE:</label>
+                        <input type="text" id="bal-target-id" class="retro-input" placeholder="Ej: 1458647008154882220" required>
+                    </div>
+                    
+                    <div class="form-group" id="bal-target-name-group">
+                        <label class="form-label">USUARIO DETECTADO / EXPEDIENTE:</label>
+                        <input type="text" id="bal-target-name" class="retro-input" readonly placeholder="Se detectará automáticamente" style="opacity: 0.85;">
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label">TIPO DE AJUSTE:</label>
+                            <select id="bal-action" class="retro-select">
+                                <option value="add">➕ ABONAR FONDOS</option>
+                                <option value="remove">➖ DECOMISAR FONDOS</option>
+                                <option value="set">🔧 FIJAR SALDO EXACTO</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">DESTINO DEL DINERO:</label>
+                            <select id="bal-target" class="retro-select">
+                                <option value="wallet">CARTERA (EFECTIVO)</option>
+                                <option value="bank">BANCO (CAJA FUERTE)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">CANTIDAD EN CRÉDITOS ($):</label>
+                        <input type="number" id="bal-amount" class="retro-input" placeholder="Ej: 500" min="0" required>
+                    </div>
+
+                    <div class="btn-command-group">
+                        <button type="button" class="btn-retro danger" onclick="closeBalanceModal()">CANCELAR</button>
+                        <button type="submit" class="btn-retro primary">CONFIRMAR AJUSTE</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL OTORGAR BONO DIRECTO (INDIVIDUAL O MASIVO) -->
+    <div id="direct-bonus-modal" class="dossier-modal">
+        <div class="dossier-modal-content retro-window" style="max-width: 500px;">
+            <div class="window-titlebar">
+                <div class="titlebar-left">
+                    <span class="led-indicator led-gold"></span>
+                    <span>TESORERÍA // OTORGAR BONO MILITAR</span>
+                </div>
+                <div class="window-controls">
+                    <button class="win-btn" onclick="closeDirectBonusModal()">X</button>
+                </div>
+            </div>
+            <div style="padding: 20px;">
+                <form id="direct-bonus-form" onsubmit="event.preventDefault(); submitDirectBonus();">
+                    <div class="form-group">
+                        <label class="form-label">DESTINATARIO DE LA BONIFICACIÓN:</label>
+                        <select id="direct-bonus-target-type" class="retro-select" onchange="toggleDirectBonusTargetInput()">
+                            <option value="USER">👤 Recluta Específico (Por Discord ID)</option>
+                            <option value="ALL">⭐ Todo el Pelotón (Bono Masivo a Todos los Registrados)</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="group-direct-bonus-user">
+                        <label class="form-label">DISCORD ID DEL RECLUTA:</label>
+                        <input type="text" id="direct-bonus-user-id" class="retro-input" placeholder="Ej: 1458647008154882220">
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                        <div class="form-group">
+                            <label class="form-label">MONTO DEL BONO ($):</label>
+                            <input type="number" id="direct-bonus-amount" class="retro-input" value="500" min="1" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">ACREDITAR EN:</label>
+                            <select id="direct-bonus-destination" class="retro-select">
+                                <option value="wallet">CARTERA (EFECTIVO)</option>
+                                <option value="bank">BANCO (CAJA FUERTE)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label class="form-label">CITA / JUSTIFICACIÓN MILITAR:</label>
+                        <input type="text" id="direct-bonus-reason" class="retro-input" value="Condecoración por mérito táctico militar">
+                    </div>
+
+                    <div class="btn-command-group">
+                        <button type="button" class="btn-retro danger" onclick="closeDirectBonusModal()">CANCELAR</button>
+                        <button type="submit" class="btn-retro primary">🎖️ EMITIR BONIFICACIÓN</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script>
         let adminToken = localStorage.getItem('usmc_admin_key') || '';
         let allVerifications = [];
@@ -541,16 +1289,31 @@
             document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
 
-            if (tabName === 'expedientes') {
-                document.querySelectorAll('.nav-tab')[0].classList.add('active');
-                document.getElementById('tab-expedientes').style.display = 'block';
-            } else if (tabName === 'cuestionario') {
-                document.querySelectorAll('.nav-tab')[1].classList.add('active');
-                document.getElementById('tab-cuestionario').style.display = 'block';
-            } else if (tabName === 'bot-config') {
-                document.querySelectorAll('.nav-tab')[2].classList.add('active');
-                document.getElementById('tab-bot-config').style.display = 'block';
+            const tabMap = {
+                'expedientes': 0,
+                'cuestionario': 1,
+                'bot-config': 2,
+                'economia': 3,
+                'tienda': 4,
+                'roles': 5,
+                'eventos': 6,
+                'comandos': 7,
+                'auditoria': 8
+            };
+
+            const idx = tabMap[tabName];
+            if (idx !== undefined && document.querySelectorAll('.nav-tab')[idx]) {
+                document.querySelectorAll('.nav-tab')[idx].classList.add('active');
             }
+            const pane = document.getElementById('tab-' + tabName);
+            if (pane) pane.style.display = 'block';
+
+            if (tabName === 'economia') loadEconomyData();
+            if (tabName === 'tienda') loadShopData();
+            if (tabName === 'roles') loadRoleRewards();
+            if (tabName === 'eventos') loadEventsData();
+            if (tabName === 'comandos') loadCommandsData();
+            if (tabName === 'auditoria') loadAuditoriaData();
         }
 
         // Cargar Datos del Dashboard
@@ -1000,7 +1763,10 @@
             // Pickers de Canales
             const channelPickers = [
                 { id: 'picker-review-channel', defaultText: '-- SELECCIONAR CANAL DE TEXTO --' },
-                { id: 'picker-log-channel', defaultText: '-- SELECCIONAR CANAL DE TEXTO --' }
+                { id: 'picker-log-channel', defaultText: '-- SELECCIONAR CANAL DE TEXTO --' },
+                { id: 'bonus-panel-channel', defaultText: '-- SELECCIONAR CANAL DE TEXTO --' },
+                { id: 'picker-economy-log-channel', defaultText: '-- DESACTIVADO (SOLO PANEL WEB) --' },
+                { id: 'audit-log-channel-picker', defaultText: '-- DESACTIVADO (SOLO PANEL WEB) --' }
             ];
 
             channelPickers.forEach(p => {
@@ -1010,8 +1776,34 @@
                     channels.map(c => `<option value="${c.id}">#${c.name} (ID: ${c.id})</option>`).join('');
             });
 
+            // Poblar selector de rol para multiplicadores de rango
+            const rewardSelect = document.getElementById('reward-role-select');
+            if (rewardSelect) {
+                rewardSelect.innerHTML = '<option value="">-- SELECCIONAR ROL DEL SERVIDOR --</option>' +
+                    roles.map(r => `<option value="${r.id}">${r.name} (ID: ${r.id})</option>`).join('');
+            }
+
+            // Poblar selectores de roles de la armería / tienda
+            const shopPickers = [
+                { id: 'shop-role-give', defaultText: '-- NINGUNO (SOLO ÍTEM) --' },
+                { id: 'shop-role-remove', defaultText: '-- NINGUNO (NO RETIRAR) --' },
+                { id: 'shop-role-required', defaultText: '-- NINGUNO (CUALQUIERA PUEDE) --' },
+                { id: 'shop-role-blocked', defaultText: '-- NINGUNO --' }
+            ];
+
+            shopPickers.forEach(p => {
+                const el = document.getElementById(p.id);
+                if (el) {
+                    el.innerHTML = `<option value="">${p.defaultText}</option>` +
+                        roles.map(r => `<option value="${r.id}">${r.name}</option>`).join('');
+                }
+            });
+
             syncPickersFromConfigInputs();
             renderVerifiedRoleTags();
+            if (typeof renderCommandPermissions === 'function' && allCommandPerms && allCommandPerms.length > 0) {
+                renderCommandPermissions();
+            }
         }
 
         function syncPickersFromConfigInputs() {
@@ -1020,7 +1812,8 @@
                 ['picker-officer-role', 'cfg-officer-role'],
                 ['picker-admin-role', 'cfg-admin-role'],
                 ['picker-review-channel', 'cfg-review-channel'],
-                ['picker-log-channel', 'cfg-log-channel']
+                ['picker-log-channel', 'cfg-log-channel'],
+                ['picker-economy-log-channel', 'eco-log-channel']
             ];
 
             mappings.forEach(([pickerId, inputId]) => {
@@ -1028,6 +1821,10 @@
                 const input = document.getElementById(inputId);
                 if (picker && input) picker.value = input.value.trim();
             });
+
+            const auditPicker = document.getElementById('audit-log-channel-picker');
+            const ecoInput = document.getElementById('eco-log-channel');
+            if (auditPicker && ecoInput) auditPicker.value = ecoInput.value.trim();
         }
 
         function addVerifiedRoleFromPicker(roleId) {
@@ -1128,6 +1925,1691 @@
                 alert(err.message);
             }
         });
+
+        // =========================================================================
+        // MÓDULO JAVASCRIPT: ECONOMÍA MILITAR
+        // =========================================================================
+        let allEconomyAccounts = [];
+        let globalEcoSettings = { currency_symbol: '$' };
+
+        async function loadEconomyData() {
+            try {
+                // 1. Cargar Settings
+                const resSettings = await fetch('/api/admin/economy/settings', {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (resSettings.ok) {
+                    const data = await resSettings.json();
+                    if (data.settings) {
+                        globalEcoSettings = data.settings;
+                        document.getElementById('eco-currency-name').value = data.settings.currency_name || 'Créditos USMC';
+                        document.getElementById('eco-currency-symbol').value = data.settings.currency_symbol || '$';
+                        document.getElementById('eco-starting-balance').value = data.settings.starting_balance !== undefined ? data.settings.starting_balance : 100;
+                        document.getElementById('eco-work-min').value = data.settings.work_min || 50;
+                        document.getElementById('eco-work-max').value = data.settings.work_max || 250;
+                        document.getElementById('eco-work-cooldown').value = data.settings.work_cooldown || 3600;
+                        document.getElementById('eco-crime-min').value = data.settings.crime_min || 100;
+                        document.getElementById('eco-crime-max').value = data.settings.crime_max || 600;
+                        document.getElementById('eco-crime-fail').value = data.settings.crime_fail_rate || 45;
+                        document.getElementById('eco-crime-cooldown').value = data.settings.crime_cooldown || 7200;
+                        document.getElementById('eco-rob-fail').value = data.settings.rob_fail_rate || 50;
+                        document.getElementById('eco-rob-cooldown').value = data.settings.rob_cooldown || 14400;
+
+                        const logChan = data.settings.log_channel_id || '';
+                        const inpEcoLog = document.getElementById('eco-log-channel');
+                        if (inpEcoLog) inpEcoLog.value = logChan;
+                        const pickEcoLog = document.getElementById('picker-economy-log-channel');
+                        if (pickEcoLog) pickEcoLog.value = logChan;
+                        const pickAuditLog = document.getElementById('audit-log-channel-picker');
+                        if (pickAuditLog) pickAuditLog.value = logChan;
+                    }
+                }
+
+                // 2. Cargar Cuentas
+                const resAccs = await fetch('/api/admin/economy/accounts', {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (resAccs.ok) {
+                    const data = await resAccs.json();
+                    allEconomyAccounts = data.accounts || [];
+                    renderEconomyAccounts();
+                }
+
+                // 3. Cargar Datos y Configuración de Bonos Militares
+                await loadBonusData();
+            } catch (err) {
+                console.error('[Error cargando economía]:', err);
+            }
+        }
+
+        function renderEconomyAccounts() {
+            const tbody = document.getElementById('eco-accounts-tbody');
+            const sym = globalEcoSettings.currency_symbol || '$';
+            const searchVal = (document.getElementById('eco-search-input').value || '').toLowerCase();
+
+            let filtered = allEconomyAccounts;
+            if (searchVal) {
+                filtered = filtered.filter(a => 
+                    (a.username && a.username.toLowerCase().includes(searchVal)) ||
+                    a.discord_id.includes(searchVal)
+                );
+            }
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #728c75;">Sin cuentas financieras encontradas.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(a => {
+                const name = a.username ? a.username : `Combatiente <@${a.discord_id}>`;
+                const avatar = a.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png';
+                return `
+                    <tr>
+                        <td style="font-family: var(--font-mono); color: var(--usmc-gold);">${a.discord_id}</td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <img src="${avatar}" style="width: 28px; height: 28px; border-radius: 4px; border: 1px solid var(--border-light); object-fit: cover;" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+                                <span style="font-weight: bold; color: #fff;">${name}</span>
+                            </div>
+                        </td>
+                        <td style="color: var(--usmc-green);">${sym}${a.wallet.toLocaleString()}</td>
+                        <td style="color: var(--usmc-blue);">${sym}${a.bank.toLocaleString()}</td>
+                        <td style="font-weight: bold; color: #fff;">${sym}${(a.wallet + a.bank).toLocaleString()}</td>
+                        <td style="text-align: right; white-space: nowrap;">
+                            <button class="btn-retro" style="padding: 4px 8px; font-size: 0.8rem; border-color: var(--usmc-gold); color: var(--usmc-gold); margin-right: 4px;" 
+                                onclick="openDirectBonusModal('${a.discord_id}')">
+                                🎁 BONO
+                            </button>
+                            <button class="btn-retro amber" style="padding: 4px 8px; font-size: 0.8rem;" 
+                                onclick="openBalanceModal('${a.discord_id}', '${(a.username || a.discord_id).replace(/'/g, "\\'")}')">
+                                ⚙️ AJUSTAR SALDO
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function searchEconomyAccounts() {
+            renderEconomyAccounts();
+        }
+
+        // Guardar Settings Economía
+        document.getElementById('economy-settings-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const payload = {
+                currency_name: document.getElementById('eco-currency-name').value.trim(),
+                currency_symbol: document.getElementById('eco-currency-symbol').value.trim(),
+                starting_balance: parseInt(document.getElementById('eco-starting-balance').value, 10),
+                work_min: parseInt(document.getElementById('eco-work-min').value, 10),
+                work_max: parseInt(document.getElementById('eco-work-max').value, 10),
+                work_cooldown: parseInt(document.getElementById('eco-work-cooldown').value, 10),
+                crime_min: parseInt(document.getElementById('eco-crime-min').value, 10),
+                crime_max: parseInt(document.getElementById('eco-crime-max').value, 10),
+                crime_fail_rate: parseInt(document.getElementById('eco-crime-fail').value, 10),
+                crime_cooldown: parseInt(document.getElementById('eco-crime-cooldown').value, 10),
+                rob_fail_rate: parseInt(document.getElementById('eco-rob-fail').value, 10),
+                rob_cooldown: parseInt(document.getElementById('eco-rob-cooldown').value, 10),
+                log_channel_id: document.getElementById('eco-log-channel').value.trim() || null
+            };
+
+            try {
+                const res = await fetch('/api/admin/economy/settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    globalEcoSettings = data.settings;
+                    TerminalFX.playBeepSuccess();
+                    alert("PARÁMETROS DE ECONOMÍA MILITAR ACTUALIZADOS CON ÉXITO.");
+                    renderEconomyAccounts();
+                } else {
+                    TerminalFX.playBeepError();
+                    alert("ERROR AL GUARDAR PARÁMETROS DE ECONOMÍA.");
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        });
+
+        // Modal Ajustar Saldo
+        function openBalanceModal(discordId, name) {
+            TerminalFX.playKeyClick();
+            document.getElementById('bal-target-id').value = discordId || '';
+            document.getElementById('bal-target-name').value = name ? `${name} (${discordId})` : (discordId ? discordId : 'Ingreso manual por ID');
+            document.getElementById('bal-amount').value = '';
+            document.getElementById('balance-modal').style.display = 'flex';
+        }
+
+        function closeBalanceModal() {
+            document.getElementById('balance-modal').style.display = 'none';
+        }
+
+        document.getElementById('balance-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const discordId = document.getElementById('bal-target-id').value.trim();
+            const action = document.getElementById('bal-action').value;
+            const target = document.getElementById('bal-target').value;
+            const amount = parseInt(document.getElementById('bal-amount').value, 10);
+
+            if (!discordId) {
+                alert("Debes indicar un Discord ID válido.");
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/admin/economy/accounts/quick-adjust', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify({ discordId, action, target, amount })
+                });
+                if (res.ok) {
+                    TerminalFX.playBeepSuccess();
+                    closeBalanceModal();
+                    loadEconomyData();
+                } else {
+                    TerminalFX.playBeepError();
+                    const err = await res.json().catch(() => ({}));
+                    alert("ERROR AL AJUSTAR SALDO: " + (err.message || 'Fallo en la operación contable.'));
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        });
+
+        // =========================================================================
+        // MÓDULO JAVASCRIPT: PANEL Y DISTRIBUCIÓN DE BONOS MILITARES
+        // =========================================================================
+        let currentBonusData = null;
+
+        async function loadBonusData() {
+            try {
+                const res = await fetch('/api/admin/economy/bonus', {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    currentBonusData = data;
+                    renderBonusSettings(data.panel, data.stats);
+                }
+            } catch (err) {
+                console.error('[Error cargando bonos]:', err);
+            }
+        }
+
+        function renderBonusSettings(panel, stats) {
+            if (!panel) return;
+            const elTitle = document.getElementById('bonus-panel-title');
+            if (elTitle) elTitle.value = panel.title || '';
+            const elAmt = document.getElementById('bonus-panel-amount');
+            if (elAmt) elAmt.value = panel.amount || 500;
+            const elDesc = document.getElementById('bonus-panel-desc');
+            if (elDesc) elDesc.value = panel.description || '';
+            const elMode = document.getElementById('bonus-panel-mode');
+            if (elMode) elMode.value = panel.claim_mode || 'ONCE';
+            const elCd = document.getElementById('bonus-panel-cooldown-hours');
+            if (elCd) elCd.value = Math.round((panel.cooldown_seconds || 86400) / 3600);
+            const elLbl = document.getElementById('bonus-panel-btn-label');
+            if (elLbl) elLbl.value = panel.button_label || 'RECLAMAR BONO MILITAR';
+            const elEmj = document.getElementById('bonus-panel-btn-emoji');
+            if (elEmj) elEmj.value = panel.button_emoji || '🎁';
+
+            const elChan = document.getElementById('bonus-panel-channel');
+            if (elChan && panel.channel_id) {
+                elChan.value = panel.channel_id;
+            }
+
+            toggleBonusCooldownInput();
+
+            if (stats) {
+                const elClaims = document.getElementById('stat-bonus-claims');
+                if (elClaims) elClaims.textContent = stats.totalClaims || 0;
+                const elDist = document.getElementById('stat-bonus-distributed');
+                if (elDist) elDist.textContent = `$${(stats.totalDistributed || 0).toLocaleString()}`;
+                const elModeLbl = document.getElementById('stat-bonus-mode-label');
+                if (elModeLbl) {
+                    elModeLbl.textContent = panel.claim_mode === 'ONCE' 
+                        ? 'UNA SOLA VEZ' 
+                        : `CADA ${Math.round((panel.cooldown_seconds || 86400) / 3600)} HORAS`;
+                }
+            }
+        }
+
+        function toggleBonusCooldownInput() {
+            const modeEl = document.getElementById('bonus-panel-mode');
+            if (!modeEl) return;
+            const mode = modeEl.value;
+            const grp = document.getElementById('group-bonus-cooldown');
+            if (grp) {
+                grp.style.display = mode === 'COOLDOWN' ? 'block' : 'none';
+            }
+        }
+
+        async function saveBonusConfig() {
+            const title = document.getElementById('bonus-panel-title').value.trim();
+            const amount = parseInt(document.getElementById('bonus-panel-amount').value, 10);
+            const description = document.getElementById('bonus-panel-desc').value.trim();
+            const claim_mode = document.getElementById('bonus-panel-mode').value;
+            const hours = parseInt(document.getElementById('bonus-panel-cooldown-hours').value, 10) || 24;
+            const cooldown_seconds = hours * 3600;
+            const button_label = document.getElementById('bonus-panel-btn-label').value.trim();
+            const button_emoji = document.getElementById('bonus-panel-btn-emoji').value.trim();
+            const channel_id = document.getElementById('bonus-panel-channel').value;
+
+            try {
+                const res = await fetch('/api/admin/economy/bonus/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify({
+                        title,
+                        amount,
+                        description,
+                        claim_mode,
+                        cooldown_seconds,
+                        button_label,
+                        button_emoji,
+                        channel_id
+                    })
+                });
+
+                if (res.ok) {
+                    TerminalFX.playBeepSuccess();
+                    alert("CONFIGURACIÓN DEL PANEL DE BONO ACTUALIZADA CON ÉXITO.");
+                    loadBonusData();
+                } else {
+                    TerminalFX.playBeepError();
+                    alert("ERROR AL GUARDAR CONFIGURACIÓN DE BONOS.");
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function deployBonusPanel() {
+            const channelId = document.getElementById('bonus-panel-channel').value;
+            if (!channelId) {
+                alert("Debes seleccionar un canal de Discord para publicar el panel.");
+                return;
+            }
+
+            try {
+                TerminalFX.playKeyClick();
+                await saveBonusConfig();
+
+                const res = await fetch('/api/admin/economy/bonus/deploy-panel', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify({ channelId })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    TerminalFX.playBeepSuccess();
+                    alert("¡PANEL DE BONO MILITAR DESPLEGADO EXITOSAMENTE EN DISCORD!");
+                    loadBonusData();
+                } else {
+                    TerminalFX.playBeepError();
+                    alert("ERROR AL DESPLEGAR PANEL: " + (data.message || 'Error desconocido.'));
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        function openDirectBonusModal(discordId = '') {
+            TerminalFX.playKeyClick();
+            document.getElementById('direct-bonus-user-id').value = discordId;
+            document.getElementById('direct-bonus-target-type').value = 'USER';
+            toggleDirectBonusTargetInput();
+            document.getElementById('direct-bonus-modal').style.display = 'flex';
+        }
+
+        function closeDirectBonusModal() {
+            document.getElementById('direct-bonus-modal').style.display = 'none';
+        }
+
+        function toggleDirectBonusTargetInput() {
+            const type = document.getElementById('direct-bonus-target-type').value;
+            const grp = document.getElementById('group-direct-bonus-user');
+            if (grp) {
+                grp.style.display = type === 'USER' ? 'block' : 'none';
+            }
+        }
+
+        async function submitDirectBonus() {
+            const type = document.getElementById('direct-bonus-target-type').value;
+            const target = type === 'ALL' ? 'ALL' : document.getElementById('direct-bonus-user-id').value.trim();
+            const amount = parseInt(document.getElementById('direct-bonus-amount').value, 10);
+            const destination = document.getElementById('direct-bonus-destination').value;
+            const reason = document.getElementById('direct-bonus-reason').value.trim();
+
+            if (type === 'USER' && !target) {
+                alert("Debes ingresar el Discord ID del combatiente.");
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/admin/economy/bonus/distribute', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify({
+                        target,
+                        amount,
+                        destination,
+                        reason
+                    })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    TerminalFX.playBeepSuccess();
+                    alert(data.message || "BONO CONCEDIDO CON ÉXITO.");
+                    closeDirectBonusModal();
+                    loadEconomyData();
+                    loadBonusData();
+                } else {
+                    TerminalFX.playBeepError();
+                    alert("ERROR AL EMITIR BONIFICACIÓN: " + (data.message || 'Fallo contable.'));
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        // =========================================================================
+        // MÓDULO JAVASCRIPT: ARMERÍA Y TIENDA (SHOP) ESTILO UNBELIEVABOAT
+        // =========================================================================
+        let allShopItems = [];
+
+        async function loadShopData() {
+            try {
+                const res = await fetch('/api/admin/shop/items', {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    allShopItems = data.items || [];
+                    renderShopItems();
+                }
+            } catch (err) {
+                console.error('[Error cargando tienda]:', err);
+            }
+        }
+
+        function renderShopItems() {
+            const container = document.getElementById('shop-items-list');
+            const sym = globalEcoSettings.currency_symbol || '$';
+
+            if (allShopItems.length === 0) {
+                container.innerHTML = `
+                    <div style="grid-column: 1 / -1; text-align: center; padding: 40px; background: rgba(10, 16, 11, 0.5); border: 1px dashed var(--border-light);">
+                        <p style="color: #728c75; font-size: 1rem;">No hay ningún suministro ni rol registrado en la armería.</p>
+                        <button class="btn-retro primary" style="margin-top: 15px;" onclick="openShopModal()">➕ AGREGAR PRIMER ÍTEM</button>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = allShopItems.map(item => {
+                let rolesBadges = '';
+                if (item.roles_to_give && item.roles_to_give.length > 0) {
+                    rolesBadges += `<div style="font-size: 0.75rem; color: var(--usmc-green); margin-top: 4px;">➕ Otorga Rol: <strong>${item.roles_to_give.map(r => getRoleNameById(r)).join(', ')}</strong></div>`;
+                }
+                if (item.roles_to_remove && item.roles_to_remove.length > 0) {
+                    rolesBadges += `<div style="font-size: 0.75rem; color: var(--usmc-red); margin-top: 2px;">➖ Retira Rol: <strong>${item.roles_to_remove.map(r => getRoleNameById(r)).join(', ')}</strong></div>`;
+                }
+                if (item.required_roles && item.required_roles.length > 0) {
+                    rolesBadges += `<div style="font-size: 0.75rem; color: var(--usmc-amber); margin-top: 2px;">🔒 Requiere: <strong>${item.required_roles.map(r => getRoleNameById(r)).join(', ')}</strong></div>`;
+                }
+
+                const stockText = item.stock === -1 ? 'Ilimitado' : `${item.stock} uds`;
+                const maxUserText = item.max_per_user === -1 ? 'Sin límite' : `${item.max_per_user} máx/persona`;
+                const activeBadge = item.is_active ? '<span class="status-badge aprobado">ACTIVO</span>' : '<span class="status-badge rechazado">DESACTIVADO</span>';
+
+                return `
+                    <div class="retro-window" style="padding: 16px; margin-bottom: 0; display: flex; flex-direction: column; justify-content: space-between;">
+                        <div>
+                            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
+                                <div style="font-size: 2rem;">${item.icon || '🎖️'}</div>
+                                <div>${activeBadge}</div>
+                            </div>
+                            <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.1rem; margin-bottom: 4px;">[#${item.id}] ${item.name}</h4>
+                            <div style="font-size: 1.2rem; font-weight: bold; color: var(--usmc-gold); margin-bottom: 8px;">
+                                ${sym}${item.price.toLocaleString()}
+                            </div>
+                            <p style="font-size: 0.8rem; color: #8fa892; margin-bottom: 8px;">${item.description || 'Sin descripción adicional.'}</p>
+                            ${rolesBadges}
+                            <div style="font-size: 0.75rem; color: #728c75; margin-top: 10px; border-top: 1px dashed var(--border-light); padding-top: 6px;">
+                                📦 Stock: <strong>${stockText}</strong> &bull; 👤 Límite: <strong>${maxUserText}</strong>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px; margin-top: 15px;">
+                            <button class="btn-retro" style="flex: 1; padding: 6px; font-size: 0.8rem; justify-content: center;" onclick="editShopItem(${item.id})">✏️ EDITAR</button>
+                            <button class="btn-retro danger" style="padding: 6px 10px; font-size: 0.8rem;" onclick="deleteShopItem(${item.id})">🗑️</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getRoleNameById(roleId) {
+            if (guildResources && guildResources.roles) {
+                const found = guildResources.roles.find(r => r.id === roleId);
+                if (found) return found.name;
+            }
+            return roleId;
+        }
+
+        function openShopModal(itemId = null) {
+            TerminalFX.playKeyClick();
+            const form = document.getElementById('shop-form');
+            form.reset();
+            document.getElementById('shop-item-id').value = '';
+
+            if (itemId) {
+                const item = allShopItems.find(i => i.id === itemId);
+                if (item) {
+                    document.getElementById('shop-modal-title').textContent = `ARMERÍA // EDITAR ÍTEM #${item.id}`;
+                    document.getElementById('shop-item-id').value = item.id;
+                    document.getElementById('shop-item-icon').value = item.icon || '🎖️';
+                    document.getElementById('shop-item-name').value = item.name;
+                    document.getElementById('shop-item-price').value = item.price;
+                    document.getElementById('shop-item-desc').value = item.description || '';
+                    document.getElementById('shop-item-stock').value = item.stock;
+                    document.getElementById('shop-item-max-user').value = item.max_per_user;
+                    document.getElementById('shop-item-active').value = item.is_active ? '1' : '0';
+                    document.getElementById('shop-item-reply').value = item.custom_reply || '';
+
+                    document.getElementById('shop-role-give').value = (item.roles_to_give && item.roles_to_give[0]) || '';
+                    document.getElementById('shop-role-remove').value = (item.roles_to_remove && item.roles_to_remove[0]) || '';
+                    document.getElementById('shop-role-required').value = (item.required_roles && item.required_roles[0]) || '';
+                    document.getElementById('shop-role-blocked').value = (item.blocked_roles && item.blocked_roles[0]) || '';
+                }
+            } else {
+                document.getElementById('shop-modal-title').textContent = 'ARMERÍA // NUEVO SUMINISTRO O RANGO';
+                document.getElementById('shop-item-icon').value = '🎖️';
+                document.getElementById('shop-item-stock').value = '-1';
+                document.getElementById('shop-item-max-user').value = '1';
+                document.getElementById('shop-item-active').value = '1';
+            }
+
+            document.getElementById('shop-modal').style.display = 'flex';
+        }
+
+        function closeShopModal() {
+            document.getElementById('shop-modal').style.display = 'none';
+        }
+
+        function editShopItem(id) {
+            openShopModal(id);
+        }
+
+        async function deleteShopItem(id) {
+            if (!confirm(`¿CONFIRMAS DAR DE BAJA EL ÍTEM #${id} DE LA ARMERÍA?`)) return;
+            try {
+                const res = await fetch(`/api/admin/shop/items/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (res.ok) {
+                    TerminalFX.playBeepSuccess();
+                    loadShopData();
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        document.getElementById('shop-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('shop-item-id').value;
+            
+            const roleGive = document.getElementById('shop-role-give').value;
+            const roleRemove = document.getElementById('shop-role-remove').value;
+            const roleRequired = document.getElementById('shop-role-required').value;
+            const roleBlocked = document.getElementById('shop-role-blocked').value;
+
+            const payload = {
+                icon: document.getElementById('shop-item-icon').value.trim() || '🎖️',
+                name: document.getElementById('shop-item-name').value.trim(),
+                price: parseInt(document.getElementById('shop-item-price').value, 10),
+                description: document.getElementById('shop-item-desc').value.trim(),
+                roles_to_give: roleGive ? [roleGive] : [],
+                roles_to_remove: roleRemove ? [roleRemove] : [],
+                required_roles: roleRequired ? [roleRequired] : [],
+                blocked_roles: roleBlocked ? [roleBlocked] : [],
+                stock: parseInt(document.getElementById('shop-item-stock').value, 10),
+                max_per_user: parseInt(document.getElementById('shop-item-max-user').value, 10),
+                is_active: document.getElementById('shop-item-active').value === '1' ? 1 : 0,
+                custom_reply: document.getElementById('shop-item-reply').value.trim()
+            };
+
+            const url = id ? `/api/admin/shop/items/${id}` : '/api/admin/shop/items';
+            const method = id ? 'PUT' : 'POST';
+
+            try {
+                const res = await fetch(url, {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    TerminalFX.playBeepSuccess();
+                    closeShopModal();
+                    loadShopData();
+                } else {
+                    TerminalFX.playBeepError();
+                    alert("ERROR AL GUARDAR ÍTEM EN LA ARMERÍA.");
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        });
+
+        // =========================================================================
+        // MÓDULO JAVASCRIPT: BONIFICACIONES Y MULTIPLICADORES POR ROL
+        // =========================================================================
+        let allRoleRewards = [];
+
+        async function loadRoleRewards() {
+            try {
+                const res = await fetch('/api/admin/economy/roles', {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    allRoleRewards = data.rewards || [];
+                    renderRoleRewards();
+                }
+            } catch (err) {
+                console.error('[Error cargando roles rewards]:', err);
+            }
+        }
+
+        function renderRoleRewards() {
+            const tbody = document.getElementById('role-rewards-tbody');
+            const sym = globalEcoSettings.currency_symbol || '$';
+
+            if (allRoleRewards.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #728c75;">Sin roles bonificadores registrados. Todos reciben la paga base estándar (1.0x).</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = allRoleRewards.map(r => `
+                <tr>
+                    <td style="font-weight: bold; color: #fff;">
+                        <span class="status-badge pendiente" style="margin-right: 6px;">🎖️</span>
+                        ${r.role_name} <span style="color: #728c75; font-size: 0.8rem;">(ID: ${r.role_id})</span>
+                    </td>
+                    <td style="color: var(--usmc-green); font-weight: bold;">${r.multiplier}x</td>
+                    <td style="color: var(--usmc-gold); font-weight: bold;">+${sym}${r.flat_bonus.toLocaleString()}</td>
+                    <td style="text-align: right;">
+                        <button class="btn-retro danger" style="padding: 4px 8px; font-size: 0.8rem;" onclick="deleteRoleReward(${r.id})">
+                            🗑️ ELIMINAR
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        document.getElementById('role-reward-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const select = document.getElementById('reward-role-select');
+            const roleId = select.value;
+            const roleName = select.options[select.selectedIndex]?.text.split(' (ID:')[0] || 'Rol Militar';
+
+            if (!roleId) {
+                alert("DEBES SELECCIONAR UN ROL DE DISCORD.");
+                return;
+            }
+
+            const payload = {
+                role_id: roleId,
+                role_name: roleName,
+                multiplier: parseFloat(document.getElementById('reward-multiplier').value) || 1.0,
+                flat_bonus: parseInt(document.getElementById('reward-flat-bonus').value, 10) || 0
+            };
+
+            try {
+                const res = await fetch('/api/admin/economy/roles', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify(payload)
+                });
+                if (res.ok) {
+                    TerminalFX.playBeepSuccess();
+                    loadRoleRewards();
+                } else {
+                    TerminalFX.playBeepError();
+                    alert("ERROR AL ASIGNAR BONIFICACIÓN POR ROL.");
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        });
+
+        async function deleteRoleReward(id) {
+            if (!confirm("¿ELIMINAR ESTA BONIFICACIÓN DE ROL?")) return;
+            try {
+                const res = await fetch(`/api/admin/economy/roles/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (res.ok) {
+                    TerminalFX.playBeepSuccess();
+                    loadRoleRewards();
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        // =========================================================================
+        // MÓDULO JAVASCRIPT: OPERACIONES Y PAGOS AUTOMÁTICOS (VOZ & CHAT)
+        // =========================================================================
+        let currentActiveEvent = null;
+
+        async function loadEventsData() {
+            try {
+                // 1. Cargar Evento Activo
+                const resActive = await fetch('/api/admin/events/active', {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (resActive.ok) {
+                    const data = await resActive.json();
+                    renderActiveEventSection(data);
+                }
+
+                // 2. Cargar Historial
+                const resHist = await fetch('/api/admin/events/history', {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (resHist.ok) {
+                    const data = await resHist.json();
+                    renderEventHistory(data.history || []);
+                }
+            } catch (err) {
+                console.error('[Error cargando eventos]:', err);
+            }
+        }
+
+        function renderActiveEventSection(data) {
+            const container = document.getElementById('event-active-container');
+            const sym = globalEcoSettings.currency_symbol || '$';
+
+            if (data.has_active && data.event) {
+                currentActiveEvent = data.event;
+                const attendees = data.attendees || [];
+                const stats = data.stats || {};
+                const durationMinutes = Math.floor((Date.now() - new Date(data.event.created_at).getTime()) / 60000);
+
+                let phaseText = '🔴 OPERACIÓN TÁCTICA EN VIVO';
+                if (data.event.phase === 'REGISTRATION') {
+                    phaseText = '📋 FASE DE CONVOCATORIA & REGISTRO PREVIO';
+                } else if (data.event.phase === 'CONFIRMING') {
+                    phaseText = '📍 FASE DE PASE DE LISTA & CONFIRMACIÓN';
+                } else if (data.event.phase === 'ENDED') {
+                    phaseText = '💵 FASE DE COBRO & NÓMINA LIBERADA';
+                }
+
+                let attendeesRows = attendees.map(a => {
+                    let statusBadge = '<span class="status-badge" style="background: rgba(0,180,216,0.15); color: #00b4d8; border: 1px solid #00b4d8;">📝 REGISTRADO</span>';
+                    if (a.claimed === 1) {
+                        statusBadge = `<span class="status-badge aprobado">💵 COBRADO (${sym}${a.payout_amount})</span>`;
+                    } else if (a.attendance_confirmed === 1 || a.is_eligible === 1) {
+                        statusBadge = '<span class="status-badge aprobado">✅ ASISTENCIA CONFIRMADA</span>';
+                    }
+
+                    const avatarSrc = a.avatar ? a.avatar : 'https://cdn.discordapp.com/embed/avatars/0.png';
+                    const isConfirmed = (a.attendance_confirmed === 1 || a.is_eligible === 1);
+
+                    return `
+                        <tr>
+                            <td style="color: var(--usmc-gold); font-family: var(--font-mono);">
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <img src="${avatarSrc}" style="width: 28px; height: 28px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+                                    <span>${a.discord_id}</span>
+                                </div>
+                            </td>
+                            <td style="font-weight: bold; color: #fff;">${a.username}</td>
+                            <td>${statusBadge}</td>
+                            <td style="color: var(--usmc-green);">${Math.floor(a.total_seconds_present / 60)} min / ${a.message_count} msgs</td>
+                            <td style="font-size: 0.8rem; color: #8fa892;">${a.attendance_confirmed_at ? new Date(a.attendance_confirmed_at).toLocaleTimeString() : (a.registered_at ? new Date(a.registered_at).toLocaleTimeString() : '--')}</td>
+                            <td style="text-align: right;">
+                                <button class="btn-retro ${isConfirmed ? 'danger' : 'primary'}" style="font-size: 0.75rem; padding: 4px 8px;" onclick="toggleManualAttendance('${a.discord_id}', ${!isConfirmed})">
+                                    ${isConfirmed ? '❌ Desmarcar' : '✅ Confirmar'}
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+
+                if (attendees.length === 0) {
+                    attendeesRows = `<tr><td colspan="6" style="text-align: center; color: #728c75;">Ningún combatiente registrado aún en esta operación militar.</td></tr>`;
+                }
+
+                container.innerHTML = `
+                    <div class="retro-window" style="border-color: var(--usmc-gold); padding: 20px; margin-bottom: 25px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 18px;">
+                            <div>
+                                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
+                                    <span class="led-indicator led-green" style="animation: blink 1s infinite;"></span>
+                                    <h3 style="color: #fff; font-family: var(--font-tech); font-size: 1.3rem; margin: 0;">
+                                        ${data.event.name.toUpperCase()} [#${data.event.id}]
+                                    </h3>
+                                </div>
+                                <span class="status-badge" style="font-size: 0.8rem; padding: 4px 10px;">${phaseText}</span>
+                            </div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                <button class="btn-retro" style="font-size: 0.8rem; padding: 6px 12px; border-color: #00b4d8;" onclick="deployRegistrationToDiscord()">
+                                    📢 ENVIAR REGISTRO A DISCORD
+                                </button>
+                                <button class="btn-retro" style="font-size: 0.8rem; padding: 6px 12px; border-color: var(--usmc-amber);" onclick="deployConfirmationToDiscord()">
+                                    📋 ENVIAR PASE DE LISTA
+                                </button>
+                                <button class="btn-retro primary" style="font-size: 0.8rem; padding: 6px 12px;" onclick="deployPayoutToDiscord()">
+                                    💵 PUBLICAR BOTÓN DE COBRO
+                                </button>
+                                <button class="btn-retro" style="font-size: 0.8rem; padding: 6px 12px; border-color: #38e54d; background: rgba(56, 229, 77, 0.15);" onclick="massPayoutActiveEvent()">
+                                    ⚡ PAGAR A TODOS DIRECTO
+                                </button>
+                                <button class="btn-retro danger" style="font-size: 0.8rem; padding: 6px 12px;" onclick="finishActiveEvent()">
+                                    🏁 FINALIZAR
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="telemetry-grid" style="margin-bottom: 20px;">
+                            <div class="telemetry-card">
+                                <div class="telemetry-label">MODALIDAD / FASE</div>
+                                <div class="telemetry-value" style="font-size: 1.1rem; color: #00b4d8;">${data.event.event_type} (${data.event.phase || 'ACTIVA'})</div>
+                            </div>
+                            <div class="telemetry-card">
+                                <div class="telemetry-label">PAGA BASE PROGRAMADA</div>
+                                <div class="telemetry-value green">${sym}${data.event.base_reward.toLocaleString()}</div>
+                            </div>
+                            <div class="telemetry-card">
+                                <div class="telemetry-label">INSCRITOS / DETECTADOS</div>
+                                <div class="telemetry-value amber">${attendees.length} ${data.event.max_participants > 0 ? `/ ${data.event.max_participants}` : ''}</div>
+                            </div>
+                            <div class="telemetry-card">
+                                <div class="telemetry-label">ASISTENCIA CONFIRMADA</div>
+                                <div class="telemetry-value green">${stats.confirmed || attendees.filter(a => a.attendance_confirmed === 1 || a.is_eligible === 1).length}</div>
+                            </div>
+                            <div class="telemetry-card">
+                                <div class="telemetry-label">PAGOS COBRADOS</div>
+                                <div class="telemetry-value" style="color: var(--usmc-gold);">${stats.claimed || attendees.filter(a => a.claimed === 1).length}</div>
+                            </div>
+                        </div>
+
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <h4 style="color: var(--usmc-green); font-family: var(--font-tech); margin: 0;">
+                                👥 ROSTER Y PASE DE LISTA DE COMBATIENTES EN TIEMPO REAL:
+                            </h4>
+                            <button class="btn-retro" style="font-size: 0.75rem; padding: 4px 10px;" onclick="loadEventsData()">
+                                🔄 REFRESCAR LISTA
+                            </button>
+                        </div>
+                        <div class="retro-table-wrapper" style="max-height: 280px; overflow-y: auto;">
+                            <table class="retro-table">
+                                <thead>
+                                    <tr>
+                                        <th>SOLDADO / IDENTIDAD</th>
+                                        <th>TAG DISCORD</th>
+                                        <th>ESTADO EN LISTA</th>
+                                        <th>TIEMPO / MENSAJES</th>
+                                        <th>HORA REGISTRO</th>
+                                        <th style="text-align: right;">AJUSTE MANUAL</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${attendeesRows}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            } else {
+                currentActiveEvent = null;
+                const voiceChannels = (guildResources && guildResources.voice_channels) || [];
+                const textChannels = (guildResources && guildResources.text_channels) || (guildResources && guildResources.channels) || [];
+
+                const targetChannelOptions = `
+                    <optgroup label="Canales de Texto (Convocatoria / Chat)">
+                        ${textChannels.map(c => `<option value="${c.id}"># ${c.name} (Texto)</option>`).join('')}
+                    </optgroup>
+                    <optgroup label="Canales de Voz">
+                        ${voiceChannels.map(c => `<option value="${c.id}">🔊 ${c.name} (Voz)</option>`).join('')}
+                    </optgroup>
+                `;
+
+                const payoutChannelOptions = textChannels.map(c => `<option value="${c.id}"># ${c.name}</option>`).join('');
+
+                container.innerHTML = `
+                    <div class="retro-window" style="padding: 22px; margin-bottom: 25px;">
+                        <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.1rem; margin-bottom: 15px;">
+                            🎯 CONFIGURAR Y LANZAR NUEVA OPERACIÓN MILITAR DE PAGO
+                        </h4>
+                        <form id="launch-event-form">
+                            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 15px;">
+                                <div class="form-group">
+                                    <label class="form-label">NOMBRE DE LA OPERACIÓN O REUNIÓN:</label>
+                                    <input type="text" id="ev-name" class="retro-input" placeholder="Ej: Maniobras Militares Alfa - Asistencia Obligatoria" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">MODALIDAD DE OPERACIÓN:</label>
+                                    <select id="ev-type" class="retro-select">
+                                        <option value="REGISTRATION" selected>📋 CONVOCATORIA & REGISTRO PREVIO (Pase de lista y cobro)</option>
+                                        <option value="VOICE">🔊 CANAL DE VOZ (Permanencia de audio automatizada)</option>
+                                        <option value="TEXT">💬 CANAL DE CHAT (Participación en texto)</option>
+                                        <option value="HYBRID">🎖️ HÍBRIDO (Voz + Mensaje de confirmación)</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                                <div class="form-group">
+                                    <label class="form-label">CANAL DE CONVOCATORIA / ASISTENCIA:</label>
+                                    <select id="ev-target-channel" class="retro-select" required>
+                                        <option value="">-- SELECCIONAR CANAL DE DISCORD --</option>
+                                        ${targetChannelOptions}
+                                    </select>
+                                    <p class="form-help">Canal de Discord donde se registrarán o estarán los soldados.</p>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">CANAL DONDE SE PUBLICARÁ EL BOTÓN DE COBRO:</label>
+                                    <select id="ev-payout-channel" class="retro-select" required>
+                                        <option value="">-- SELECCIONAR CANAL DE TEXTO --</option>
+                                        ${payoutChannelOptions}
+                                    </select>
+                                    <p class="form-help">Canal donde el bot enviará el mensaje con el botón al finalizar.</p>
+                                </div>
+                            </div>
+
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr 1fr; gap: 12px;">
+                                <div class="form-group">
+                                    <label class="form-label">PAGA BASE ($):</label>
+                                    <input type="number" id="ev-base-reward" class="retro-input" value="1000" min="1" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">CUPO MÁXIMO (0 = SIN LÍMITE):</label>
+                                    <input type="number" id="ev-max-participants" class="retro-input" value="0" min="0" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">TOLERANCIA (MIN):</label>
+                                    <input type="number" id="ev-grace-minutes" class="retro-input" value="5" min="0" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">% MÍNIMO PERMANENCIA:</label>
+                                    <input type="number" id="ev-min-percent" class="retro-input" value="80" min="10" max="100" required>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">PLAZO COBRO (HORAS):</label>
+                                    <input type="number" id="ev-claim-hours" class="retro-input" value="24" min="1" required>
+                                </div>
+                            </div>
+
+                            <div class="btn-command-group" style="margin-top: 15px;">
+                                <button type="submit" class="btn-retro primary" style="padding: 12px 24px; font-size: 1rem;">
+                                    🔴 INICIAR OPERACIÓN MILITAR
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                `;
+
+                document.getElementById('launch-event-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const payload = {
+                        name: document.getElementById('ev-name').value.trim(),
+                        event_type: document.getElementById('ev-type').value,
+                        target_channel_id: document.getElementById('ev-target-channel').value,
+                        payout_channel_id: document.getElementById('ev-payout-channel').value,
+                        registration_channel_id: document.getElementById('ev-target-channel').value,
+                        confirmation_channel_id: document.getElementById('ev-target-channel').value,
+                        base_reward: parseInt(document.getElementById('ev-base-reward').value, 10),
+                        max_participants: parseInt(document.getElementById('ev-max-participants').value, 10) || 0,
+                        grace_period_minutes: parseInt(document.getElementById('ev-grace-minutes').value, 10),
+                        min_attendance_percent: parseInt(document.getElementById('ev-min-percent').value, 10),
+                        claim_deadline_hours: parseInt(document.getElementById('ev-claim-hours').value, 10)
+                    };
+
+                    try {
+                        const res = await fetch('/api/admin/events/start', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${adminToken}`
+                            },
+                            body: JSON.stringify(payload)
+                        });
+                        if (res.ok) {
+                            TerminalFX.playBeepSuccess();
+                            loadEventsData();
+                        } else {
+                            const errData = await res.json();
+                            TerminalFX.playBeepError();
+                            alert(`ERROR: ${errData.message || 'No se pudo iniciar la operación'}`);
+                        }
+                    } catch (err) {
+                        alert(err.message);
+                    }
+                });
+            }
+        }
+
+        async function deployRegistrationToDiscord() {
+            if (!currentActiveEvent) return;
+            try {
+                const res = await fetch('/api/admin/events/deploy-registration', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+                    body: JSON.stringify({ channel_id: currentActiveEvent.target_channel_id })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    TerminalFX.playBeepSuccess();
+                    alert(`✅ ${data.message}`);
+                    loadEventsData();
+                } else {
+                    alert(`❌ ${data.message}`);
+                }
+            } catch (e) { alert(e.message); }
+        }
+
+        async function deployConfirmationToDiscord() {
+            if (!currentActiveEvent) return;
+            try {
+                const res = await fetch('/api/admin/events/deploy-confirmation', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+                    body: JSON.stringify({ channel_id: currentActiveEvent.target_channel_id })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    TerminalFX.playBeepSuccess();
+                    alert(`✅ ${data.message}`);
+                    loadEventsData();
+                } else {
+                    alert(`❌ ${data.message}`);
+                }
+            } catch (e) { alert(e.message); }
+        }
+
+        async function deployPayoutToDiscord() {
+            if (!currentActiveEvent) return;
+            if (!confirm("¿CONFIRMAS DESPLEGAR EL BOTÓN DE COBRO? Esto finalizará la misión en la base de datos y permitirá a los soldados confirmados cobrar sus créditos.")) return;
+            try {
+                const res = await fetch('/api/admin/events/deploy-payout', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+                    body: JSON.stringify({ channel_id: currentActiveEvent.payout_channel_id || currentActiveEvent.target_channel_id })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    TerminalFX.playBeepSuccess();
+                    alert(`✅ ${data.message}`);
+                    loadEventsData();
+                } else {
+                    alert(`❌ ${data.message}`);
+                }
+            } catch (e) { alert(e.message); }
+        }
+
+        async function massPayoutActiveEvent() {
+            if (!currentActiveEvent) return;
+            if (!confirm("¿CONFIRMAS LIQUIDAR DIRECTAMENTE A TODOS LOS SOLDADOS CONFIRMADOS? Se transferirán los créditos a sus carteras de inmediato sin necesidad de que pulsen el botón.")) return;
+            try {
+                const res = await fetch('/api/admin/events/mass-payout', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    TerminalFX.playBeepSuccess();
+                    alert(`⚡ ¡LIQUIDACIÓN DIRECTA COMPLETADA!\nSoldados pagados: ${data.summary.paidCount}\nTotal fondos desembolsados: $${data.summary.totalDistributed.toLocaleString()}`);
+                    loadEventsData();
+                } else {
+                    alert(`❌ ${data.message}`);
+                }
+            } catch (e) { alert(e.message); }
+        }
+
+        async function toggleManualAttendance(discordId, shouldConfirm) {
+            if (!currentActiveEvent) return;
+            try {
+                const res = await fetch('/api/admin/events/attendance/manual', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+                    body: JSON.stringify({
+                        discord_id: discordId,
+                        is_eligible: shouldConfirm ? 1 : 0,
+                        is_confirmed: shouldConfirm ? 1 : 0
+                    })
+                });
+                if (res.ok) {
+                    TerminalFX.playBeepSuccess();
+                    loadEventsData();
+                } else {
+                    const data = await res.json();
+                    alert(`❌ ${data.message}`);
+                }
+            } catch (e) { alert(e.message); }
+        }
+
+        async function finishActiveEvent() {
+            if (!confirm("¿CONFIRMAS FINALIZAR LA OPERACIÓN? El bot publicará inmediatamente el mensaje con el botón de reclamo en el canal de Discord asignado.")) return;
+            try {
+                const res = await fetch('/api/admin/events/end', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    TerminalFX.playBeepSuccess();
+                    alert(`¡OPERACIÓN CONCLUIDA CON ÉXITO!\nSe detectaron ${data.summary?.totalAttendees || 0} combatientes, de los cuales ${data.summary?.eligibleCount || 0} resultaron elegibles para el cobro militar.`);
+                    loadEventsData();
+                } else {
+                    const errData = await res.json();
+                    TerminalFX.playBeepError();
+                    alert(`ERROR: ${errData.message || 'Error al concluir evento'}`);
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        // =========================================================================
+        // MÓDULO JAVASCRIPT: AUDITORÍA CONTABLE Y RASTREO DE USO DE DINERO
+        // =========================================================================
+        let auditDebounceTimer = null;
+        function filterAuditoriaDebounced() {
+            if (auditDebounceTimer) clearTimeout(auditDebounceTimer);
+            auditDebounceTimer = setTimeout(() => {
+                loadAuditoriaData();
+            }, 300);
+        }
+
+        async function loadAuditoriaData() {
+            const sym = globalEcoSettings.currency_symbol || '$';
+            try {
+                // 1. Cargar estadísticas de tesorería
+                const resStats = await fetch('/api/admin/economy/treasury/stats', {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (resStats.ok) {
+                    const data = await resStats.json();
+                    const s = data.stats || {};
+                    const elEvents = document.getElementById('audit-stat-events');
+                    const elBonuses = document.getElementById('audit-stat-bonuses');
+                    const elShop = document.getElementById('audit-stat-shop');
+                    const elTransfers = document.getElementById('audit-stat-transfers');
+                    const elCirculating = document.getElementById('audit-stat-circulating');
+
+                    if (elEvents) elEvents.textContent = `${sym}${(s.totalEventPaid || 0).toLocaleString()}`;
+                    if (elBonuses) elBonuses.textContent = `${sym}${(s.totalBonusPaid || 0).toLocaleString()}`;
+                    if (elShop) elShop.textContent = `${sym}${(s.totalShopSpent || 0).toLocaleString()}`;
+                    if (elTransfers) elTransfers.textContent = `${sym}${(s.totalTransfers || 0).toLocaleString()}`;
+                    if (elCirculating) elCirculating.textContent = `${sym}${(s.totalCirculating || 0).toLocaleString()}`;
+                }
+
+                // 2. Cargar transacciones filtradas
+                const search = document.getElementById('audit-search-input')?.value || '';
+                const type = document.getElementById('audit-type-select')?.value || 'ALL';
+
+                const query = new URLSearchParams({ type, search, limit: 100 });
+                const resTx = await fetch(`/api/admin/economy/transactions?${query.toString()}`, {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+
+                if (resTx.ok) {
+                    const data = await resTx.json();
+                    renderAuditoriaTable(data.transactions || []);
+                }
+
+                // 3. Cargar y sincronizar canal de logs de auditoría
+                const resEcoSettings = await fetch('/api/admin/economy/settings', {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (resEcoSettings.ok) {
+                    const sData = await resEcoSettings.json();
+                    if (sData.settings) {
+                        globalEcoSettings = sData.settings;
+                        const pAudit = document.getElementById('audit-log-channel-picker');
+                        if (pAudit) pAudit.value = sData.settings.log_channel_id || '';
+                        const pEco = document.getElementById('picker-economy-log-channel');
+                        if (pEco) pEco.value = sData.settings.log_channel_id || '';
+                        const inpEco = document.getElementById('eco-log-channel');
+                        if (inpEco) inpEco.value = sData.settings.log_channel_id || '';
+                    }
+                }
+
+                // Resetear estado de selección al recargar datos
+                const masterCheck = document.getElementById('audit-select-all');
+                if (masterCheck) masterCheck.checked = false;
+                updateAuditSelectedState();
+            } catch (err) {
+                console.error('[Error Auditoría]:', err);
+            }
+        }
+
+        async function saveEconomyLogChannel() {
+            TerminalFX.playKeyClick();
+            const select = document.getElementById('audit-log-channel-picker');
+            const channelId = select ? select.value.trim() : '';
+
+            try {
+                const res = await fetch('/api/admin/economy/settings', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify({ log_channel_id: channelId || null })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    globalEcoSettings = data.settings;
+                    TerminalFX.playBeepSuccess();
+
+                    const ecoInput = document.getElementById('eco-log-channel');
+                    if (ecoInput) ecoInput.value = channelId;
+                    const ecoPicker = document.getElementById('picker-economy-log-channel');
+                    if (ecoPicker) ecoPicker.value = channelId;
+
+                    if (channelId) {
+                        alert("✅ CANAL DE DISCORD PARA LOGS DE ECONOMÍA VINCULADO CON ÉXITO.");
+                    } else {
+                        alert("ℹ️ CANAL DESVINCULADO: Los logs contables solo se registrarán en el Panel Web.");
+                    }
+                } else {
+                    TerminalFX.playBeepError();
+                    alert("Error al vincular el canal de logs en Discord.");
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        function renderAuditoriaTable(transactions) {
+            const tbody = document.getElementById('audit-transactions-tbody');
+            if (!tbody) return;
+            const sym = globalEcoSettings.currency_symbol || '$';
+
+            if (!transactions || transactions.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #728c75;">No se encontraron movimientos contables coincidentes.</td></tr>`;
+                updateAuditSelectedState();
+                return;
+            }
+
+            const TYPE_TAGS = {
+                'EVENT_CLAIM': { label: '🎖️ PAGA EVENTO', color: '#38e54d', isPositive: true },
+                'BUY_ITEM': { label: '🛒 COMPRA TIENDA', color: '#00ccff', isPositive: false },
+                'PAY': { label: '💸 TRANSFERENCIA', color: '#ff99ff', isPositive: null },
+                'BONUS_CLAIM': { label: '🎁 BONO PANEL', color: '#d4af37', isPositive: true },
+                'BONUS_GIVE': { label: '🎖️ BONO OFICIAL', color: '#d4af37', isPositive: true },
+                'MASS_BONUS': { label: '📢 BONO MASIVO', color: '#d4af37', isPositive: true },
+                'DEP': { label: '🏦 DEPÓSITO BANCO', color: '#a0baa4', isPositive: null },
+                'WITH': { label: '💵 RETIRO BANCO', color: '#a0baa4', isPositive: null },
+                'WORK': { label: '🛠️ SALARIO TRABAJO', color: '#38e54d', isPositive: true },
+                'CRIME': { label: '🚨 OPERACIÓN NEGRA', color: '#ff4444', isPositive: null },
+                'ROB': { label: '⚔️ ASALTO TÁCTICO', color: '#ff8800', isPositive: null },
+                'ADMIN_ADJUST': { label: '⚙️ AJUSTE MANDO', color: '#ffffff', isPositive: null }
+            };
+
+            tbody.innerHTML = transactions.map(t => {
+                const tagInfo = TYPE_TAGS[t.type] || { label: t.type, color: '#ffffff', isPositive: null };
+                const isPos = tagInfo.isPositive !== null ? tagInfo.isPositive : (t.amount >= 0);
+                const sign = isPos ? '+' : '-';
+                const amountColor = isPos ? 'var(--usmc-green)' : 'var(--usmc-red)';
+                const avatarSrc = t.avatar ? t.avatar : 'https://cdn.discordapp.com/embed/avatars/0.png';
+                const dateStr = new Date(t.timestamp).toLocaleString();
+
+                return `
+                    <tr>
+                        <td style="text-align: center;">
+                            <input type="checkbox" class="audit-row-checkbox" value="${t.id}" style="cursor: pointer; accent-color: var(--usmc-green); width: 16px; height: 16px;" onchange="updateAuditSelectedState()">
+                        </td>
+                        <td style="font-family: var(--font-mono); color: #728c75;">#${t.id}</td>
+                        <td>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <img src="${avatarSrc}" style="width: 26px; height: 26px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+                                <div>
+                                    <div style="font-weight: bold; color: #fff; font-size: 0.85rem;">${t.username}</div>
+                                    <div style="font-size: 0.75rem; color: #728c75; font-family: var(--font-mono);">${t.discord_id}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="status-badge" style="background: rgba(255,255,255,0.06); color: ${tagInfo.color}; border: 1px solid ${tagInfo.color}; font-size: 0.75rem;">
+                                ${tagInfo.label}
+                            </span>
+                        </td>
+                        <td style="font-weight: bold; font-family: var(--font-mono); font-size: 0.95rem; color: ${amountColor};">
+                            ${sign}${sym}${Math.abs(t.amount).toLocaleString()}
+                        </td>
+                        <td style="color: #c0d8c4; font-size: 0.85rem;">${t.details || 'Sin detalle complementario'}</td>
+                        <td style="font-size: 0.8rem; color: #728c75; font-family: var(--font-mono);">${dateStr}</td>
+                        <td style="text-align: right;">
+                            <div style="display: inline-flex; gap: 6px; justify-content: flex-end;">
+                                <button class="btn-retro" style="font-size: 0.75rem; padding: 3px 8px;" onclick="viewSoldierFinancialProfile('${t.discord_id}')">
+                                    🔍 INSPECCIONAR
+                                </button>
+                                <button class="btn-retro danger" style="font-size: 0.75rem; padding: 3px 8px;" title="Eliminar registro #${t.id}" onclick="deleteSingleAuditLog(${t.id})">
+                                    🗑️
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            updateAuditSelectedState();
+        }
+
+        function toggleSelectAllAudit(masterCheckbox) {
+            TerminalFX.playKeyClick();
+            const checkboxes = document.querySelectorAll('.audit-row-checkbox');
+            checkboxes.forEach(cb => cb.checked = masterCheckbox.checked);
+            updateAuditSelectedState();
+        }
+
+        function updateAuditSelectedState() {
+            const checkboxes = document.querySelectorAll('.audit-row-checkbox');
+            const checkedBoxes = document.querySelectorAll('.audit-row-checkbox:checked');
+            const btnDelete = document.getElementById('btn-delete-selected-audit');
+            const countSpan = document.getElementById('selected-audit-count');
+            const masterCheck = document.getElementById('audit-select-all');
+
+            const count = checkedBoxes.length;
+            if (countSpan) countSpan.textContent = count;
+
+            if (btnDelete) {
+                btnDelete.style.display = count > 0 ? 'inline-flex' : 'none';
+            }
+
+            if (masterCheck && checkboxes.length > 0) {
+                masterCheck.checked = (count === checkboxes.length);
+            }
+        }
+
+        async function deleteSingleAuditLog(id) {
+            TerminalFX.playKeyClick();
+            if (!confirm(`¿CONFIRMAS ELIMINAR EL REGISTRO CONTABLE #${id}?\nEsta acción no se puede deshacer.`)) return;
+
+            try {
+                const res = await fetch(`/api/admin/economy/transactions/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    TerminalFX.playBeepSuccess();
+                    loadAuditoriaData();
+                } else {
+                    alert(data.message || 'Error al eliminar el registro contable.');
+                }
+            } catch (err) {
+                console.error('[Error al borrar log]:', err);
+                alert('Fallo de conexión al eliminar el registro.');
+            }
+        }
+
+        async function deleteSelectedAuditLogs() {
+            TerminalFX.playKeyClick();
+            const checkedBoxes = Array.from(document.querySelectorAll('.audit-row-checkbox:checked'));
+            const ids = checkedBoxes.map(cb => parseInt(cb.value, 10)).filter(id => !isNaN(id));
+
+            if (ids.length === 0) {
+                alert('No hay registros seleccionados para eliminar.');
+                return;
+            }
+
+            if (!confirm(`¿CONFIRMAS ELIMINAR LOS ${ids.length} REGISTROS CONTABLES SELECCIONADOS?\nEsta acción es irreversible.`)) return;
+
+            try {
+                const res = await fetch('/api/admin/economy/transactions/delete-batch', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify({ ids })
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    TerminalFX.playBeepSuccess();
+                    loadAuditoriaData();
+                } else {
+                    alert(data.message || 'Error al eliminar los registros seleccionados.');
+                }
+            } catch (err) {
+                console.error('[Error al borrar seleccionados]:', err);
+                alert('Fallo de conexión al eliminar los registros seleccionados.');
+            }
+        }
+
+        async function clearAllAuditLogs() {
+            TerminalFX.playKeyClick();
+            const confirmMsg = "⚠️ ¡ADVERTENCIA MILITAR DE PURGA!\n\n¿Estás completamente seguro de que deseas VACIAR y ELIMINAR TODOS los registros contables del libro de auditoría?\n\nEsta operación borrará el historial de transacciones de forma permanente.";
+            if (!confirm(confirmMsg)) return;
+
+            const doubleConfirm = prompt("Escribe 'ELIMINAR' para confirmar la purga completa del libro de auditoría:");
+            if (doubleConfirm !== 'ELIMINAR') {
+                alert("Operación cancelada. No se ha modificado ningún registro.");
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/admin/economy/transactions', {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    TerminalFX.playBeepSuccess();
+                    alert(`✅ ${data.message || 'Libro de auditoría vaciado correctamente.'}`);
+                    loadAuditoriaData();
+                } else {
+                    alert(data.message || 'Error al vaciar el libro contable.');
+                }
+            } catch (err) {
+                console.error('[Error al vaciar libro]:', err);
+                alert('Fallo de conexión al vaciar los registros.');
+            }
+        }
+
+        async function viewSoldierFinancialProfile(discordId) {
+            try {
+                const res = await fetch(`/api/admin/economy/user/${discordId}/financial-profile`, {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (!res.ok) throw new Error('No se pudo cargar el perfil financiero.');
+
+                const data = await res.json();
+                const p = data.profile;
+                const sym = globalEcoSettings.currency_symbol || '$';
+                const avatarSrc = p.account.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png';
+
+                const modalContent = document.getElementById('financial-modal-content');
+                let txRows = (p.recentTransactions || []).map(t => {
+                    const isPos = t.amount >= 0;
+                    const sign = isPos ? '+' : '-';
+                    const col = isPos ? 'var(--usmc-green)' : 'var(--usmc-red)';
+                    return `
+                        <tr>
+                            <td style="font-size: 0.8rem; color: #728c75;">${new Date(t.timestamp).toLocaleDateString()} ${new Date(t.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</td>
+                            <td style="font-size: 0.8rem; font-weight: bold; color: #fff;">${t.type}</td>
+                            <td style="font-weight: bold; color: ${col}; font-family: var(--font-mono);">${sign}${sym}${Math.abs(t.amount).toLocaleString()}</td>
+                            <td style="font-size: 0.8rem; color: #a0baa4;">${t.details}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                if (!txRows || txRows.length === 0) txRows = `<tr><td colspan="4" style="text-align: center; color: #728c75;">Sin transacciones recientes registradas.</td></tr>`;
+
+                modalContent.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 15px;">
+                        <img src="${avatarSrc}" style="width: 55px; height: 55px; border-radius: 8px; border: 2px solid var(--usmc-gold);" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+                        <div>
+                            <h3 style="color: #fff; margin: 0; font-family: var(--font-tech); font-size: 1.2rem;">${p.account.username || 'Combatiente USMC'}</h3>
+                            <div style="font-size: 0.8rem; color: var(--usmc-gold); font-family: var(--font-mono);">${p.account.discord_id}</div>
+                        </div>
+                    </div>
+
+                    <div class="telemetry-grid" style="margin-bottom: 20px;">
+                        <div class="telemetry-card">
+                            <div class="telemetry-label">CARTERA ACTUAL (EFECTIVO)</div>
+                            <div class="telemetry-value green">${sym}${(p.account.wallet || 0).toLocaleString()}</div>
+                        </div>
+                        <div class="telemetry-card">
+                            <div class="telemetry-label">CAJA FUERTE (BANCO)</div>
+                            <div class="telemetry-value amber">${sym}${(p.account.bank || 0).toLocaleString()}</div>
+                        </div>
+                        <div class="telemetry-card">
+                            <div class="telemetry-label">TOTAL HISTÓRICO GANADO</div>
+                            <div class="telemetry-value" style="color: #00ccff;">${sym}${(p.totalEarned || 0).toLocaleString()}</div>
+                        </div>
+                        <div class="telemetry-card">
+                            <div class="telemetry-label">TOTAL HISTÓRICO GASTADO</div>
+                            <div class="telemetry-value" style="color: var(--usmc-red);">${sym}${(p.totalSpent || 0).toLocaleString()}</div>
+                        </div>
+                        <div class="telemetry-card">
+                            <div class="telemetry-label">ÍTEMS EN MOCHILA</div>
+                            <div class="telemetry-value">${p.itemsCount || 0}</div>
+                        </div>
+                    </div>
+
+                    <h4 style="color: var(--usmc-gold); font-family: var(--font-tech); margin-bottom: 8px;">
+                        📜 CÓMO HA USADO SU DINERO (ÚLTIMOS MOVIMIENTOS):
+                    </h4>
+                    <div class="retro-table-wrapper" style="max-height: 250px; overflow-y: auto;">
+                        <table class="retro-table">
+                            <thead>
+                                <tr>
+                                    <th>FECHA</th>
+                                    <th>OPERACIÓN</th>
+                                    <th>IMPORTE</th>
+                                    <th>DETALLE / DESTINO</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${txRows}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+
+                document.getElementById('financial-profile-modal').style.display = 'block';
+                TerminalFX.playBeepSuccess();
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        function closeFinancialModal() {
+            document.getElementById('financial-profile-modal').style.display = 'none';
+        }
+
+        function renderEventHistory(history) {
+            const tbody = document.getElementById('event-history-tbody');
+            const sym = globalEcoSettings.currency_symbol || '$';
+
+            if (history.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #728c75;">Sin operaciones concluidas en los archivos históricos.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = history.map(ev => {
+                const dateStr = new Date(ev.created_at).toLocaleString();
+                return `
+                    <tr>
+                        <td style="font-family: var(--font-mono); color: var(--usmc-gold);">#${ev.id}</td>
+                        <td style="font-weight: bold; color: #fff;">${ev.name}</td>
+                        <td><span class="status-badge" style="background: rgba(0,204,255,0.15); color: var(--usmc-blue);">${ev.event_type}</span></td>
+                        <td style="font-size: 0.8rem; color: #8fa892;">${dateStr}</td>
+                        <td style="text-align: center;">${ev.total_attendees}</td>
+                        <td style="text-align: center; color: var(--usmc-green); font-weight: bold;">${ev.eligible_count}</td>
+                        <td style="text-align: center; color: var(--usmc-gold);">${ev.claimed_count}</td>
+                        <td style="font-weight: bold; color: #fff;">${sym}${(ev.total_paid || 0).toLocaleString()}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // =========================================================================
+        // MÓDULO JAVASCRIPT: CONTROL DE DIRECTIVAS Y PERMISOS DE COMANDOS
+        // =========================================================================
+        let allCommandPerms = [];
+        const COMMAND_METAS = {
+            'trabajar': { label: '/trabajar', desc: 'Guardias de vigilancia y turnos de servicio militar.' },
+            'crimen': { label: '/crimen', desc: 'Misiones clandestinas de alto riesgo con probabilidad de sanción.' },
+            'robar': { label: '/robar', desc: 'Asaltos e incautaciones de efectivo entre combatientes.' },
+            'pagar': { label: '/pagar', desc: 'Transferencias directas de créditos entre combatientes.' },
+            'depositar': { label: '/depositar', desc: 'Depósito de fondos en la caja fuerte del banco militar.' },
+            'retirar': { label: '/retirar', desc: 'Retiro de fondos de la caja fuerte a la cartera.' },
+            'ranking': { label: '/ranking', desc: 'Consulta del escalafón de riqueza y patrimonio militar.' },
+            'tienda': { label: '/tienda', desc: 'Panel interactivo de armería, compras y suministros.' },
+            'bono': { label: '/bono', desc: 'Sistema de bonificaciones y panel interactivo de reclamo extraordinario.' }
+        };
+
+        async function loadCommandsData() {
+            try {
+                const res = await fetch('/api/admin/economy/commands', {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    allCommandPerms = data.commands || [];
+                    renderCommandPermissions();
+                }
+            } catch (err) {
+                console.error('[Error cargando directivas de comandos]:', err);
+            }
+        }
+
+        function renderCommandPermissions() {
+            const tbody = document.getElementById('command-permissions-tbody');
+            if (!tbody) return;
+
+            if (allCommandPerms.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #728c75;">Sin registros de directivas de comandos.</td></tr>';
+                return;
+            }
+
+            const rolesList = (guildResources && guildResources.roles) ? guildResources.roles : [];
+
+            tbody.innerHTML = allCommandPerms.map(cmd => {
+                const meta = COMMAND_METAS[cmd.command_name] || { label: `/${cmd.command_name}`, desc: 'Protocolo de comando militar' };
+                const isEnabled = cmd.is_enabled;
+
+                const roleBadges = (cmd.allowed_roles || []).map(rId => {
+                    const roleName = getRoleNameById(rId);
+                    return `
+                        <span style="display: inline-flex; align-items: center; gap: 4px; background: rgba(30, 60, 35, 0.7); border: 1px solid var(--usmc-green); color: #afffba; padding: 2px 6px; font-size: 0.75rem; border-radius: 3px; margin: 2px;">
+                            ${roleName}
+                            <button type="button" onclick="removeRoleFromCmd('${cmd.command_name}', '${rId}')" style="background: none; border: none; color: #ff7a7a; cursor: pointer; font-weight: bold; padding: 0 2px; line-height: 1;">×</button>
+                        </span>
+                    `;
+                }).join('');
+
+                const rolePickerOptions = rolesList
+                    .filter(r => !(cmd.allowed_roles || []).includes(r.id))
+                    .map(r => `<option value="${r.id}">${r.name}</option>`)
+                    .join('');
+
+                return `
+                    <tr id="row-cmd-${cmd.command_name}">
+                        <td>
+                            <span style="font-family: var(--font-tech); font-weight: bold; color: var(--usmc-gold); font-size: 1rem;">
+                                ${meta.label}
+                            </span>
+                        </td>
+                        <td style="color: #a0baa4; font-size: 0.85rem;">
+                            ${meta.desc}
+                        </td>
+                        <td>
+                            <select id="cmd-status-${cmd.command_name}" class="retro-select" style="padding: 4px 8px; font-size: 0.85rem; width: 100%;">
+                                <option value="1" ${isEnabled ? 'selected' : ''}>🟢 HABILITADO</option>
+                                <option value="0" ${!isEnabled ? 'selected' : ''}>🔴 DESACTIVADO</option>
+                            </select>
+                        </td>
+                        <td>
+                            <div id="cmd-roles-${cmd.command_name}" style="margin-bottom: 6px; min-height: 22px;">
+                                ${roleBadges || '<span style="color: #728c75; font-size: 0.8rem; font-style: italic;">Todos los reclutas autorizados (Acceso Universal)</span>'}
+                            </div>
+                            <div style="display: flex; gap: 6px;">
+                                <select id="cmd-picker-${cmd.command_name}" class="retro-select" style="font-size: 0.8rem; padding: 3px 6px; flex: 1;" onchange="addRoleToCmd('${cmd.command_name}', this.value); this.value='';">
+                                    <option value="">➕ Restringir a rango específico...</option>
+                                    ${rolePickerOptions}
+                                </select>
+                            </div>
+                        </td>
+                        <td style="text-align: right;">
+                            <button class="btn-retro primary" style="padding: 5px 10px; font-size: 0.8rem;" onclick="saveCommandPermission('${cmd.command_name}')">
+                                💾 GUARDAR
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function addRoleToCmd(cmdName, roleId) {
+            if (!roleId) return;
+            const cmd = allCommandPerms.find(c => c.command_name === cmdName);
+            if (!cmd) return;
+            if (!cmd.allowed_roles) cmd.allowed_roles = [];
+            if (!cmd.allowed_roles.includes(roleId)) {
+                cmd.allowed_roles.push(roleId);
+                renderCommandPermissions();
+            }
+        }
+
+        function removeRoleFromCmd(cmdName, roleId) {
+            const cmd = allCommandPerms.find(c => c.command_name === cmdName);
+            if (!cmd || !cmd.allowed_roles) return;
+            cmd.allowed_roles = cmd.allowed_roles.filter(id => id !== roleId);
+            renderCommandPermissions();
+        }
+
+        async function saveCommandPermission(cmdName) {
+            const cmd = allCommandPerms.find(c => c.command_name === cmdName);
+            if (!cmd) return;
+
+            const isEnabled = document.getElementById(`cmd-status-${cmdName}`).value === '1';
+            const allowedRoles = cmd.allowed_roles || [];
+
+            try {
+                const res = await fetch('/api/admin/economy/commands', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify({
+                        commandName: cmdName,
+                        isEnabled,
+                        allowedRoles
+                    })
+                });
+
+                if (res.ok) {
+                    TerminalFX.playBeepSuccess();
+                    const data = await res.json();
+                    allCommandPerms = data.commands;
+                    renderCommandPermissions();
+                } else {
+                    TerminalFX.playBeepError();
+                    alert("ERROR AL ACTUALIZAR DIRECTIVA DEL COMANDO.");
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        }
 
         // Intentar autologin si ya tiene el token guardado
         if (adminToken) {

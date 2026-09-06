@@ -1,9 +1,39 @@
 const path = require('path');
 const fs = require('fs');
-const Database = require('better-sqlite3');
+
+let Database;
+let isNodeSqlite = false;
+
+try {
+    Database = require('better-sqlite3');
+} catch (e) {
+    try {
+        const { DatabaseSync } = require('node:sqlite');
+        Database = DatabaseSync;
+        isNodeSqlite = true;
+    } catch (e2) {
+        throw new Error('Ni better-sqlite3 ni node:sqlite están disponibles en este entorno Node.js.');
+    }
+}
 
 const dbPath = path.join(__dirname, '../../database.sqlite');
 const db = new Database(dbPath);
+
+if (isNodeSqlite) {
+    db.transaction = (fn) => {
+        return (...args) => {
+            db.exec('BEGIN');
+            try {
+                const res = fn(...args);
+                db.exec('COMMIT');
+                return res;
+            } catch (err) {
+                db.exec('ROLLBACK');
+                throw err;
+            }
+        };
+    };
+}
 
 // Activar modo WAL para alta velocidad y concurrencia
 db.exec('PRAGMA journal_mode = WAL;');

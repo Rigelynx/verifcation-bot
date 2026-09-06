@@ -1,5 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder, MessageFlags } = require('discord.js');
 const db = require('../../database/db');
+const economyDb = require('../../database/economyDb');
 const { applyVerifiedRole } = require('../handlers/verificationHandler');
 const { hasOfficerPermission, hasAdminPermission } = require('../handlers/permissionHandler');
 const { parseRoleIds, formatRoleMentions } = require('../utils/roleUtils');
@@ -34,6 +35,7 @@ module.exports = {
                 .addRoleOption(opt => opt.setName('rol_admin').setDescription('Rol de administradores militares').setRequired(false))
                 .addChannelOption(opt => opt.setName('canal_revision').setDescription('Canal de oficiales para revisar solicitudes').setRequired(false))
                 .addChannelOption(opt => opt.setName('canal_logs').setDescription('Canal de auditoría / logs').setRequired(false))
+                .addChannelOption(opt => opt.setName('canal_logs_economia').setDescription('Canal de Discord para auditoría y transacciones financieras').setRequired(false))
                 .addStringOption(opt => 
                     opt.setName('modo')
                         .setDescription('Modo de verificación')
@@ -147,6 +149,7 @@ module.exports = {
             const adminRole = interaction.options.getRole('rol_admin');
             const reviewChannel = interaction.options.getChannel('canal_revision');
             const logChannel = interaction.options.getChannel('canal_logs');
+            const ecoLogChannel = interaction.options.getChannel('canal_logs_economia');
             const modo = interaction.options.getString('modo');
 
             const updates = {};
@@ -159,7 +162,11 @@ module.exports = {
             if (modo) updates.verification_mode = modo;
 
             db.updateConfig(guildId, updates);
+            if (ecoLogChannel) {
+                economyDb.updateEconomySettings(guildId, { log_channel_id: ecoLogChannel.id });
+            }
             const currentCfg = db.getConfig(guildId);
+            const currentEco = economyDb.getEconomySettings(guildId);
 
             const embed = new EmbedBuilder()
                 .setColor(0x38e54d)
@@ -172,9 +179,10 @@ module.exports = {
                     { name: '🎖️ Rol de Oficiales (Comandos/Revisión)', value: formatRoleMentions(currentCfg.officer_role_id, '*Moderadores nativos*'), inline: true },
                     { name: '🛡️ Rol de Administradores', value: formatRoleMentions(currentCfg.admin_role_id, '*Administradores nativos*'), inline: true },
                     { name: '🔹 Canal de Oficiales (Revisión)', value: currentCfg.review_channel_id ? `<#${currentCfg.review_channel_id}>` : '*Sin asignar*', inline: true },
-                    { name: '🔹 Canal de Logs / Auditoría', value: currentCfg.log_channel_id ? `<#${currentCfg.log_channel_id}>` : '*Sin asignar*', inline: true }
+                    { name: '🔹 Canal Logs Verificación / Mod', value: currentCfg.log_channel_id ? `<#${currentCfg.log_channel_id}>` : '*Sin asignar*', inline: true },
+                    { name: '💰 Canal Logs de Economía', value: currentEco.log_channel_id ? `<#${currentEco.log_channel_id}>` : '*Sin asignar (Solo web)*', inline: true }
                 )
-                .setFooter({ text: 'También puedes modificar y seleccionar roles directamente desde el Dashboard Web.' });
+                .setFooter({ text: 'También puedes modificar y seleccionar canales directamente desde el Dashboard Web.' });
 
             return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         }

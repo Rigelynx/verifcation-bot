@@ -9,11 +9,24 @@ const {
     MessageFlags
 } = require('discord.js');
 const db = require('../../database/db');
+const economyDb = require('../../database/economyDb');
 const { handleStatusChange } = require('./verificationHandler');
 const { hasOfficerPermission } = require('./permissionHandler');
 const { hasAnyRole } = require('../utils/roleUtils');
+const { processShopPurchase, buildShopPanel } = require('../commands/tienda');
 
 async function handleInteraction(interaction, client, commands) {
+    // Sincronización automática de identidad del combatiente en el sistema contable
+    if (interaction.user) {
+        try {
+            economyDb.syncAccountUser(
+                interaction.user.id,
+                interaction.user.tag || interaction.user.username,
+                interaction.user.displayAvatarURL({ extension: 'png', size: 128 })
+            );
+        } catch (e) {}
+    }
+
     // 1. Manejo de Comandos Slash
     if (interaction.isChatInputCommand()) {
         const command = commands.get(interaction.commandName);
@@ -129,6 +142,242 @@ Para formalizar tu ingreso a la base militar:
             });
         }
 
+        // =====================================================
+        // BOTÓN: Registrarse en Convocatoria de Operación
+        // =====================================================
+        if (customId.startsWith('event_register_')) {
+            const eventId = parseInt(customId.replace('event_register_', ''), 10);
+            const username = interaction.user.tag || interaction.user.username;
+            const res = economyDb.registerUserForEvent(eventId, interaction.user.id, username);
+
+            if (!res.success) {
+                return interaction.reply({
+                    content: res.message,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const regEmbed = new EmbedBuilder()
+                .setColor(0x00b4d8)
+                .setTitle('🎖️ [INSCRIPCIÓN A OPERACIÓN REGISTRADA]')
+                .setDescription(`
+¡Atención combatiente! Has sido incorporado en la lista oficial de la operación militar.
+
+> 📍 **Misión:** \`${res.event ? res.event.name : `#${eventId}`}\`
+> 👤 **Recluta:** <@${interaction.user.id}> (\`${username}\`)
+> 🛡️ **Estado:** \`REGISTRADO EN CONVOCATORIA (LISTO PARA EL DESPLIEGUE)\`
+
+*Permanece atento para confirmar tu asistencia cuando el oficial abra el Pase de Lista.*
+                `)
+                .setFooter({ text: `Operación ID: #${eventId} • USMC Roster System` })
+                .setTimestamp();
+
+            return interaction.reply({
+                embeds: [regEmbed],
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        // =====================================================
+        // BOTÓN: Anular Registro de Convocatoria
+        // =====================================================
+        if (customId.startsWith('event_unregister_')) {
+            const eventId = parseInt(customId.replace('event_unregister_', ''), 10);
+            const res = economyDb.unregisterUserFromEvent(eventId, interaction.user.id);
+
+            return interaction.reply({
+                content: res.message,
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        // =====================================================
+        // BOTÓN: Confirmar Asistencia Presencial (Pase de Lista)
+        // =====================================================
+        if (customId.startsWith('event_confirm_')) {
+            const eventId = parseInt(customId.replace('event_confirm_', ''), 10);
+            const username = interaction.user.tag || interaction.user.username;
+            const res = economyDb.confirmAttendanceForEvent(eventId, interaction.user.id, username);
+
+            if (!res.success) {
+                return interaction.reply({
+                    content: res.message,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const confEmbed = new EmbedBuilder()
+                .setColor(0x38e54d)
+                .setTitle('✅ [ASISTENCIA CONFIRMADA // CLEARANCE DE PAGO]')
+                .setDescription(`
+¡Excelente trabajo, combatiente! Tu presencia en la operación militar ha sido validada.
+
+> 📍 **Operación:** \`${res.event ? res.event.name : `#${eventId}`}\`
+> 👤 **Soldado:** <@${interaction.user.id}>
+> 🛡️ **Estado:** \`ASISTENCIA PRESENCIAL CONFIRMADA (APTO PARA PAGO)\`
+
+*Podrás formalizar tu cobro tan pronto se libere la nómina militar.*
+                `)
+                .setFooter({ text: `Operación ID: #${eventId} • USMC Attendance System` })
+                .setTimestamp();
+
+            return interaction.reply({
+                embeds: [confEmbed],
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        // BOTÓN: Reclamar Paga Militar de Evento / Operación
+        if (customId.startsWith('claim_event_')) {
+            const eventId = parseInt(customId.replace('claim_event_', ''), 10);
+            const userRoleIds = interaction.member.roles.cache.map(r => r.id);
+            const res = economyDb.claimEventPayout(eventId, interaction.user.id, userRoleIds);
+
+            if (!res.success) {
+                return interaction.reply({
+                    content: res.message,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const settings = economyDb.getEconomySettings(interaction.guildId);
+            const sym = settings ? settings.currency_symbol : '$';
+
+            const claimEmbed = new EmbedBuilder()
+                .setColor(0x38e54d)
+                .setTitle('🎖️ [PAGA MILITAR ACREDITADA EXITOSAMENTE]')
+                .setDescription(`
+¡Enhorabuena, combatiente! Tu asistencia a la operación militar ha sido verificada y acreditada.
+
+> 💰 **Paga Base:** \`${sym}${res.baseReward.toLocaleString()}\`
+> 🎖️ **Escalafón Aplicado:** \`${res.bonusRole}\` (Multiplicador: x${res.multiplier})
+> 💵 **Total Cobrado:** \`${sym}${res.amount.toLocaleString()}\`
+> 💼 **Nuevo Saldo en Cartera:** \`${sym}${res.account.wallet.toLocaleString()}\`
+
+*El registro de haberes ha sido archivado en la tesorería militar.*
+                `)
+                .setFooter({ text: 'Sistema Autónomo de Pagos de Operaciones USMC' })
+                .setTimestamp();
+
+            return interaction.reply({
+                embeds: [claimEmbed],
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        // =====================================================
+        // BOTÓN: Reclamar Bono Militar desde Panel Táctico
+        // =====================================================
+        if (customId.startsWith('claim_bonus_panel_')) {
+            const panelId = parseInt(customId.replace('claim_bonus_panel_', ''), 10);
+            const userRoleIds = interaction.member ? interaction.member.roles.cache.map(r => r.id) : [];
+            const res = economyDb.claimPanelBonus(panelId, interaction.user.id, userRoleIds);
+
+            if (!res.success) {
+                return interaction.reply({
+                    content: res.message,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const settings = economyDb.getEconomySettings(interaction.guildId || 'GLOBAL');
+            const sym = settings ? settings.currency_symbol : '$';
+
+            const claimEmbed = new EmbedBuilder()
+                .setColor(0x38e54d)
+                .setTitle('🎖️ [ASIGNACIÓN DE BONO MILITAR ACREDITADA]')
+                .setDescription(`
+¡Enhorabuena, combatiente! Tu solicitud de cobro ha sido validada y transferida.
+
+> 💰 **Asignación Acreditada:** \`${sym}${res.amount.toLocaleString()}\`
+> 💼 **Nuevo Saldo en Cartera:** \`${sym}${res.account.wallet.toLocaleString()}\`
+> 🏦 **Patrimonio Total:** \`${sym}${(res.account.wallet + res.account.bank).toLocaleString()}\`
+> 📜 **Panel Militar:** \`${res.panel.title}\`
+> ⏱️ **Modalidad:** \`${res.panel.claim_mode === 'ONCE' ? 'Asignación Única' : 'Concesión Periódica'}\`
+
+*Firma de auditoría contable USMC generada.*
+                `)
+                .setFooter({ text: 'Tesorería Militar USMC • Asignaciones Extraordinarias' })
+                .setTimestamp();
+
+            return interaction.reply({
+                embeds: [claimEmbed],
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        // =====================================================
+        // BOTONES DE TIENDA: Compra directa con 1 clic
+        // =====================================================
+        if (customId.startsWith('buy_shop_')) {
+            const itemId = parseInt(customId.replace('buy_shop_', ''), 10);
+            return processShopPurchase(interaction, itemId);
+        }
+
+        // BOTÓN: Ver Mi Inventario desde el panel de la tienda
+        if (customId === 'btn_view_my_inventory') {
+            const guildId = interaction.guildId || 'GLOBAL';
+            const settings = economyDb.getEconomySettings(guildId);
+            const sym = settings.currency_symbol || '$';
+            const inventory = economyDb.getUserInventory(interaction.user.id);
+
+            if (inventory.length === 0) {
+                return interaction.reply({
+                    content: '🎒 Tu mochila táctica está vacía. Usa los botones o el menú desplegable de arriba para comprar equipamiento.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const invEmbed = new EmbedBuilder()
+                .setColor(0x38e54d)
+                .setTitle(`🎒 [EQUIPAMIENTO E INVENTARIO // ${interaction.user.tag.toUpperCase()}]`)
+                .setThumbnail(interaction.user.displayAvatarURL())
+                .setDescription('Lista de pertrechos, suministros e insignias en posesión:')
+                .setFooter({ text: 'Logística USMC' })
+                .setTimestamp();
+
+            for (const row of inventory) {
+                let extra = '';
+                if (row.roles_to_give && row.roles_to_give.length > 0) {
+                    extra += ` • Rango: ${row.roles_to_give.map(r => `<@&${r}>`).join(' ')}`;
+                }
+                invEmbed.addFields({
+                    name: `${row.icon || '🎖️'} ${row.name} (x${row.quantity})`,
+                    value: `*${row.description || 'Sin descripción'}*\n> 🏷️ Valor de catálogo: \`${sym}${row.price.toLocaleString()}\`${extra}`,
+                    inline: false
+                });
+            }
+
+            return interaction.reply({ embeds: [invEmbed], flags: MessageFlags.Ephemeral });
+        }
+
+        // BOTÓN: Ver Mi Saldo desde la tienda
+        if (customId === 'btn_view_shop_balance') {
+            const guildId = interaction.guildId || 'GLOBAL';
+            const settings = economyDb.getEconomySettings(guildId);
+            const sym = settings ? settings.currency_symbol : '$';
+            const acc = economyDb.getAccount(interaction.user.id, guildId);
+
+            const balEmbed = new EmbedBuilder()
+                .setColor(0x38e54d)
+                .setTitle(`💵 [ESTADO DE CUENTA // ${interaction.user.tag.toUpperCase()}]`)
+                .setDescription(`
+> 💵 **Cartera (Efectivo):** \`${sym}${acc.wallet.toLocaleString()}\`
+> 🏦 **Caja Fuerte (Banco):** \`${sym}${acc.bank.toLocaleString()}\`
+> 💎 **Patrimonio Neto:** \`${sym}${(acc.wallet + acc.bank).toLocaleString()}\`
+                `)
+                .setFooter({ text: 'Tesorería Militar USMC' });
+
+            return interaction.reply({ embeds: [balEmbed], flags: MessageFlags.Ephemeral });
+        }
+
+        // BOTÓN: Actualizar Catálogo de la Tienda
+        if (customId === 'btn_refresh_shop') {
+            const guildId = interaction.guildId || 'GLOBAL';
+            const panel = buildShopPanel(guildId);
+            return interaction.update(panel);
+        }
+
         // BOTÓN: Aprobar Solicitud en Canal de Oficiales
         if (customId.startsWith('approve_verify_')) {
             if (!hasOfficerPermission(interaction)) {
@@ -178,6 +427,16 @@ Para formalizar tu ingreso a la base militar:
 
             modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
             return interaction.showModal(modal);
+        }
+    }
+
+    // =====================================================
+    // 2.5. Manejo de Menú Desplegable de la Tienda
+    // =====================================================
+    if (interaction.isStringSelectMenu()) {
+        if (interaction.customId === 'select_buy_shop') {
+            const itemId = parseInt(interaction.values[0], 10);
+            return processShopPurchase(interaction, itemId);
         }
     }
 

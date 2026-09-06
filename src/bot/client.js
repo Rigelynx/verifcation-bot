@@ -1,7 +1,9 @@
-const { Client, GatewayIntentBits, Collection, REST, Routes, ActivityType } = require('discord.js');
+const { Client, GatewayIntentBits, Collection, REST, Routes, ActivityType, Events } = require('discord.js');
 const fs = require('fs');
 const path = require('path');
 const { handleInteraction } = require('./handlers/interactionHandler');
+const { initEventMonitoring, handleVoiceStateUpdate, handleChatMessage } = require('./handlers/eventTracker');
+const { initEconomyLogger } = require('./handlers/economyLogger');
 
 function createDiscordBot() {
     const client = new Client({
@@ -9,32 +11,31 @@ function createDiscordBot() {
             GatewayIntentBits.Guilds,
             GatewayIntentBits.GuildMembers,
             GatewayIntentBits.GuildMessages,
-            GatewayIntentBits.MessageContent
+            GatewayIntentBits.MessageContent,
+            GatewayIntentBits.GuildVoiceStates
         ]
     });
 
     client.commands = new Collection();
-    const commandFiles = [
-        'panel.js',
-        'datosUsuario.js',
-        'admin.js',
-        'moderacion.js'
-    ];
+    const commandsDir = path.join(__dirname, 'commands');
+    const commandFiles = fs.readdirSync(commandsDir).filter(file => file.endsWith('.js'));
 
     const slashCommandsList = [];
 
     for (const file of commandFiles) {
-        const filePath = path.join(__dirname, 'commands', file);
-        if (fs.existsSync(filePath)) {
+        const filePath = path.join(commandsDir, file);
+        try {
             const command = require(filePath);
             if ('data' in command && 'execute' in command) {
                 client.commands.set(command.data.name, command);
                 slashCommandsList.push(command.data.toJSON());
             }
+        } catch (e) {
+            console.error(`[Error cargando comando ${file}]:`, e.message);
         }
     }
 
-    client.once('ready', async () => {
+    client.once(Events.ClientReady, async () => {
         console.log(`\n==================================================`);
         console.log(`🎖️  [BOT USMC ONLINE]: Autenticado como ${client.user.tag}`);
         console.log(`🛡️  Base de Datos: SQLite Local activa (Host 50GB)`);
@@ -47,6 +48,12 @@ function createDiscordBot() {
             }],
             status: 'online'
         });
+
+        // Iniciar monitoreo continuo de presencia en eventos
+        initEventMonitoring(client);
+
+        // Iniciar logger de auditoría y transacciones contables
+        initEconomyLogger(client);
 
         // Registrar Comandos Slash
         try {
@@ -80,6 +87,14 @@ function createDiscordBot() {
 
     client.on('interactionCreate', async (interaction) => {
         await handleInteraction(interaction, client, client.commands);
+    });
+
+    client.on('voiceStateUpdate', (oldState, newState) => {
+        handleVoiceStateUpdate(oldState, newState);
+    });
+
+    client.on('messageCreate', (message) => {
+        handleChatMessage(message);
     });
 
     return client;
