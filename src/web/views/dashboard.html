@@ -503,7 +503,22 @@
                         </div>
                     </div>
 
+                    <!-- BANNER DE EDICIÓN DE BONO ESPECÍFICO -->
+                    <div id="bonus-panel-editing-banner" style="display: none; align-items: center; justify-content: space-between; background: rgba(56, 229, 77, 0.12); border: 1px solid #38e54d; padding: 10px 16px; border-radius: 4px; margin-bottom: 15px;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span style="font-size: 1.2rem;">✏️</span>
+                            <div>
+                                <span style="color: #38e54d; font-weight: bold; font-family: var(--font-tech); font-size: 0.95rem;" id="bonus-panel-editing-text">EDITANDO BONO MILITAR #1</span>
+                                <div style="color: #afffba; font-size: 0.8rem;" id="bonus-panel-editing-subtext">Modifica los campos y pulsa "GUARDAR PANEL" para actualizar este bono específico.</div>
+                            </div>
+                        </div>
+                        <button type="button" class="btn-retro" style="padding: 5px 12px; font-size: 0.75rem; border-color: #ffa500; color: #ffa500;" onclick="cancelEditingBonus()">
+                            ✖️ DESELECCIONAR (VOLVER A PRINCIPAL)
+                        </button>
+                    </div>
+
                     <form id="bonus-panel-form" onsubmit="event.preventDefault(); saveBonusConfig();" style="background: rgba(18, 32, 22, 0.4); border: 1px solid rgba(46, 82, 54, 0.5); padding: 20px; border-radius: 4px; margin-bottom: 30px;">
+                        <input type="hidden" id="bonus-panel-id" value="">
                         <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 15px;">
                             <div class="form-group">
                                 <label class="form-label">TÍTULO DEL PANEL MILITAR EN DISCORD:</label>
@@ -549,7 +564,7 @@
                                 </select>
                             </div>
                             <div style="display: flex; gap: 10px;">
-                                <button type="submit" class="btn-retro" style="flex: 1; padding: 10px 14px; font-size: 0.85rem;">
+                                <button type="submit" id="btn-save-bonus-config" class="btn-retro" style="flex: 1; padding: 10px 14px; font-size: 0.85rem;">
                                     💾 GUARDAR PANEL
                                 </button>
                                 <button type="button" class="btn-retro primary" style="flex: 1; padding: 10px 14px; font-size: 0.85rem;" onclick="deployBonusPanel()">
@@ -558,6 +573,128 @@
                             </div>
                         </div>
                     </form>
+
+                    <!-- ========================================================================= -->
+                    <!-- SECCIÓN: GESTIÓN DE BONOS CREADOS (CREAR / ELIMINAR / RESETEAR)           -->
+                    <!-- ========================================================================= -->
+                    <div style="margin-top: 25px; margin-bottom: 15px; border-left: 3px solid #38e54d; padding-left: 15px;">
+                        <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.15rem; margin-bottom: 4px; display: flex; align-items: center; gap: 8px;">
+                            <span>📋</span> REGISTRO DE BONOS MILITARES CREADOS
+                        </h4>
+                        <p style="color: #728c75; font-size: 0.85rem;">
+                            Cada bono cuenta con un ID único y un historial de reclamos totalmente independiente. Al crear un bono nuevo, los usuarios podrán cobrarlo aunque ya hayan cobrado bonos anteriores.
+                        </p>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+                        <button type="button" class="btn-retro primary" style="padding: 8px 16px; font-size: 0.85rem;" onclick="openCreateBonusModal()">
+                            ➕ CREAR NUEVO BONO MILITAR
+                        </button>
+                    </div>
+
+                    <div class="retro-table-wrapper" style="margin-bottom: 30px;">
+                        <table class="retro-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>TÍTULO</th>
+                                    <th>MONTO</th>
+                                    <th>MODALIDAD</th>
+                                    <th>RECLAMOS</th>
+                                    <th>DISTRIBUIDO</th>
+                                    <th>CANAL</th>
+                                    <th>ESTADO</th>
+                                    <th style="text-align: right;">ACCIONES</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bonus-panels-tbody">
+                                <tr><td colspan="9" style="text-align: center; color: #728c75;">Cargando bonos...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- MODAL CREAR NUEVO BONO -->
+                    <div id="create-bonus-modal" class="dossier-modal" style="display: none;">
+                        <div class="modal-content" style="max-width: 520px;">
+                            <div class="modal-header">
+                                <div class="modal-title">
+                                    <span>TESORERÍA // CREAR NUEVO BONO MILITAR</span>
+                                </div>
+                                <div class="modal-controls">
+                                    <button class="win-btn" onclick="closeCreateBonusModal()">X</button>
+                                </div>
+                            </div>
+                            <div class="modal-body">
+                                <form id="create-bonus-form" onsubmit="event.preventDefault(); submitCreateBonus();">
+                                    <div class="form-group">
+                                        <label class="form-label">TÍTULO DEL BONO:</label>
+                                        <input type="text" id="create-bonus-title" class="retro-input" placeholder="Ej: Bono Semana 2 / Bono Navidad" required>
+                                    </div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                                        <div class="form-group">
+                                            <label class="form-label">MONTO ($):</label>
+                                            <input type="number" id="create-bonus-amount" class="retro-input" value="500" min="1" required>
+                                        </div>
+                                        <div class="form-group">
+                                            <label class="form-label">MODALIDAD:</label>
+                                            <select id="create-bonus-mode" class="retro-select" onchange="toggleCreateBonusCooldown()">
+                                                <option value="ONCE">🔒 Una sola vez por soldado</option>
+                                                <option value="COOLDOWN">⏱️ Con Cooldown periódico</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="form-group" id="group-create-bonus-cooldown" style="display: none;">
+                                        <label class="form-label">COOLDOWN (HORAS):</label>
+                                        <input type="number" id="create-bonus-cooldown" class="retro-input" value="24" min="1">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">DESCRIPCIÓN O COMUNICADO (OPCIONAL):</label>
+                                        <textarea id="create-bonus-desc" class="retro-input" rows="2" style="resize: vertical;" placeholder="El Estado Mayor USMC autoriza una asignación financiera especial..."></textarea>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">DESPLEGAR INMEDIATAMENTE EN DISCORD (OPCIONAL):</label>
+                                        <select id="create-bonus-channel" class="retro-select">
+                                            <option value="">-- NO PUBLICAR AHORA (SOLO GUARDAR EN EL REGISTRO) --</option>
+                                        </select>
+                                    </div>
+                                    <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 15px;">
+                                        <button type="button" class="btn-retro danger" onclick="closeCreateBonusModal()">CANCELAR</button>
+                                        <button type="submit" class="btn-retro primary">➕ CREAR BONO</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MODAL DESPLEGAR BONO ESPECÍFICO EN DISCORD -->
+                    <div id="deploy-bonus-modal" class="dossier-modal" style="display: none;">
+                        <div class="modal-content" style="max-width: 480px;">
+                            <div class="modal-header">
+                                <div class="modal-title">
+                                    <span>TESORERÍA // DESPLEGAR BONO EN DISCORD</span>
+                                </div>
+                                <div class="modal-controls">
+                                    <button class="win-btn" onclick="closeDeployBonusModal()">X</button>
+                                </div>
+                            </div>
+                            <div class="modal-body">
+                                <p style="color: #afffba; font-size: 0.85rem; margin-bottom: 15px;" id="deploy-bonus-modal-desc">
+                                    Selecciona el canal militar de texto donde se publicará el panel oficial con el botón interactivo de cobro.
+                                </p>
+                                <input type="hidden" id="deploy-bonus-modal-panel-id" value="">
+                                <div class="form-group">
+                                    <label class="form-label">CANAL DE TEXTO DESTINO:</label>
+                                    <select id="deploy-bonus-modal-channel" class="retro-select">
+                                        <option value="">-- SELECCIONAR CANAL DE TEXTO --</option>
+                                    </select>
+                                </div>
+                                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 15px;">
+                                    <button type="button" class="btn-retro danger" onclick="closeDeployBonusModal()">CANCELAR</button>
+                                    <button type="button" class="btn-retro primary" onclick="submitDeployBonusModal()">🚀 DESPLEGAR AHORA</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
                     <!-- TABLA Y BUSCADOR DE CUENTAS FINANCIERAS -->
                     <div style="margin-top: 25px; border-left: 3px solid var(--usmc-gold); padding-left: 15px;">
@@ -1765,6 +1902,8 @@
                 { id: 'picker-review-channel', defaultText: '-- SELECCIONAR CANAL DE TEXTO --' },
                 { id: 'picker-log-channel', defaultText: '-- SELECCIONAR CANAL DE TEXTO --' },
                 { id: 'bonus-panel-channel', defaultText: '-- SELECCIONAR CANAL DE TEXTO --' },
+                { id: 'create-bonus-channel', defaultText: '-- NO PUBLICAR AHORA (SOLO GUARDAR EN EL REGISTRO) --' },
+                { id: 'deploy-bonus-modal-channel', defaultText: '-- SELECCIONAR CANAL DE TEXTO --' },
                 { id: 'picker-economy-log-channel', defaultText: '-- DESACTIVADO (SOLO PANEL WEB) --' },
                 { id: 'audit-log-channel-picker', defaultText: '-- DESACTIVADO (SOLO PANEL WEB) --' }
             ];
@@ -2139,6 +2278,7 @@
                     const data = await res.json();
                     currentBonusData = data;
                     renderBonusSettings(data.panel, data.stats);
+                    renderBonusPanelsTable();
                 }
             } catch (err) {
                 console.error('[Error cargando bonos]:', err);
@@ -2147,6 +2287,9 @@
 
         function renderBonusSettings(panel, stats) {
             if (!panel) return;
+            const elId = document.getElementById('bonus-panel-id');
+            if (elId) elId.value = panel.id || '';
+
             const elTitle = document.getElementById('bonus-panel-title');
             if (elTitle) elTitle.value = panel.title || '';
             const elAmt = document.getElementById('bonus-panel-amount');
@@ -2183,6 +2326,22 @@
             }
         }
 
+        function cancelEditingBonus() {
+            TerminalFX.playKeyClick();
+            const elId = document.getElementById('bonus-panel-id');
+            if (elId) elId.value = '';
+
+            const banner = document.getElementById('bonus-panel-editing-banner');
+            if (banner) banner.style.display = 'none';
+
+            const btnSave = document.getElementById('btn-save-bonus-config');
+            if (btnSave) btnSave.innerHTML = '💾 GUARDAR PANEL';
+
+            if (currentBonusData && currentBonusData.panel) {
+                renderBonusSettings(currentBonusData.panel, currentBonusData.stats);
+            }
+        }
+
         function toggleBonusCooldownInput() {
             const modeEl = document.getElementById('bonus-panel-mode');
             if (!modeEl) return;
@@ -2194,6 +2353,7 @@
         }
 
         async function saveBonusConfig() {
+            const panelId = document.getElementById('bonus-panel-id')?.value;
             const title = document.getElementById('bonus-panel-title').value.trim();
             const amount = parseInt(document.getElementById('bonus-panel-amount').value, 10);
             const description = document.getElementById('bonus-panel-desc').value.trim();
@@ -2204,6 +2364,20 @@
             const button_emoji = document.getElementById('bonus-panel-btn-emoji').value.trim();
             const channel_id = document.getElementById('bonus-panel-channel').value;
 
+            const payload = {
+                title,
+                amount,
+                description,
+                claim_mode,
+                cooldown_seconds,
+                button_label,
+                button_emoji,
+                channel_id
+            };
+            if (panelId) {
+                payload.id = parseInt(panelId, 10);
+            }
+
             try {
                 const res = await fetch('/api/admin/economy/bonus/config', {
                     method: 'POST',
@@ -2211,22 +2385,13 @@
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${adminToken}`
                     },
-                    body: JSON.stringify({
-                        title,
-                        amount,
-                        description,
-                        claim_mode,
-                        cooldown_seconds,
-                        button_label,
-                        button_emoji,
-                        channel_id
-                    })
+                    body: JSON.stringify(payload)
                 });
 
                 if (res.ok) {
                     TerminalFX.playBeepSuccess();
-                    alert("CONFIGURACIÓN DEL PANEL DE BONO ACTUALIZADA CON ÉXITO.");
-                    loadBonusData();
+                    alert(`CONFIGURACIÓN DEL PANEL DE BONO ${panelId ? '#' + panelId : ''} ACTUALIZADA CON ÉXITO.`);
+                    await loadBonusData();
                 } else {
                     TerminalFX.playBeepError();
                     alert("ERROR AL GUARDAR CONFIGURACIÓN DE BONOS.");
@@ -2243,6 +2408,8 @@
                 return;
             }
 
+            const panelId = document.getElementById('bonus-panel-id')?.value || (currentBonusData?.panel?.id);
+
             try {
                 TerminalFX.playKeyClick();
                 await saveBonusConfig();
@@ -2253,14 +2420,14 @@
                         'Content-Type': 'application/json',
                         'Authorization': `Bearer ${adminToken}`
                     },
-                    body: JSON.stringify({ channelId })
+                    body: JSON.stringify({ channelId, panelId: panelId ? parseInt(panelId, 10) : undefined })
                 });
 
                 const data = await res.json();
                 if (res.ok && data.success) {
                     TerminalFX.playBeepSuccess();
-                    alert("¡PANEL DE BONO MILITAR DESPLEGADO EXITOSAMENTE EN DISCORD!");
-                    loadBonusData();
+                    alert(`¡PANEL DE BONO MILITAR ${panelId ? '#' + panelId : ''} DESPLEGADO EXITOSAMENTE EN DISCORD!`);
+                    await loadBonusData();
                 } else {
                     TerminalFX.playBeepError();
                     alert("ERROR AL DESPLEGAR PANEL: " + (data.message || 'Error desconocido.'));
@@ -2331,6 +2498,293 @@
             } catch (err) {
                 alert(err.message);
             }
+        }
+
+        // =========================================================================
+        // MÓDULO JAVASCRIPT: GESTIÓN DE BONOS (CREAR / ELIMINAR / RESETEAR)
+        // =========================================================================
+
+        function renderBonusPanelsTable() {
+            const tbody = document.getElementById('bonus-panels-tbody');
+            if (!tbody || !currentBonusData) return;
+            const panels = currentBonusData.panels || [];
+            const sym = globalEcoSettings.currency_symbol || '$';
+
+            if (panels.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #728c75;">No hay bonos militares creados. Usa el botón <strong>"➕ CREAR NUEVO BONO"</strong> para comenzar.</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = panels.map(p => {
+                const statusBtn = p.is_active
+                    ? `<button type="button" class="btn-retro" style="padding: 2px 7px; font-size: 0.72rem; border-color: #38e54d; color: #38e54d;" onclick="toggleBonusActive(${p.id}, true)" title="Haz clic para suspender este bono">🟢 ACTIVO</button>`
+                    : `<button type="button" class="btn-retro" style="padding: 2px 7px; font-size: 0.72rem; border-color: #ff4444; color: #ff4444;" onclick="toggleBonusActive(${p.id}, false)" title="Haz clic para activar este bono">🔴 PAUSADO</button>`;
+                const modeLabel = p.claim_mode === 'ONCE' ? '🔒 Única vez' : `⏱️ Cada ${Math.round((p.cooldown_seconds || 86400) / 3600)}h`;
+                const channelLabel = p.channel_id ? `<span style="color: #afffba; font-family: monospace;">#${p.channel_id}</span>` : '<span style="color: #728c75;">Sin canal</span>';
+                const safeTitle = (p.title || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+                return `
+                    <tr>
+                        <td style="color: var(--usmc-gold); font-weight: bold;">#${p.id}</td>
+                        <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${p.title}">${p.title}</td>
+                        <td style="color: #38e54d; font-weight: bold;">${sym}${(p.amount || 0).toLocaleString()}</td>
+                        <td>${modeLabel}</td>
+                        <td style="text-align: center; font-weight: bold;">${p.total_claims || 0}</td>
+                        <td style="color: #ffa500;">${sym}${(p.total_distributed || 0).toLocaleString()}</td>
+                        <td>${channelLabel}</td>
+                        <td>${statusBtn}</td>
+                        <td style="text-align: right;">
+                            <div style="display: flex; gap: 4px; justify-content: flex-end; flex-wrap: wrap;">
+                                <button type="button" class="btn-retro" style="padding: 3px 7px; font-size: 0.72rem;" onclick="editBonusInForm(${p.id})" title="Cargar en el editor superior">
+                                    ✏️ EDITAR
+                                </button>
+                                <button type="button" class="btn-retro primary" style="padding: 3px 7px; font-size: 0.72rem;" onclick="openDeployBonusModal(${p.id}, '${safeTitle}')" title="Desplegar directamente en un canal de Discord">
+                                    🚀 DESPLEGAR
+                                </button>
+                                <button type="button" class="btn-retro" style="padding: 3px 7px; font-size: 0.72rem; border-color: #ffa500; color: #ffa500;" onclick="resetBonusClaims(${p.id}, '${safeTitle}')"
+                                    title="Reiniciar reclamos para que todos puedan volver a cobrar">
+                                    🔄 RESET
+                                </button>
+                                <button type="button" class="btn-retro danger" style="padding: 3px 7px; font-size: 0.72rem;" onclick="deleteBonus(${p.id}, '${safeTitle}')" title="Eliminar bono y todo su historial permanentemente">
+                                    🗑️ BORRAR
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function openCreateBonusModal() {
+            TerminalFX.playKeyClick();
+            document.getElementById('create-bonus-title').value = '';
+            document.getElementById('create-bonus-amount').value = 500;
+            document.getElementById('create-bonus-mode').value = 'ONCE';
+            document.getElementById('create-bonus-cooldown').value = 24;
+            document.getElementById('create-bonus-desc').value = '';
+            const elChan = document.getElementById('create-bonus-channel');
+            if (elChan) elChan.value = '';
+            toggleCreateBonusCooldown();
+            document.getElementById('create-bonus-modal').style.display = 'flex';
+        }
+
+        function closeCreateBonusModal() {
+            document.getElementById('create-bonus-modal').style.display = 'none';
+        }
+
+        function toggleCreateBonusCooldown() {
+            const mode = document.getElementById('create-bonus-mode').value;
+            document.getElementById('group-create-bonus-cooldown').style.display = mode === 'COOLDOWN' ? 'block' : 'none';
+        }
+
+        async function submitCreateBonus() {
+            const title = document.getElementById('create-bonus-title').value.trim();
+            const amount = parseInt(document.getElementById('create-bonus-amount').value, 10);
+            const claim_mode = document.getElementById('create-bonus-mode').value;
+            const hours = parseInt(document.getElementById('create-bonus-cooldown').value, 10) || 24;
+            const description = document.getElementById('create-bonus-desc').value.trim();
+            const channelId = document.getElementById('create-bonus-channel')?.value;
+
+            if (!title) { alert('Debes ingresar un título para el bono.'); return; }
+            if (!amount || amount < 1) { alert('El monto debe ser mayor a 0.'); return; }
+
+            try {
+                const res = await fetch('/api/admin/economy/bonus/create', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify({
+                        title,
+                        amount,
+                        claim_mode,
+                        cooldown_seconds: hours * 3600,
+                        description: description || 'Asignación financiera especial autorizada por el Estado Mayor USMC.',
+                        is_active: true
+                    })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    TerminalFX.playBeepSuccess();
+
+                    // Si se seleccionó canal para desplegar de inmediato
+                    if (channelId) {
+                        const depRes = await fetch('/api/admin/economy/bonus/deploy-panel', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${adminToken}`
+                            },
+                            body: JSON.stringify({ channelId, panelId: data.panel.id })
+                        });
+                        const depData = await depRes.json().catch(() => ({}));
+                        if (depRes.ok && depData.success) {
+                            alert(`¡BONO MILITAR #${data.panel.id} CREADO Y PUBLICADO EN DISCORD EXITOSAMENTE!`);
+                        } else {
+                            alert(`¡BONO MILITAR #${data.panel.id} CREADO!\n\nAviso: No se pudo publicar automáticamente en Discord: ${depData.message || 'Error de canal'}`);
+                        }
+                    } else {
+                        alert(`¡BONO MILITAR #${data.panel.id} CREADO CON ÉXITO!\n\nCada soldado puede cobrarlo de forma independiente sin conflicto con bonos anteriores.\nPuedes desplegarlo usando el botón "🚀 DESPLEGAR" de la lista.`);
+                    }
+
+                    closeCreateBonusModal();
+                    await loadBonusData();
+                } else {
+                    TerminalFX.playBeepError();
+                    alert('ERROR AL CREAR BONO: ' + (data.message || 'Error desconocido.'));
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        function openDeployBonusModal(panelId, title) {
+            TerminalFX.playKeyClick();
+            document.getElementById('deploy-bonus-modal-panel-id').value = panelId;
+            const desc = document.getElementById('deploy-bonus-modal-desc');
+            if (desc) desc.textContent = `Desplegar el bono #${panelId} ("${title}") con botón interactivo de cobro en el canal seleccionado:`;
+            document.getElementById('deploy-bonus-modal').style.display = 'flex';
+        }
+
+        function closeDeployBonusModal() {
+            document.getElementById('deploy-bonus-modal').style.display = 'none';
+        }
+
+        async function submitDeployBonusModal() {
+            const panelId = document.getElementById('deploy-bonus-modal-panel-id').value;
+            const channelId = document.getElementById('deploy-bonus-modal-channel').value;
+
+            if (!channelId) {
+                alert("Debes seleccionar un canal militar de texto.");
+                return;
+            }
+
+            try {
+                TerminalFX.playKeyClick();
+                const res = await fetch('/api/admin/economy/bonus/deploy-panel', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify({ channelId, panelId: parseInt(panelId, 10) })
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    TerminalFX.playBeepSuccess();
+                    alert(`¡PANEL DE BONO MILITAR #${panelId} DESPLEGADO EXITOSAMENTE EN DISCORD!`);
+                    closeDeployBonusModal();
+                    await loadBonusData();
+                } else {
+                    TerminalFX.playBeepError();
+                    alert("ERROR AL DESPLEGAR PANEL: " + (data.message || 'Error desconocido.'));
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function toggleBonusActive(id, currentActive) {
+            try {
+                TerminalFX.playKeyClick();
+                const res = await fetch('/api/admin/economy/bonus/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${adminToken}`
+                    },
+                    body: JSON.stringify({ id, is_active: !currentActive })
+                });
+
+                if (res.ok) {
+                    TerminalFX.playBeepSuccess();
+                    await loadBonusData();
+                } else {
+                    TerminalFX.playBeepError();
+                    alert('No se pudo cambiar el estado del bono.');
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function deleteBonus(id, title) {
+            if (!confirm(`⚠️ ¿ELIMINAR BONO #${id} "${title}"?\n\nEsto eliminará el bono Y todo su historial de reclamos permanentemente.\nLos fondos ya concedidos NO se revierten.`)) return;
+
+            try {
+                TerminalFX.playKeyClick();
+                const res = await fetch(`/api/admin/economy/bonus/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    TerminalFX.playBeepSuccess();
+                    alert(data.message || `Bono #${id} eliminado.`);
+                    // Si estábamos editando este bono, salir del modo edición
+                    if (document.getElementById('bonus-panel-id')?.value == id) {
+                        cancelEditingBonus();
+                    }
+                    await loadBonusData();
+                } else {
+                    TerminalFX.playBeepError();
+                    alert('ERROR: ' + (data.message || 'No se pudo eliminar.'));
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        async function resetBonusClaims(id, title) {
+            if (!confirm(`🔄 ¿REINICIAR RECLAMOS del bono #${id} "${title}"?\n\nTodos los soldados podrán volver a reclamar este bono sin importar cuándo lo hayan cobrado antes.`)) return;
+
+            try {
+                TerminalFX.playKeyClick();
+                const res = await fetch(`/api/admin/economy/bonus/${id}/reset-claims`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+
+                const data = await res.json();
+                if (res.ok && data.success) {
+                    TerminalFX.playBeepSuccess();
+                    alert(data.message || `Reclamos del bono #${id} reiniciados.`);
+                    await loadBonusData();
+                } else {
+                    TerminalFX.playBeepError();
+                    alert('ERROR: ' + (data.message || 'No se pudieron reiniciar.'));
+                }
+            } catch (err) {
+                alert(err.message);
+            }
+        }
+
+        function editBonusInForm(panelId) {
+            if (!currentBonusData || !currentBonusData.panels) return;
+            const panel = currentBonusData.panels.find(p => p.id === panelId);
+            if (!panel) { alert('Bono no encontrado.'); return; }
+
+            TerminalFX.playKeyClick();
+            renderBonusSettings(panel, {
+                totalClaims: panel.total_claims || 0,
+                totalDistributed: panel.total_distributed || 0
+            });
+
+            // Activar banner de edición
+            const banner = document.getElementById('bonus-panel-editing-banner');
+            if (banner) banner.style.display = 'flex';
+            const txt = document.getElementById('bonus-panel-editing-text');
+            if (txt) txt.textContent = `EDITANDO BONO MILITAR #${panel.id} — "${panel.title}"`;
+            const btnSave = document.getElementById('btn-save-bonus-config');
+            if (btnSave) btnSave.innerHTML = `💾 GUARDAR CAMBIOS (BONO #${panel.id})`;
+
+            // Scroll hacia el formulario
+            const form = document.getElementById('bonus-panel-form');
+            if (form) form.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
 
         // =========================================================================

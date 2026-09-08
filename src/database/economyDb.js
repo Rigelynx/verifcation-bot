@@ -1602,15 +1602,37 @@ function getEventRegistrations(eventId, includeExpelled = false) {
 // PANELES Y GESTIÓN DE BONOS MILITARES (INTERACTIVOS CON BOTÓN)
 // =========================================================================
 
+function getAllBonusPanels(guildId = 'GLOBAL') {
+    const panels = db.prepare("SELECT * FROM economy_bonus_panels WHERE (guild_id = ? OR guild_id = 'GLOBAL') ORDER BY id DESC").all(guildId);
+    return panels.map(p => {
+        const stats = db.prepare('SELECT COUNT(*) as claims, COALESCE(SUM(amount), 0) as total FROM economy_bonus_claims WHERE panel_id = ?').get(p.id);
+        return {
+            ...p,
+            required_roles: JSON.parse(p.required_roles || '[]'),
+            total_claims: stats ? stats.claims : 0,
+            total_distributed: stats ? stats.total : 0
+        };
+    });
+}
+
+function getBonusPanelById(panelId) {
+    const panel = db.prepare('SELECT * FROM economy_bonus_panels WHERE id = ?').get(panelId);
+    if (!panel) return null;
+    return {
+        ...panel,
+        required_roles: JSON.parse(panel.required_roles || '[]')
+    };
+}
+
 function getBonusPanel(guildId = 'GLOBAL') {
-    let stmt = db.prepare('SELECT * FROM economy_bonus_panels WHERE guild_id = ? ORDER BY id DESC LIMIT 1');
+    let stmt = db.prepare("SELECT * FROM economy_bonus_panels WHERE (guild_id = ? OR guild_id = 'GLOBAL') AND is_active = 1 ORDER BY id DESC LIMIT 1");
     let panel = stmt.get(guildId);
     if (!panel) {
-        db.prepare(`
-            INSERT INTO economy_bonus_panels (guild_id, title, description, amount, claim_mode, cooldown_seconds, button_label, button_emoji, required_roles, is_active)
-            VALUES (?, '🎖️ [BONO MILITAR EXTRAORDINARIO // ASIGNACIÓN DE MANDO]', 'El Estado Mayor de la Base USMC ha autorizado una asignación financiera especial para el personal militar en servicio activo.', 500, 'ONCE', 86400, 'RECLAMAR BONO MILITAR', '🎁', '[]', 1)
-        `).run(guildId);
-        panel = stmt.get(guildId);
+        let stmtAny = db.prepare("SELECT * FROM economy_bonus_panels WHERE (guild_id = ? OR guild_id = 'GLOBAL') ORDER BY id DESC LIMIT 1");
+        panel = stmtAny.get(guildId);
+    }
+    if (!panel) {
+        return createBonusPanel(guildId, {});
     }
     return {
         ...panel,
@@ -1618,8 +1640,37 @@ function getBonusPanel(guildId = 'GLOBAL') {
     };
 }
 
+function createBonusPanel(guildId = 'GLOBAL', data = {}) {
+    const stmt = db.prepare(`
+        INSERT INTO economy_bonus_panels (
+            guild_id, title, description, amount, claim_mode, cooldown_seconds,
+            button_label, button_emoji, channel_id, message_id, required_roles, is_active
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    const info = stmt.run(
+        guildId,
+        data.title || '🎖️ [BONO MILITAR EXTRAORDINARIO // ASIGNACIÓN DE MANDO]',
+        data.description || 'El Estado Mayor de la Base USMC ha autorizado una asignación financiera especial para el personal militar en servicio activo.',
+        data.amount !== undefined ? parseInt(data.amount, 10) : 500,
+        data.claim_mode || 'ONCE',
+        data.cooldown_seconds !== undefined ? parseInt(data.cooldown_seconds, 10) : 86400,
+        data.button_label || 'RECLAMAR BONO MILITAR',
+        data.button_emoji || '🎁',
+        data.channel_id || '',
+        data.message_id || '',
+        JSON.stringify(Array.isArray(data.required_roles) ? data.required_roles : []),
+        data.is_active !== undefined ? (data.is_active ? 1 : 0) : 1
+    );
+
+    return getBonusPanelById(info.lastInsertRowid);
+}
+
 function saveBonusPanel(guildId = 'GLOBAL', data = {}) {
-    getBonusPanel(guildId);
+    const panelId = data.id || (getBonusPanel(guildId)?.id);
+    if (!panelId) return createBonusPanel(guildId, data);
+
     const fields = [];
     const values = [];
     const allowed = ['title', 'description', 'amount', 'claim_mode', 'cooldown_seconds', 'button_label', 'button_emoji', 'channel_id', 'message_id', 'is_active'];
@@ -1627,7 +1678,7 @@ function saveBonusPanel(guildId = 'GLOBAL', data = {}) {
     for (const [k, v] of Object.entries(data)) {
         if (allowed.includes(k)) {
             fields.push(`${k} = ?`);
-            values.push(v);
+            values.push(k === 'is_active' ? (v ? 1 : 0) : v);
         }
     }
 
@@ -1638,11 +1689,25 @@ function saveBonusPanel(guildId = 'GLOBAL', data = {}) {
 
     if (fields.length > 0) {
         fields.push('updated_at = CURRENT_TIMESTAMP');
-        values.push(guildId);
-        const query = `UPDATE economy_bonus_panels SET ${fields.join(', ')} WHERE guild_id = ?`;
+        values.push(panelId);
+        const query = `UPDATE economy_bonus_panels SET ${fields.join(', ')} WHERE id = ?`;
         db.prepare(query).run(...values);
     }
-    return getBonusPanel(guildId);
+    return getBonusPanelById(panelId);
+}
+
+function deleteBonusPanel(panelId) {
+    const tx = db.transaction(() => {
+        db.prepare('DELETE FROM economy_bonus_claims WHERE panel_id = ?').run(panelId);
+        db.prepare('DELETE FROM economy_bonus_panels WHERE id = ?').run(panelId);
+    });
+    tx();
+    return true;
+}
+
+function resetBonusClaims(panelId) {
+    const info = db.prepare('DELETE FROM economy_bonus_claims WHERE panel_id = ?').run(panelId);
+    return { success: true, deletedClaims: info.changes };
 }
 
 function claimPanelBonus(panelId, discordId, memberRoles = []) {
@@ -1747,8 +1812,17 @@ function giveMassBonus(amount, reason = '', issuerTag = 'Mando USMC') {
     return { count: info.changes, amount: num };
 }
 
-function getBonusStats(guildId = 'GLOBAL') {
-    const panel = getBonusPanel(guildId);
+function getBonusStats(guildId = 'GLOBAL', panelId = null) {
+    const panel = panelId ? getBonusPanelById(panelId) : getBonusPanel(guildId);
+    if (!panel) {
+        return {
+            panel: null,
+            totalClaims: 0,
+            totalDistributed: 0,
+            recentClaims: []
+        };
+    }
+
     const countRow = db.prepare('SELECT COUNT(*) as total_claims, COALESCE(SUM(amount), 0) as total_distributed FROM economy_bonus_claims WHERE panel_id = ?').get(panel.id);
     const recent = db.prepare(`
         SELECT c.*, COALESCE(NULLIF(a.username, ''), c.discord_id) as username, a.avatar
@@ -1817,8 +1891,13 @@ module.exports = {
     getCommandPermissions,
     updateCommandPermission,
     isCommandAllowed,
+    getAllBonusPanels,
+    getBonusPanelById,
     getBonusPanel,
+    createBonusPanel,
     saveBonusPanel,
+    deleteBonusPanel,
+    resetBonusClaims,
     claimPanelBonus,
     giveBonus,
     giveMassBonus,

@@ -381,14 +381,27 @@ function createWebServer(discordClient) {
     app.get('/api/admin/economy/bonus', requireAdmin, (req, res) => {
         try {
             const guildId = process.env.GUILD_ID || 'GLOBAL';
-            const stats = economyDb.getBonusStats(guildId);
-            res.json({ success: true, stats, panel: stats.panel });
+            const panelId = req.query.panelId ? parseInt(req.query.panelId, 10) : null;
+            const stats = economyDb.getBonusStats(guildId, panelId);
+            const panels = economyDb.getAllBonusPanels(guildId);
+            res.json({ success: true, stats, panel: stats.panel, panels });
         } catch (e) {
             res.status(500).json({ success: false, message: e.message });
         }
     });
 
-    // Guardar configuración del panel de bonos
+    // Crear nuevo bono militar
+    app.post('/api/admin/economy/bonus/create', requireAdmin, (req, res) => {
+        try {
+            const guildId = process.env.GUILD_ID || 'GLOBAL';
+            const created = economyDb.createBonusPanel(guildId, req.body);
+            res.json({ success: true, panel: created, message: 'Nuevo bono militar creado con éxito.' });
+        } catch (e) {
+            res.status(500).json({ success: false, message: e.message });
+        }
+    });
+
+    // Guardar/Actualizar configuración del panel de bonos
     app.post('/api/admin/economy/bonus/config', requireAdmin, (req, res) => {
         try {
             const guildId = process.env.GUILD_ID || 'GLOBAL';
@@ -399,11 +412,33 @@ function createWebServer(discordClient) {
         }
     });
 
+    // Eliminar un bono militar
+    app.delete('/api/admin/economy/bonus/:id', requireAdmin, (req, res) => {
+        try {
+            const id = parseInt(req.params.id, 10);
+            economyDb.deleteBonusPanel(id);
+            res.json({ success: true, message: `Bono militar #${id} eliminado con éxito.` });
+        } catch (e) {
+            res.status(500).json({ success: false, message: e.message });
+        }
+    });
+
+    // Reiniciar reclamos de un bono militar
+    app.post('/api/admin/economy/bonus/:id/reset-claims', requireAdmin, (req, res) => {
+        try {
+            const id = parseInt(req.params.id, 10);
+            const result = economyDb.resetBonusClaims(id);
+            res.json({ success: true, message: `Reclamos del bono #${id} reiniciados. ${result.deletedClaims} registros limpiados.` });
+        } catch (e) {
+            res.status(500).json({ success: false, message: e.message });
+        }
+    });
+
     // Desplegar panel táctico de bonos en Discord
     app.post('/api/admin/economy/bonus/deploy-panel', requireAdmin, async (req, res) => {
         try {
             const guildId = process.env.GUILD_ID || 'GLOBAL';
-            const { channelId } = req.body;
+            const { channelId, panelId } = req.body;
             const targetChannelId = channelId || req.body.channel_id;
 
             if (!targetChannelId) {
@@ -419,19 +454,23 @@ function createWebServer(discordClient) {
                 return res.status(400).json({ success: false, message: 'Canal de Discord no encontrado o no es de texto.' });
             }
 
-            const panel = economyDb.getBonusPanel(guildId);
+            const panel = panelId ? economyDb.getBonusPanelById(parseInt(panelId, 10)) : economyDb.getBonusPanel(guildId);
+            if (!panel) {
+                return res.status(404).json({ success: false, message: 'Bono militar no encontrado.' });
+            }
             const settings = economyDb.getEconomySettings(guildId);
             const msgPayload = buildBonusPanelMessage(panel, settings);
 
             const sentMsg = await channel.send(msgPayload);
             economyDb.saveBonusPanel(guildId, {
+                id: panel.id,
                 channel_id: channel.id,
                 message_id: sentMsg.id
             });
 
             res.json({
                 success: true,
-                message: `Panel militar desplegado exitosamente en #${channel.name}.`,
+                message: `Panel militar #${panel.id} desplegado exitosamente en #${channel.name}.`,
                 messageId: sentMsg.id,
                 channelId: channel.id
             });

@@ -64,6 +64,38 @@ module.exports = {
                         .addChannelTypes(ChannelType.GuildText)
                         .setRequired(false)
                 )
+                .addIntegerOption(opt =>
+                    opt.setName('id')
+                        .setDescription('ID del bono a desplegar (por defecto el más reciente o activo)')
+                        .setMinValue(1)
+                        .setRequired(false)
+                )
+        )
+        .addSubcommand(sub =>
+            sub.setName('crear')
+                .setDescription('Crea un nuevo bono militar con ID único para que todos puedan reclamar (Oficiales)')
+                .addIntegerOption(opt => opt.setName('monto').setDescription('Monto en créditos').setMinValue(1).setRequired(true))
+                .addStringOption(opt => opt.setName('titulo').setDescription('Título táctico del bono').setRequired(true))
+                .addStringOption(opt => opt.setName('descripcion').setDescription('Descripción o comunicado').setRequired(false))
+                .addStringOption(opt => opt.setName('modo').setDescription('Modalidad de reclamo').addChoices(
+                    { name: 'Una sola vez (ONCE)', value: 'ONCE' },
+                    { name: 'Con Cooldown periódico', value: 'COOLDOWN' }
+                ).setRequired(false))
+                .addIntegerOption(opt => opt.setName('horas_cooldown').setDescription('Horas de espera si es con cooldown (default: 24h)').setMinValue(1).setRequired(false))
+        )
+        .addSubcommand(sub =>
+            sub.setName('eliminar')
+                .setDescription('Elimina un bono militar y su historial de reclamos (Oficiales)')
+                .addIntegerOption(opt => opt.setName('id').setDescription('ID del bono militar a eliminar').setMinValue(1).setRequired(true))
+        )
+        .addSubcommand(sub =>
+            sub.setName('reset_reclamos')
+                .setDescription('Reinicia los reclamos de un bono para que todos los soldados puedan volver a cobrarlo (Oficiales)')
+                .addIntegerOption(opt => opt.setName('id').setDescription('ID del bono militar a reiniciar').setMinValue(1).setRequired(true))
+        )
+        .addSubcommand(sub =>
+            sub.setName('lista')
+                .setDescription('Muestra la lista de todos los bonos militares creados con sus IDs y estado (Oficiales)')
         )
         .addSubcommand(sub =>
             sub.setName('reclamar')
@@ -146,18 +178,26 @@ module.exports = {
             }
 
             const targetChannel = interaction.options.getChannel('canal') || interaction.channel;
-            const panel = economyDb.getBonusPanel(guildId);
+            const panelIdOpt = interaction.options.getInteger('id');
+            const panel = panelIdOpt ? economyDb.getBonusPanelById(panelIdOpt) : economyDb.getBonusPanel(guildId);
+            if (!panel) {
+                return interaction.reply({
+                    content: `❌ **Bono No Encontrado:** No existe un bono militar con ID \`#${panelIdOpt}\`. Usa \`/bono lista\` para ver los disponibles.`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
             const msgPayload = buildBonusPanelMessage(panel, settings);
 
             try {
                 const sentMsg = await targetChannel.send(msgPayload);
                 economyDb.saveBonusPanel(guildId, {
+                    id: panel.id,
                     channel_id: targetChannel.id,
                     message_id: sentMsg.id
                 });
 
                 return interaction.reply({
-                    content: `🎖️ **Panel de Bono Militar desplegado exitosamente en** <#${targetChannel.id}>.`,
+                    content: `🎖️ **Panel de Bono Militar #${panel.id} desplegado exitosamente en** <#${targetChannel.id}>.`,
                     flags: MessageFlags.Ephemeral
                 });
             } catch (err) {
@@ -322,6 +362,198 @@ Parámetros actuales del programa de bonificaciones militares de la base:
 > 👤 **Tus Cobros Registrados:** \`${userClaims.length}\`
                 `)
                 .setFooter({ text: 'USMC Command Center' });
+
+            return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+        }
+
+        // =========================================================================
+        // 6. SUBCOMANDO: CREAR NUEVO BONO MILITAR
+        // =========================================================================
+        if (sub === 'crear') {
+            const isAuthorized = hasOfficerPermission(interaction) || hasAdminPermission(interaction);
+            if (!isAuthorized) {
+                return interaction.reply({
+                    content: '🔒 **Acceso Denegado:** Se requieren credenciales de Oficial o Comandante para crear bonos militares.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const monto = interaction.options.getInteger('monto');
+            const titulo = interaction.options.getString('titulo');
+            const descripcion = interaction.options.getString('descripcion') || 'Asignación financiera especial autorizada por el Estado Mayor USMC.';
+            const modo = interaction.options.getString('modo') || 'ONCE';
+            const horasCooldown = interaction.options.getInteger('horas_cooldown') || 24;
+
+            const newPanel = economyDb.createBonusPanel(guildId, {
+                title: titulo,
+                description: descripcion,
+                amount: monto,
+                claim_mode: modo,
+                cooldown_seconds: horasCooldown * 3600,
+                is_active: true
+            });
+
+            const embed = new EmbedBuilder()
+                .setColor(0x38e54d)
+                .setTitle('🎖️ [NUEVO BONO MILITAR CREADO // ORDEN DE TESORERÍA]')
+                .setDescription(`
+Se ha creado exitosamente un nuevo bono militar con ID único.
+
+> 🆔 **ID del Bono:** \`#${newPanel.id}\`
+> 📋 **Título:** \`${newPanel.title}\`
+> 💰 **Monto:** \`${sym}${monto.toLocaleString()}\`
+> 🔄 **Modalidad:** \`${modo === 'ONCE' ? 'Única vez por soldado' : `Periódico (cada ${horasCooldown}h)`}\`
+> 🟢 **Estado:** \`ACTIVO\`
+
+**Para desplegar este bono en un canal:**
+\`/bono panel id:${newPanel.id}\` o \`/bono panel id:${newPanel.id} canal:#canal\`
+
+*Cada bono tiene su propio ID y historial de reclamos independiente.*
+                `)
+                .setFooter({ text: 'Tesorería Militar USMC • Sistema de Bonos Independientes' })
+                .setTimestamp();
+
+            return interaction.reply({ embeds: [embed] });
+        }
+
+        // =========================================================================
+        // 7. SUBCOMANDO: ELIMINAR BONO MILITAR
+        // =========================================================================
+        if (sub === 'eliminar') {
+            const isAuthorized = hasOfficerPermission(interaction) || hasAdminPermission(interaction);
+            if (!isAuthorized) {
+                return interaction.reply({
+                    content: '🔒 **Acceso Denegado:** Se requieren credenciales de Oficial o Comandante para eliminar bonos militares.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const panelId = interaction.options.getInteger('id');
+            const panel = economyDb.getBonusPanelById(panelId);
+
+            if (!panel) {
+                return interaction.reply({
+                    content: `❌ **Bono No Encontrado:** No existe un bono militar con ID \`#${panelId}\`. Usa \`/bono lista\` para ver los existentes.`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const stats = economyDb.getBonusStats(guildId, panelId);
+            economyDb.deleteBonusPanel(panelId);
+
+            const embed = new EmbedBuilder()
+                .setColor(0xff4444)
+                .setTitle('🗑️ [BONO MILITAR ELIMINADO // BAJA DE TESORERÍA]')
+                .setDescription(`
+El bono militar ha sido eliminado permanentemente del sistema junto con todo su historial de reclamos.
+
+> 🆔 **ID Eliminado:** \`#${panelId}\`
+> 📋 **Título:** \`${panel.title}\`
+> 💰 **Monto que otorgaba:** \`${sym}${panel.amount.toLocaleString()}\`
+> 👥 **Reclamos eliminados:** \`${stats.totalClaims}\`
+> 💵 **Total que fue distribuido:** \`${sym}${stats.totalDistributed.toLocaleString()}\`
+> 👮 **Eliminado por:** <@${interaction.user.id}>
+
+*Los fondos ya concedidos a los soldados NO se revierten.*
+                `)
+                .setFooter({ text: 'Tesorería Militar USMC • Baja Contable' })
+                .setTimestamp();
+
+            return interaction.reply({ embeds: [embed] });
+        }
+
+        // =========================================================================
+        // 8. SUBCOMANDO: RESET DE RECLAMOS DE UN BONO
+        // =========================================================================
+        if (sub === 'reset_reclamos') {
+            const isAuthorized = hasOfficerPermission(interaction) || hasAdminPermission(interaction);
+            if (!isAuthorized) {
+                return interaction.reply({
+                    content: '🔒 **Acceso Denegado:** Se requieren credenciales de Oficial o Comandante para reiniciar reclamos.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const panelId = interaction.options.getInteger('id');
+            const panel = economyDb.getBonusPanelById(panelId);
+
+            if (!panel) {
+                return interaction.reply({
+                    content: `❌ **Bono No Encontrado:** No existe un bono militar con ID \`#${panelId}\`. Usa \`/bono lista\` para ver los existentes.`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const result = economyDb.resetBonusClaims(panelId);
+
+            const embed = new EmbedBuilder()
+                .setColor(0xffa500)
+                .setTitle('🔄 [RECLAMOS REINICIADOS // RESET DE TESORERÍA]')
+                .setDescription(`
+Se han borrado todos los registros de reclamo del bono seleccionado. Ahora todos los soldados pueden volver a reclamarlo.
+
+> 🆔 **Bono:** \`#${panelId}\` — \`${panel.title}\`
+> 💰 **Monto:** \`${sym}${panel.amount.toLocaleString()}\`
+> 🗑️ **Reclamos borrados:** \`${result.deletedClaims}\`
+> 👮 **Reiniciado por:** <@${interaction.user.id}>
+
+*Todos los combatientes pueden reclamar este bono nuevamente.*
+                `)
+                .setFooter({ text: 'Tesorería Militar USMC • Reset Contable' })
+                .setTimestamp();
+
+            return interaction.reply({ embeds: [embed] });
+        }
+
+        // =========================================================================
+        // 9. SUBCOMANDO: LISTA DE BONOS MILITARES
+        // =========================================================================
+        if (sub === 'lista') {
+            const isAuthorized = hasOfficerPermission(interaction) || hasAdminPermission(interaction);
+            if (!isAuthorized) {
+                return interaction.reply({
+                    content: '🔒 **Acceso Denegado:** Se requieren credenciales de Oficial o Comandante para ver la lista de bonos.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const panels = economyDb.getAllBonusPanels(guildId);
+
+            if (panels.length === 0) {
+                return interaction.reply({
+                    content: '📋 **Sin Bonos:** No hay bonos militares registrados en el sistema. Usa `/bono crear` para crear uno nuevo.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const embed = new EmbedBuilder()
+                .setColor(0xd4af37)
+                .setTitle('📋 [REGISTRO DE BONOS MILITARES // TESORERÍA USMC]')
+                .setDescription('Lista completa de bonos militares creados en el sistema. Cada bono tiene su propio ID y reclamos independientes.')
+                .setFooter({ text: `Total: ${panels.length} bono(s) • Tesorería Militar USMC` })
+                .setTimestamp();
+
+            for (const p of panels.slice(0, 15)) {
+                const statusIcon = p.is_active ? '🟢' : '🔴';
+                const modeIcon = p.claim_mode === 'ONCE' ? '🔒' : '⏱️';
+                embed.addFields({
+                    name: `${statusIcon} #${p.id} — ${p.title}`,
+                    value: [
+                        `> 💰 Monto: \`${sym}${p.amount.toLocaleString()}\` | ${modeIcon} \`${p.claim_mode === 'ONCE' ? 'Única vez' : 'Periódico'}\``,
+                        `> 👥 Reclamos: \`${p.total_claims}\` | 💵 Distribuido: \`${sym}${p.total_distributed.toLocaleString()}\``,
+                        `> 📌 Comandos: \`/bono panel id:${p.id}\` · \`/bono eliminar id:${p.id}\` · \`/bono reset_reclamos id:${p.id}\``
+                    ].join('\n'),
+                    inline: false
+                });
+            }
+
+            if (panels.length > 15) {
+                embed.addFields({
+                    name: '⚠️ Lista truncada',
+                    value: `Mostrando 15 de ${panels.length} bonos. Elimina bonos antiguos con \`/bono eliminar\`.`,
+                    inline: false
+                });
+            }
 
             return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         }

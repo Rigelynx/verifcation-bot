@@ -148,12 +148,22 @@ Los créditos militares (**${sym}**) te permiten adquirir pertrechos, ascender d
                         inline: false
                     },
                     {
-                        name: '🎁 `/bono reclamar` y `/bono panel`',
-                        value: 'Reclama asignaciones presupuestarias extraordinarias autorizadas por el Mando o publica el panel interactivo de cobro.',
+                        name: '🎁 `/bono reclamar` y `/bono panel [canal] [id]`',
+                        value: 'Reclama tu asignación militar o despliega el panel oficial de cobro interactivo con botón táctico (admite especificar ID de bono).',
                         inline: false
                     },
                     {
-                        name: '⚡ `/bono dar` y `/bono masivo`',
+                        name: '➕ `/bono crear <monto> <titulo> [modo] [horas]`',
+                        value: '*(Oficiales)* Crea un nuevo bono militar con ID único y cobros independientes para que no haya conflictos con bonos anteriores.',
+                        inline: false
+                    },
+                    {
+                        name: '📋 `/bono lista` · `/bono eliminar <id>` · `/bono reset_reclamos <id>`',
+                        value: '*(Oficiales)* Administra los bonos: consulta la lista con sus IDs, da de baja bonos obsoletos o reinicia sus reclamos para permitir un nuevo cobro.',
+                        inline: false
+                    },
+                    {
+                        name: '⚡ `/bono dar <usuario> <monto>` y `/bono masivo <monto>`',
                         value: '*(Oficiales)* Acredita fondos directos a un soldado específico o emite una asignación económica a todo el batallón.',
                         inline: false
                     }
