@@ -15,6 +15,7 @@ const { hasOfficerPermission } = require('./permissionHandler');
 const { hasAnyRole } = require('../utils/roleUtils');
 const { processShopPurchase, buildShopPanel } = require('../commands/tienda');
 const { buildEventRosterPanel } = require('../commands/eventos');
+const { buildHelpPanel } = require('../commands/help');
 
 async function handleInteraction(interaction, client, commands) {
     // Sincronización automática de identidad del combatiente en el sistema contable
@@ -455,6 +456,13 @@ Para formalizar tu ingreso a la base militar:
             return interaction.update(panel);
         }
 
+        // BOTÓN: Paginación e Inicio de /help
+        if (customId.startsWith('help_page_') || customId.startsWith('help_refresh_')) {
+            const page = parseInt(customId.replace('help_page_', '').replace('help_refresh_', ''), 10) || 1;
+            const panel = buildHelpPanel(page, interaction.guildId);
+            return interaction.update(panel);
+        }
+
         // BOTÓN: Aprobar Solicitud en Canal de Oficiales
         if (customId.startsWith('approve_verify_')) {
             if (!hasOfficerPermission(interaction)) {
@@ -514,6 +522,12 @@ Para formalizar tu ingreso a la base militar:
         if (interaction.customId === 'select_buy_shop') {
             const itemId = parseInt(interaction.values[0], 10);
             return processShopPurchase(interaction, itemId);
+        }
+
+        if (interaction.customId === 'help_category_select') {
+            const page = parseInt(interaction.values[0], 10) || 1;
+            const panel = buildHelpPanel(page, interaction.guildId);
+            return interaction.update(panel);
         }
     }
 
