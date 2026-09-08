@@ -831,10 +831,40 @@ function updateShopItem(id, data = {}) {
     return getShopItemById(id);
 }
 
-function deleteShopItem(id) {
-    db.prepare('DELETE FROM economy_shop_items WHERE id = ?').run(id);
-    return true;
+/**
+ * Obtiene la lista de usuarios que tienen comprado un ítem en su inventario
+ */
+function getItemBuyers(itemId) {
+    const stmt = db.prepare(`
+        SELECT inv.discord_id, inv.quantity, inv.acquired_at, COALESCE(acc.username, inv.discord_id) as username
+        FROM economy_inventory inv
+        LEFT JOIN economy_accounts acc ON inv.discord_id = acc.discord_id
+        WHERE inv.item_id = ?
+        ORDER BY inv.acquired_at DESC
+    `);
+    return stmt.all(itemId);
 }
+
+function deleteShopItem(id, force = false) {
+    const buyers = getItemBuyers(id);
+    if (buyers.length > 0 && !force) {
+        return {
+            success: false,
+            requiresConfirmation: true,
+            buyers,
+            buyerCount: buyers.length
+        };
+    }
+
+    const tx = db.transaction(() => {
+        db.prepare('DELETE FROM economy_inventory WHERE item_id = ?').run(id);
+        db.prepare('DELETE FROM economy_shop_items WHERE id = ?').run(id);
+    });
+    tx();
+
+    return { success: true };
+}
+
 
 function getUserInventory(discordId) {
     const stmt = db.prepare(`
@@ -1118,7 +1148,9 @@ function finalizeAttendanceCalculation(eventId) {
         for (const att of attendees) {
             let eligible = 0;
 
-            if (att.attendance_confirmed === 1) {
+            if (att.status === 'EXPELLED' || att.status === 'CANCELLED') {
+                eligible = 0;
+            } else if (att.attendance_confirmed === 1) {
                 // Asistencia confirmada explícitamente por botón de pase de lista o validación de oficial
                 eligible = 1;
             } else if (event.event_type === 'VOICE') {
@@ -1201,6 +1233,20 @@ function claimEventPayout(eventId, discordId, userRoleIds = []) {
         return { 
             success: false, 
             message: '❌ **Sin Registro**: No fuiste detectado en el canal asignado durante el desarrollo de la operación.' 
+        };
+    }
+
+    if (att.status === 'EXPELLED') {
+        return {
+            success: false,
+            message: '❌ **Descalificado**: Has sido retirado de esta operación militar por un oficial. No tienes derecho a cobro.'
+        };
+    }
+
+    if (att.status === 'CANCELLED') {
+        return {
+            success: false,
+            message: '⚠️ **Inscripción Anulada**: Habías cancelado tu participación en esta operación militar.'
         };
     }
 
@@ -1287,6 +1333,9 @@ function registerUserForEvent(eventId, discordId, username = '') {
     const existing = db.prepare('SELECT * FROM event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
 
     if (existing) {
+        if (existing.status === 'EXPELLED') {
+            return { success: false, message: '❌ Has sido descalificado de esta misión militar por el oficial al mando.' };
+        }
         if (existing.status === 'REGISTERED' || existing.status === 'CONFIRMED') {
             return { success: false, message: '⚠️ Ya estás registrado en el pase de lista de esta operación militar.' };
         }
@@ -1334,6 +1383,34 @@ function unregisterUserFromEvent(eventId, discordId) {
 }
 
 /**
+ * Expulsa / retira a un combatiente de la lista de la operación militar
+ */
+function expelUserFromEvent(eventId, discordId, adminId = null) {
+    const event = getEventById(eventId);
+    if (!event) return { success: false, message: 'Operación militar no encontrada.' };
+
+    const existing = db.prepare('SELECT * FROM event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
+    if (!existing) {
+        return { success: false, message: 'El combatiente no figura en el registro de esta operación.' };
+    }
+
+    db.prepare(`
+        UPDATE event_attendance
+        SET status = 'EXPELLED',
+            attendance_confirmed = 0,
+            is_eligible = 0
+        WHERE id = ?
+    `).run(existing.id);
+
+    return { 
+        success: true, 
+        message: `Combatiente <@${discordId}> ha sido retirado de la operación militar.`,
+        username: existing.username,
+        discord_id: discordId
+    };
+}
+
+/**
  * Confirma la asistencia presencial de un recluta en la operación militar
  */
 function confirmAttendanceForEvent(eventId, discordId, username = '') {
@@ -1344,6 +1421,18 @@ function confirmAttendanceForEvent(eventId, discordId, username = '') {
     const existing = db.prepare('SELECT * FROM event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
 
     if (existing) {
+        if (existing.status === 'EXPELLED') {
+            return { 
+                success: false, 
+                message: '❌ **Acceso Denegado:** Has sido retirado / descalificado de esta operación militar por un oficial. No puedes confirmar asistencia.' 
+            };
+        }
+        if (existing.status === 'CANCELLED') {
+            return { 
+                success: false, 
+                message: '⚠️ Habías anulado tu inscripción a esta operación militar.' 
+            };
+        }
         if (existing.attendance_confirmed === 1) {
             return { success: false, message: '✅ Tu asistencia a esta operación ya fue confirmada previamente.' };
         }
@@ -1359,7 +1448,15 @@ function confirmAttendanceForEvent(eventId, discordId, username = '') {
         return { success: true, message: '🎖️ ¡Asistencia confirmada! Has sido acreditado como apto para la paga militar.', event };
     }
 
-    // Si no estaba pre-registrado, lo incorpora y confirma como asistente en el terreno
+    // Si el evento era de convocatoria con pre-registro estricto y no estaba en lista
+    if (event.event_type === 'REGISTRATION') {
+        return { 
+            success: false, 
+            message: '⚠️ No estabas pre-registrado en la convocatoria de esta operación militar.' 
+        };
+    }
+
+    // Si no estaba pre-registrado y es un evento abierto, lo incorpora y confirma como asistente en el terreno
     db.prepare(`
         INSERT INTO event_attendance (
             event_id, discord_id, username, first_seen, last_seen,
@@ -1418,7 +1515,7 @@ function massPayoutEvent(eventId, discordClient = null, officerDiscordId = null)
     const event = getEventById(eventId);
     if (!event) return { success: false, message: 'Operación militar no encontrada.' };
 
-    const attendees = db.prepare("SELECT * FROM event_attendance WHERE event_id = ? AND is_eligible = 1 AND claimed = 0").all(eventId);
+    const attendees = db.prepare("SELECT * FROM event_attendance WHERE event_id = ? AND is_eligible = 1 AND claimed = 0 AND status != 'EXPELLED' AND status != 'CANCELLED'").all(eventId);
     if (attendees.length === 0) {
         return { success: false, message: 'No hay reclutas confirmados pendientes de cobro para esta operación.' };
     }
@@ -1476,8 +1573,9 @@ function massPayoutEvent(eventId, discordClient = null, officerDiscordId = null)
 /**
  * Obtiene la lista completa de registrados y confirmados para un evento
  */
-function getEventRegistrations(eventId) {
-    return db.prepare(`
+function getEventRegistrations(eventId, includeExpelled = false) {
+    const query = includeExpelled
+        ? `
         SELECT a.*, 
                COALESCE(acc.avatar, '') as avatar,
                acc.wallet, 
@@ -1486,7 +1584,18 @@ function getEventRegistrations(eventId) {
         LEFT JOIN economy_accounts acc ON a.discord_id = acc.discord_id
         WHERE a.event_id = ?
         ORDER BY a.attendance_confirmed DESC, a.registered_at ASC, a.total_seconds_present DESC
-    `).all(eventId);
+        `
+        : `
+        SELECT a.*, 
+               COALESCE(acc.avatar, '') as avatar,
+               acc.wallet, 
+               acc.bank
+        FROM event_attendance a
+        LEFT JOIN economy_accounts acc ON a.discord_id = acc.discord_id
+        WHERE a.event_id = ? AND a.status != 'EXPELLED' AND a.status != 'CANCELLED'
+        ORDER BY a.attendance_confirmed DESC, a.registered_at ASC, a.total_seconds_present DESC
+        `;
+    return db.prepare(query).all(eventId);
 }
 
 // =========================================================================
@@ -1687,6 +1796,7 @@ module.exports = {
     createShopItem,
     updateShopItem,
     deleteShopItem,
+    getItemBuyers,
     getUserInventory,
     purchaseShopItem,
     getRoleRewards,
@@ -1715,6 +1825,7 @@ module.exports = {
     getBonusStats,
     registerUserForEvent,
     unregisterUserFromEvent,
+    expelUserFromEvent,
     confirmAttendanceForEvent,
     setEventPhase,
     manualToggleAttendance,

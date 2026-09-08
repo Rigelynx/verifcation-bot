@@ -106,7 +106,10 @@ function formatRoleMentions(roles) {
 /**
  * Genera el panel visual táctico interactivo de la tienda
  */
-function buildShopPanel(guildId) {
+/**
+ * Genera el panel visual táctico interactivo de la tienda con paginación
+ */
+function buildShopPanel(guildId, page = 1) {
     const items = economyDb.getShopItems(guildId, true);
     const settings = economyDb.getEconomySettings(guildId);
     const sym = settings.currency_symbol || '$';
@@ -142,6 +145,11 @@ El Estado Mayor no ha suministrado equipamiento ni rangos activos en este moment
         return { embeds: [emptyEmbed], components: [emptyRow] };
     }
 
+    const ITEMS_PER_PAGE = 4;
+    const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
+    const currentPage = Math.min(Math.max(1, page), totalPages);
+    const pageItems = items.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
+
     const embed = new EmbedBuilder()
         .setColor(0x38e54d)
         .setTitle('🎖️ [ARMERÍA TÁCTICA Y CATÁLOGO DE RANGOS // USMC]')
@@ -151,10 +159,10 @@ El Estado Mayor no ha suministrado equipamiento ni rangos activos en este moment
 
 Selecciona cualquier artículo en el **menú desplegable inferior** para adquirirlo en 1 clic.
         `)
-        .setFooter({ text: 'Intendencia Militar • Compra directa instantánea sin comandos' })
+        .setFooter({ text: `Página ${currentPage}/${totalPages} • Total: ${items.length} artículos en armería • USMC Logistics` })
         .setTimestamp();
 
-    for (const item of items) {
+    for (const item of pageItems) {
         let roleInfo = '';
         const giveRoles = formatRoleMentions(item.roles_to_give);
         const remRoles = formatRoleMentions(item.roles_to_remove);
@@ -185,8 +193,8 @@ Selecciona cualquier artículo en el **menú desplegable inferior** para adquiri
 
     const components = [];
 
-    // 1. Selector táctico desplegable para comprar cualquier ítem (hasta 25 opciones)
-    const selectOptions = items.slice(0, 25).map(item => {
+    // 1. Selector táctico desplegable para comprar ítems de la página actual
+    const selectOptions = pageItems.map(item => {
         let desc = `${sym}${item.price.toLocaleString()}`;
         if (item.roles_to_give && item.roles_to_give.length > 0) {
             desc += ' • Otorga Rol Militar';
@@ -205,14 +213,36 @@ Selecciona cualquier artículo en el **menú desplegable inferior** para adquiri
         };
     });
 
-    const selectMenu = new StringSelectMenuBuilder()
-        .setCustomId('select_buy_shop')
-        .setPlaceholder('🛒 Selecciona un suministro o rango para comprar en 1 clic...')
-        .addOptions(selectOptions);
+    if (selectOptions.length > 0) {
+        const selectMenu = new StringSelectMenuBuilder()
+            .setCustomId('select_buy_shop')
+            .setPlaceholder(`🛒 Comprar artículo de esta página (${currentPage}/${totalPages})...`)
+            .addOptions(selectOptions);
 
-    components.push(new ActionRowBuilder().addComponents(selectMenu));
+        components.push(new ActionRowBuilder().addComponents(selectMenu));
+    }
 
-    // 2. Fila de botones utilitarios limpios y compactos (sin sobrecarga visual)
+    // 2. Fila de botones de navegación por páginas
+    const navRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`shop_page_${currentPage - 1}`)
+            .setLabel('◀️ Anterior')
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(currentPage <= 1),
+        new ButtonBuilder()
+            .setCustomId('shop_indicator')
+            .setLabel(`Página ${currentPage} / ${totalPages}`)
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(true),
+        new ButtonBuilder()
+            .setCustomId(`shop_page_${currentPage + 1}`)
+            .setLabel('Siguiente ▶️')
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(currentPage >= totalPages)
+    );
+    components.push(navRow);
+
+    // 3. Fila de botones utilitarios limpios y compactos
     const actionRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
             .setCustomId('btn_view_my_inventory')
@@ -223,11 +253,10 @@ Selecciona cualquier artículo en el **menú desplegable inferior** para adquiri
             .setLabel('💵 Ver Mi Saldo')
             .setStyle(ButtonStyle.Success),
         new ButtonBuilder()
-            .setCustomId('btn_refresh_shop')
-            .setLabel('🔄 Actualizar Catálogo')
+            .setCustomId(`shop_refresh_${currentPage}`)
+            .setLabel('🔄 Actualizar')
             .setStyle(ButtonStyle.Secondary)
     );
-
     components.push(actionRow);
 
     return { embeds: [embed], components };

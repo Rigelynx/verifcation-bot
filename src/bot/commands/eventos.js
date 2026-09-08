@@ -130,6 +130,99 @@ Todos los combatientes cuya asistencia fue confirmada pueden transferir su paga 
     return { embeds: [embed], components: [row] };
 }
 
+/**
+ * Genera el panel táctico de lista de reclutas convocados con paginación y botones de baja
+ */
+function buildEventRosterPanel(event, page = 1, settings = null) {
+    const sym = settings ? settings.currency_symbol : '$';
+    const roster = economyDb.getEventRegistrations(event.id); // Solo activos (excluye expulsados y cancelados)
+    const registeredCount = roster.length;
+    const confirmedCount = roster.filter(r => r.attendance_confirmed === 1 || r.is_eligible === 1).length;
+    const claimedCount = roster.filter(r => r.claimed === 1).length;
+
+    const PAGE_SIZE = 5;
+    const totalPages = Math.max(1, Math.ceil(roster.length / PAGE_SIZE));
+    const currentPage = Math.min(Math.max(1, page), totalPages);
+    const startIndex = (currentPage - 1) * PAGE_SIZE;
+    const pageItems = roster.slice(startIndex, startIndex + PAGE_SIZE);
+
+    let listText = 'Ningún combatiente registrado aún en esta operación militar.';
+    if (pageItems.length > 0) {
+        listText = pageItems.map((r, i) => {
+            const slot = startIndex + i + 1;
+            let statusBadge = '📝 `Inscrito`';
+            if (r.claimed === 1) statusBadge = `💵 \`Cobrado (${sym}${r.payout_amount})\``;
+            else if (r.attendance_confirmed === 1 || r.is_eligible === 1) statusBadge = '✅ `Asistencia Confirmada`';
+
+            return `\`[#${slot}]\` <@${r.discord_id}> (\`${r.username}\`) — ${statusBadge}`;
+        }).join('\n\n');
+    }
+
+    const embed = new EmbedBuilder()
+        .setColor(0x00b4d8)
+        .setTitle(`📋 [ROSTER TÁCTICO // OPERACIÓN #${event.id} // ${event.name.toUpperCase()}]`)
+        .setDescription(`
+**Panel de control de alistamiento militar en tiempo real.**
+*Para retirar a un recluta y bloquear su asistencia, pulsa su botón de borrado \`[🗑️ #]\`.*
+
+> 🎖️ **Operación:** \`${event.name}\` (\`${event.event_type}\`)
+> 🛡️ **Fase Actual:** \`${event.phase || event.status}\`
+> 👥 **Total Inscritos:** \`${registeredCount}\` ${event.max_participants > 0 ? `/ ${event.max_participants}` : ''}
+> ✅ **Asistencia Confirmada:** \`${confirmedCount}\`
+> 💵 **Haberes Cobrados:** \`${claimedCount}\`
+> 💰 **Paga Base:** \`${sym}${event.base_reward.toLocaleString()}\`
+
+**Soldados en esta Página (${currentPage}/${totalPages}):**
+${listText}
+        `)
+        .setFooter({ text: `Página ${currentPage} de ${totalPages} • Total: ${registeredCount} soldados • Pase de Lista USMC` })
+        .setTimestamp();
+
+    const components = [];
+
+    // Fila 1: Botones individuales para dar de baja / borrar a los reclutas de esta página
+    if (pageItems.length > 0) {
+        const expelRow = new ActionRowBuilder();
+        for (let i = 0; i < pageItems.length; i++) {
+            const r = pageItems[i];
+            const slot = startIndex + i + 1;
+            expelRow.addComponents(
+                new ButtonBuilder()
+                    .setCustomId(`event_expel_${event.id}_${r.discord_id}_${currentPage}`)
+                    .setLabel(`🗑️ #${slot}`)
+                    .setStyle(ButtonStyle.Danger)
+            );
+        }
+        components.push(expelRow);
+    }
+
+    // Fila 2: Botones de navegación por página y actualización
+    const navRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+            .setCustomId(`event_roster_page_${event.id}_${currentPage - 1}`)
+            .setLabel('◀️ Anterior')
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(currentPage <= 1),
+        new ButtonBuilder()
+            .setCustomId(`event_roster_indicator_${event.id}`)
+            .setLabel(`Página ${currentPage}/${totalPages}`)
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(true),
+        new ButtonBuilder()
+            .setCustomId(`event_roster_page_${event.id}_${currentPage + 1}`)
+            .setLabel('Siguiente ▶️')
+            .setStyle(ButtonStyle.Primary)
+            .setDisabled(currentPage >= totalPages),
+        new ButtonBuilder()
+            .setCustomId(`event_roster_refresh_${event.id}_${currentPage}`)
+            .setLabel('🔄 Actualizar')
+            .setStyle(ButtonStyle.Secondary)
+    );
+    components.push(navRow);
+
+    return { embeds: [embed], components };
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('evento')
@@ -160,7 +253,7 @@ module.exports = {
         )
         .addSubcommand(sub =>
             sub.setName('lista')
-                .setDescription('Visualiza el pase de lista en tiempo real (inscritos, confirmados y cobrados)')
+                .setDescription('Visualiza el pase de lista táctico en tiempo real (con paginación y expulsión)')
         )
         .addSubcommand(sub =>
             sub.setName('iniciar')
@@ -190,6 +283,7 @@ module.exports = {
     buildRegistrationPanel,
     buildConfirmationPanel,
     buildPayoutPanel,
+    buildEventRosterPanel,
 
     async execute(interaction) {
         if (!hasOfficerPermission(interaction)) {
@@ -391,7 +485,7 @@ ${previewPaid}
         }
 
         // ==========================================
-        // 5. /evento lista (NUEVO: Reporte de Registrados y Confirmados)
+        // 5. /evento lista (Reporte Táctico Paginado con Expulsión)
         // ==========================================
         if (sub === 'lista') {
             const active = economyDb.getActiveEvent(guildId);
@@ -402,40 +496,8 @@ ${previewPaid}
                 });
             }
 
-            const roster = economyDb.getEventRegistrations(active.id);
-            const registeredCount = roster.length;
-            const confirmedCount = roster.filter(r => r.attendance_confirmed === 1 || r.is_eligible === 1).length;
-            const claimedCount = roster.filter(r => r.claimed === 1).length;
-
-            let listText = 'Ningún combatiente registrado aún.';
-            if (roster.length > 0) {
-                listText = roster.slice(0, 20).map((r, i) => {
-                    let statusBadge = '📝 Inscrito';
-                    if (r.claimed === 1) statusBadge = `💵 Cobrado ($${r.payout_amount})`;
-                    else if (r.attendance_confirmed === 1 || r.is_eligible === 1) statusBadge = '✅ Asistencia Confirmada';
-
-                    return `\`${i + 1}.\` <@${r.discord_id}> — **${statusBadge}**`;
-                }).join('\n');
-                if (roster.length > 20) listText += `\n*...y ${roster.length - 20} combatientes más.*`;
-            }
-
-            const embed = new EmbedBuilder()
-                .setColor(0x00b4d8)
-                .setTitle(`📋 [LISTA DE ASISTENCIA MILITAR // #${active.id}]`)
-                .setDescription(`
-**Operación:** ${active.name} (\`${active.event_type}\`)
-> 🛡️ **Fase Actual:** \`${active.phase || active.status}\`
-> 👥 **Total Inscritos:** \`${registeredCount}\` ${active.max_participants > 0 ? `/ ${active.max_participants}` : ''}
-> ✅ **Asistencia Confirmada:** \`${confirmedCount}\`
-> 💵 **Haberes Cobrados:** \`${claimedCount}\`
-> 💰 **Paga Base:** \`${sym}${active.base_reward.toLocaleString()}\`
-
-**Roster de Combatientes:**
-${listText}
-                `)
-                .setFooter({ text: 'Usa /evento confirmar para pase de lista o /evento panel_pago para cobro.' });
-
-            return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+            const panel = buildEventRosterPanel(active, 1, settings);
+            return interaction.reply({ ...panel, flags: MessageFlags.Ephemeral });
         }
 
         // ==========================================

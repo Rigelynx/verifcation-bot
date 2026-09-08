@@ -2468,12 +2468,42 @@
                     method: 'DELETE',
                     headers: { 'Authorization': `Bearer ${adminToken}` }
                 });
-                if (res.ok) {
+                const data = await res.json();
+
+                if (!res.ok) {
+                    throw new Error(data.message || 'Error al eliminar ítem.');
+                }
+
+                if (data.requiresConfirmation) {
+                    const buyerListText = (data.buyers || []).map(b => `• ${b.name} (Cant: ${b.quantity})`).join('\n');
+                    const warningMsg = `⚠️ ¡ADVERTENCIA DE INTENDENCIA MILITAR!\n\n` +
+                        `El ítem [${data.itemName || '#' + id}] ya ha sido adquirido por ${data.buyerCount} soldado(s):\n\n` +
+                        `${buyerListText}\n\n` +
+                        `¿Estás COMPLETAMENTE SEGURO de que deseas eliminarlo de la armería y retirarlo de las mochilas de los reclutas?`;
+
+                    if (!confirm(warningMsg)) return;
+
+                    const forceRes = await fetch(`/api/admin/shop/items/${id}?force=true`, {
+                        method: 'DELETE',
+                        headers: { 'Authorization': `Bearer ${adminToken}` }
+                    });
+                    const forceData = await forceRes.json();
+                    if (forceData.success) {
+                        TerminalFX.playBeepSuccess();
+                        alert('✅ Ítem dado de baja e inventarios actualizados correctamente.');
+                        loadShopData();
+                    } else {
+                        alert(forceData.message || 'Error al forzar la baja del ítem.');
+                    }
+                    return;
+                }
+
+                if (data.success) {
                     TerminalFX.playBeepSuccess();
                     loadShopData();
                 }
             } catch (err) {
-                alert(err.message);
+                alert(`❌ ${err.message}`);
             }
         }
 

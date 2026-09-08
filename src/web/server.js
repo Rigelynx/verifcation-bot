@@ -534,10 +534,44 @@ function createWebServer(discordClient) {
     });
 
     // Eliminar ítem de armería
-    app.delete('/api/admin/shop/items/:id', requireAdmin, (req, res) => {
+    app.delete('/api/admin/shop/items/:id', requireAdmin, async (req, res) => {
         const id = parseInt(req.params.id, 10);
-        economyDb.deleteShopItem(id);
-        res.json({ success: true });
+        const force = req.query.force === 'true' || req.body?.force === true;
+
+        const item = economyDb.getShopItemById(id);
+        if (!item) {
+            return res.status(404).json({ success: false, message: 'Ítem no encontrado.' });
+        }
+
+        const buyers = economyDb.getItemBuyers(id);
+        if (buyers.length > 0 && !force) {
+            // Resolver nombres desde Discord si están en caché
+            const buyerDetails = buyers.map(b => {
+                let name = b.username || b.discord_id;
+                try {
+                    const user = discordClient?.users?.cache?.get(b.discord_id);
+                    if (user) name = `${user.tag || user.username} (${b.discord_id})`;
+                } catch (e) {}
+                return {
+                    discord_id: b.discord_id,
+                    name: name,
+                    quantity: b.quantity,
+                    acquired_at: b.acquired_at
+                };
+            });
+
+            return res.json({
+                success: false,
+                requiresConfirmation: true,
+                message: `Este ítem ya ha sido adquirido por ${buyers.length} combatiente(s).`,
+                itemName: item.name,
+                buyerCount: buyers.length,
+                buyers: buyerDetails
+            });
+        }
+
+        economyDb.deleteShopItem(id, true);
+        res.json({ success: true, message: 'Ítem eliminado exitosamente de la armería y de los inventarios.' });
     });
 
     // =========================================================================

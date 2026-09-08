@@ -14,6 +14,7 @@ const { handleStatusChange } = require('./verificationHandler');
 const { hasOfficerPermission } = require('./permissionHandler');
 const { hasAnyRole } = require('../utils/roleUtils');
 const { processShopPurchase, buildShopPanel } = require('../commands/tienda');
+const { buildEventRosterPanel } = require('../commands/eventos');
 
 async function handleInteraction(interaction, client, commands) {
     // Sincronización automática de identidad del combatiente en el sistema contable
@@ -266,6 +267,73 @@ Para formalizar tu ingreso a la base militar:
         }
 
         // =====================================================
+        // BOTÓN: Paginación de Roster de Operación Convocada
+        // =====================================================
+        if (customId.startsWith('event_roster_page_')) {
+            const parts = customId.replace('event_roster_page_', '').split('_');
+            const eventId = parseInt(parts[0], 10);
+            const page = parseInt(parts[1], 10) || 1;
+            const event = economyDb.getEventById(eventId);
+            if (!event) {
+                return interaction.reply({ content: '❌ Operación militar no encontrada o ya finalizada.', flags: MessageFlags.Ephemeral });
+            }
+            const settings = economyDb.getEconomySettings(interaction.guildId);
+            const panel = buildEventRosterPanel(event, page, settings);
+            return interaction.update(panel);
+        }
+
+        // =====================================================
+        // BOTÓN: Actualizar Roster de Operación Convocada
+        // =====================================================
+        if (customId.startsWith('event_roster_refresh_')) {
+            const parts = customId.replace('event_roster_refresh_', '').split('_');
+            const eventId = parseInt(parts[0], 10);
+            const page = parseInt(parts[1], 10) || 1;
+            const event = economyDb.getEventById(eventId);
+            if (!event) {
+                return interaction.reply({ content: '❌ Operación militar no encontrada o ya finalizada.', flags: MessageFlags.Ephemeral });
+            }
+            const settings = economyDb.getEconomySettings(interaction.guildId);
+            const panel = buildEventRosterPanel(event, page, settings);
+            return interaction.update(panel);
+        }
+
+        // =====================================================
+        // BOTÓN: Expulsar / Dar de baja a recluta del pase de lista
+        // =====================================================
+        if (customId.startsWith('event_expel_')) {
+            if (!hasOfficerPermission(interaction)) {
+                return interaction.reply({
+                    content: '❌ **Acceso Denegado:** Solo el cuerpo de oficiales y administradores puede retirar soldados de la operación.',
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const parts = customId.replace('event_expel_', '').split('_');
+            const eventId = parseInt(parts[0], 10);
+            const targetDiscordId = parts[1];
+            const page = parseInt(parts[2], 10) || 1;
+
+            const expelRes = economyDb.expelUserFromEvent(eventId, targetDiscordId, interaction.user.id);
+            if (!expelRes.success) {
+                return interaction.reply({
+                    content: `⚠️ ${expelRes.message}`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const event = economyDb.getEventById(eventId);
+            const settings = economyDb.getEconomySettings(interaction.guildId);
+            const panel = buildEventRosterPanel(event, page, settings);
+
+            await interaction.update(panel);
+            return interaction.followUp({
+                content: `🗑️ **Soldado Dado de Baja:** <@${targetDiscordId}> (\`${expelRes.username}\`) ha sido expulsado de la operación #${eventId}. No podrá confirmar asistencia ni recibir cobros.`,
+                flags: MessageFlags.Ephemeral
+            });
+        }
+
+        // =====================================================
         // BOTÓN: Reclamar Bono Militar desde Panel Táctico
         // =====================================================
         if (customId.startsWith('claim_bonus_panel_')) {
@@ -371,10 +439,19 @@ Para formalizar tu ingreso a la base militar:
             return interaction.reply({ embeds: [balEmbed], flags: MessageFlags.Ephemeral });
         }
 
-        // BOTÓN: Actualizar Catálogo de la Tienda
-        if (customId === 'btn_refresh_shop') {
+        // BOTÓN: Navegación de Páginas en Tienda Militar
+        if (customId.startsWith('shop_page_')) {
+            const page = parseInt(customId.replace('shop_page_', ''), 10) || 1;
             const guildId = interaction.guildId || 'GLOBAL';
-            const panel = buildShopPanel(guildId);
+            const panel = buildShopPanel(guildId, page);
+            return interaction.update(panel);
+        }
+
+        // BOTÓN: Actualizar Catálogo de la Tienda
+        if (customId === 'btn_refresh_shop' || customId.startsWith('shop_refresh_')) {
+            const guildId = interaction.guildId || 'GLOBAL';
+            const page = customId.startsWith('shop_refresh_') ? parseInt(customId.replace('shop_refresh_', ''), 10) : 1;
+            const panel = buildShopPanel(guildId, page);
             return interaction.update(panel);
         }
 
