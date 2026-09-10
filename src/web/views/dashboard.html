@@ -204,6 +204,7 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="verifications-pagination" style="display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 14px;"></div>
                 </div>
 
                 <!-- TAB 2: CONFIGURADOR DEL CUESTIONARIO -->
@@ -1390,6 +1391,8 @@
     <script>
         let adminToken = localStorage.getItem('usmc_admin_key') || '';
         let allVerifications = [];
+        let verificationPage = 0;
+        const verificationPageSize = 25;
         let allQuestions = [];
         let activeFilter = 'TODOS';
 
@@ -1518,8 +1521,15 @@
                 );
             }
 
+            const totalFiltered = filtered.length;
+            const totalPages = Math.max(1, Math.ceil(totalFiltered / verificationPageSize));
+            verificationPage = Math.min(verificationPage, totalPages - 1);
+            const pageStart = verificationPage * verificationPageSize;
+            filtered = filtered.slice(pageStart, pageStart + verificationPageSize);
+
             if (filtered.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 25px; color: #728c75;">NO SE ENCONTRARON EXPEDIENTES EN ESTA CATEGORÍA.</td></tr>`;
+                renderVerificationsPagination(totalFiltered, totalPages);
                 return;
             }
 
@@ -1548,15 +1558,35 @@
                     </tr>
                 `;
             }).join('');
+            renderVerificationsPagination(totalFiltered, totalPages);
+        }
+
+        function renderVerificationsPagination(total, totalPages) {
+            const el = document.getElementById('verifications-pagination');
+            if (!el) return;
+            const current = verificationPage + 1;
+            el.innerHTML = `<button class="btn-retro" ${current <= 1 ? 'disabled' : ''} onclick="changeVerificationPage(-1)">◀ ANTERIOR</button><span style="color: var(--usmc-gold);">PÁGINA ${current} / ${totalPages} · ${total} EXPEDIENTES</span><button class="btn-retro" ${current >= totalPages ? 'disabled' : ''} onclick="changeVerificationPage(1)">SIGUIENTE ▶</button>`;
+        }
+
+        function changeVerificationPage(delta) {
+            const searchVal = (document.getElementById('search-input').value || '').toLowerCase();
+            let filtered = allVerifications;
+            if (activeFilter !== 'TODOS') filtered = filtered.filter(v => v.status === activeFilter);
+            if (searchVal) filtered = filtered.filter(v => v.username.toLowerCase().includes(searchVal) || v.discord_id.includes(searchVal));
+            const totalPages = Math.max(1, Math.ceil(filtered.length / verificationPageSize));
+            verificationPage = Math.min(Math.max(verificationPage + delta, 0), totalPages - 1);
+            renderVerificationsTable();
         }
 
         function filterVerifications(filter) {
             activeFilter = filter;
+            verificationPage = 0;
             TerminalFX.playKeyClick();
             renderVerificationsTable();
         }
 
         function searchTable() {
+            verificationPage = 0;
             renderVerificationsTable();
         }
 
