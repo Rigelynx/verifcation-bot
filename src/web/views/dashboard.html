@@ -191,12 +191,13 @@
                                     <th>ASPIRANTE</th>
                                     <th>DISCORD ID</th>
                                     <th>ESTADO</th>
+                                    <th>RESUELTO POR</th>
                                     <th>ACCIONES</th>
                                 </tr>
                             </thead>
                             <tbody id="verifications-tbody">
                                 <tr>
-                                    <td colspan="5" style="text-align: center; padding: 30px; color: var(--usmc-gold);">
+                                    <td colspan="6" style="text-align: center; padding: 30px; color: var(--usmc-gold);">
                                         [ CONSULTANDO EXPEDIENTES EN LA BASE CENTRAL... ]
                                     </td>
                                 </tr>
@@ -735,6 +736,7 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="eco-accounts-pagination" style="display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 14px;"></div>
                 </div>
 
                 <!-- ========================================================================= -->
@@ -970,6 +972,14 @@
                                     <option value="ADMIN_ADJUST">⚙️ Ajustes Administrativos</option>
                                 </select>
                             </div>
+                            <div style="min-width: 145px;">
+                                <label class="form-label" style="font-size: 0.75rem;">DESDE:</label>
+                                <input type="date" id="audit-date-from" class="retro-input" onchange="loadAuditoriaData()">
+                            </div>
+                            <div style="min-width: 145px;">
+                                <label class="form-label" style="font-size: 0.75rem;">HASTA:</label>
+                                <input type="date" id="audit-date-to" class="retro-input" onchange="loadAuditoriaData()">
+                            </div>
                             <div style="display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap;">
                                 <button class="btn-retro primary" style="padding: 9px 18px;" onclick="loadAuditoriaData()">
                                     🔄 ACTUALIZAR LIBRO
@@ -1006,6 +1016,13 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="audit-pagination" style="display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 14px;"></div>
+                    <details style="margin-top: 22px; border: 1px solid rgba(212,175,55,0.35); padding: 10px;">
+                        <summary style="cursor: pointer; color: var(--usmc-gold); font-family: var(--font-tech);" onclick="loadAdminAuditLogs()">📜 HISTORIAL DE ACCIONES DEL MANDO</summary>
+                        <div class="retro-table-wrapper" style="margin-top: 12px;">
+                            <table class="retro-table"><thead><tr><th>FECHA</th><th>ADMINISTRADOR</th><th>ACCIÓN</th><th>OBJETIVO</th><th>DETALLE</th></tr></thead><tbody id="admin-audit-logs-tbody"><tr><td colspan="5">Abre esta sección para cargar el historial.</td></tr></tbody></table>
+                        </div>
+                    </details>
                 </div>
             </div>
 
@@ -1502,7 +1519,7 @@
             }
 
             if (filtered.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; padding: 25px; color: #728c75;">NO SE ENCONTRARON EXPEDIENTES EN ESTA CATEGORÍA.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; padding: 25px; color: #728c75;">NO SE ENCONTRARON EXPEDIENTES EN ESTA CATEGORÍA.</td></tr>`;
                 return;
             }
 
@@ -1519,6 +1536,7 @@
                         </td>
                         <td style="font-family: var(--font-mono); color: var(--usmc-gold);">${v.discord_id}</td>
                         <td><span class="status-badge ${badgeClass}">${v.status}</span></td>
+                        <td style="color: #a8c7ad; font-size: 0.8rem;">${v.reviewer_id || (v.status === 'PENDIENTE' ? 'PENDIENTE' : 'NO REGISTRADO')}</td>
                         <td>
                             <button class="action-icon-btn" onclick="openDossierModal('${v.discord_id}')">👁️ VER EXPEDIENTE</button>
                             ${v.status === 'PENDIENTE' ? `
@@ -1567,6 +1585,7 @@
                         <h2 style="color: #fff; font-family: var(--font-tech); font-size: 1.4rem;">${dossier.username}</h2>
                         <p style="color: var(--usmc-gold);">DISCORD ID: ${dossier.discord_id}</p>
                         <p style="font-size: 0.8rem; color: #8fa892;">ESTADO: <span class="status-badge ${dossier.status.toLowerCase()}">${dossier.status}</span></p>
+                        ${dossier.reviewer_id ? `<p style="font-size: 0.8rem; color: #a8c7ad; margin-top: 4px;">RESUELTO POR: ${dossier.reviewer_id}</p>` : ''}
                         ${dossier.reason ? `<p style="font-size: 0.8rem; color: #ff7a7a; margin-top: 4px;">MOTIVO: ${dossier.reason}</p>` : ''}
                     </div>
                 </div>
@@ -1586,6 +1605,7 @@
 
         async function takeAction(discordId, action) {
             let reason = '';
+            if (action === 'APROBADO' && !confirm('¿Confirmas aprobar este expediente y otorgar acceso militar al recluta?')) return;
             if (action === 'RECHAZADO') {
                 reason = prompt("INGRESE EL MOTIVO DE DENEGACIÓN / RECHAZO:") || 'No cumple los requisitos mínimos.';
             }
@@ -2070,6 +2090,9 @@
         // =========================================================================
         let allEconomyAccounts = [];
         let globalEcoSettings = { currency_symbol: '$' };
+        let economyAccountsPage = 0;
+        let economyAccountsTotal = 0;
+        const economyAccountsPageSize = 25;
 
         async function loadEconomyData() {
             try {
@@ -2104,13 +2127,15 @@
                     }
                 }
 
-                // 2. Cargar Cuentas
-                const resAccs = await fetch('/api/admin/economy/accounts', {
+                // 2. Cargar Cuentas paginadas
+                const search = document.getElementById('eco-search-input')?.value || '';
+                const resAccs = await fetch(`/api/admin/economy/accounts?limit=${economyAccountsPageSize}&offset=${economyAccountsPage * economyAccountsPageSize}&search=${encodeURIComponent(search)}`, {
                     headers: { 'Authorization': `Bearer ${adminToken}` }
                 });
                 if (resAccs.ok) {
                     const data = await resAccs.json();
                     allEconomyAccounts = data.accounts || [];
+                    economyAccountsTotal = data.total || 0;
                     renderEconomyAccounts();
                 }
 
@@ -2124,18 +2149,11 @@
         function renderEconomyAccounts() {
             const tbody = document.getElementById('eco-accounts-tbody');
             const sym = globalEcoSettings.currency_symbol || '$';
-            const searchVal = (document.getElementById('eco-search-input').value || '').toLowerCase();
-
-            let filtered = allEconomyAccounts;
-            if (searchVal) {
-                filtered = filtered.filter(a => 
-                    (a.username && a.username.toLowerCase().includes(searchVal)) ||
-                    a.discord_id.includes(searchVal)
-                );
-            }
+            const filtered = allEconomyAccounts;
 
             if (filtered.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #728c75;">Sin cuentas financieras encontradas.</td></tr>`;
+                renderEconomyAccountsPagination();
                 return;
             }
 
@@ -2163,14 +2181,44 @@
                                 onclick="openBalanceModal('${a.discord_id}', '${(a.username || a.discord_id).replace(/'/g, "\\'")}')">
                                 ⚙️ AJUSTAR SALDO
                             </button>
+                            <button class="btn-retro danger" style="padding: 4px 8px; font-size: 0.8rem;" onclick="deleteEconomyAccount('${a.discord_id}', '${(a.username || a.discord_id).replace(/'/g, "\\'")}')" title="Eliminar cuenta e inventario">
+                                🗑️ BORRAR
+                            </button>
                         </td>
                     </tr>
                 `;
             }).join('');
+            renderEconomyAccountsPagination();
         }
 
         function searchEconomyAccounts() {
-            renderEconomyAccounts();
+            economyAccountsPage = 0;
+            loadEconomyData();
+        }
+
+        function renderEconomyAccountsPagination() {
+            const el = document.getElementById('eco-accounts-pagination');
+            if (!el) return;
+            const pages = Math.max(1, Math.ceil(economyAccountsTotal / economyAccountsPageSize));
+            const current = economyAccountsPage + 1;
+            el.innerHTML = `<button class="btn-retro" ${current <= 1 ? 'disabled' : ''} onclick="changeEconomyAccountsPage(-1)">◀ ANTERIOR</button><span style="color: var(--usmc-gold);">PÁGINA ${current} / ${pages} · ${economyAccountsTotal} CUENTAS</span><button class="btn-retro" ${current >= pages ? 'disabled' : ''} onclick="changeEconomyAccountsPage(1)">SIGUIENTE ▶</button>`;
+        }
+
+        function changeEconomyAccountsPage(delta) {
+            const pages = Math.max(1, Math.ceil(economyAccountsTotal / economyAccountsPageSize));
+            economyAccountsPage = Math.min(Math.max(economyAccountsPage + delta, 0), pages - 1);
+            loadEconomyData();
+        }
+
+        async function deleteEconomyAccount(discordId, name) {
+            TerminalFX.playKeyClick();
+            if (!confirm(`¿ELIMINAR LA CUENTA DE ${name} (${discordId})?\\n\\nSe eliminará su cuenta e inventario. El historial contable se conservará. Esta acción no se puede deshacer.`)) return;
+            const confirmId = prompt(`Escribe exactamente el Discord ID para confirmar:\\n${discordId}`);
+            if (confirmId !== discordId) return alert('Operación cancelada: el Discord ID no coincide.');
+            const res = await fetch(`/api/admin/economy/accounts/${discordId}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${adminToken}` } });
+            const data = await res.json();
+            if (res.ok && data.success) { TerminalFX.playBeepSuccess(); economyAccountsPage = 0; loadEconomyData(); }
+            else alert(data.message || 'No se pudo eliminar la cuenta.');
         }
 
         // Guardar Settings Economía
@@ -2240,6 +2288,11 @@
                 alert("Debes indicar un Discord ID válido.");
                 return;
             }
+            if (!Number.isInteger(amount) || amount < 0) {
+                alert("El monto debe ser un número entero igual o mayor que 0.");
+                return;
+            }
+            if (!confirm(`¿CONFIRMAS ${action.toUpperCase()} ${globalEcoSettings.currency_symbol || '$'}${amount.toLocaleString()} en ${target === 'bank' ? 'BANCO' : 'CARTERA'} para ${discordId}?`)) return;
 
             try {
                 const res = await fetch('/api/admin/economy/accounts/quick-adjust', {
@@ -2852,8 +2905,8 @@
                             ${rolesBadges}
                             <div style="font-size: 0.75rem; color: #728c75; margin-top: 10px; border-top: 1px dashed var(--border-light); padding-top: 6px;">
                                 📦 Stock: <strong>${stockText}</strong> &bull; 👤 Límite: <strong>${maxUserText}</strong>
-                            </div>
-                        </div>
+                    </div>
+                </div>
                         <div style="display: flex; gap: 8px; margin-top: 15px;">
                             <button class="btn-retro" style="flex: 1; padding: 6px; font-size: 0.8rem; justify-content: center;" onclick="editShopItem(${item.id})">✏️ EDITAR</button>
                             <button class="btn-retro danger" style="padding: 6px 10px; font-size: 0.8rem;" onclick="deleteShopItem(${item.id})">🗑️</button>
@@ -3272,9 +3325,9 @@
                                 <tbody>
                                     ${attendeesRows}
                                 </tbody>
-                            </table>
-                        </div>
+                        </table>
                     </div>
+                </div>
                 `;
             } else {
                 currentActiveEvent = null;
@@ -3533,6 +3586,7 @@
         function filterAuditoriaDebounced() {
             if (auditDebounceTimer) clearTimeout(auditDebounceTimer);
             auditDebounceTimer = setTimeout(() => {
+                window.auditPage = 0;
                 loadAuditoriaData();
             }, 300);
         }
@@ -3563,8 +3617,11 @@
                 // 2. Cargar transacciones filtradas
                 const search = document.getElementById('audit-search-input')?.value || '';
                 const type = document.getElementById('audit-type-select')?.value || 'ALL';
+                const from = document.getElementById('audit-date-from')?.value || '';
+                const to = document.getElementById('audit-date-to')?.value || '';
+                const auditPage = window.auditPage || 0;
 
-                const query = new URLSearchParams({ type, search, limit: 100 });
+                const query = new URLSearchParams({ type, search, from, to, limit: 25, offset: auditPage * 25 });
                 const resTx = await fetch(`/api/admin/economy/transactions?${query.toString()}`, {
                     headers: { 'Authorization': `Bearer ${adminToken}` }
                 });
@@ -3572,6 +3629,8 @@
                 if (resTx.ok) {
                     const data = await resTx.json();
                     renderAuditoriaTable(data.transactions || []);
+                    window.auditTotal = data.total || 0;
+                    renderAuditPagination();
                 }
 
                 // 3. Cargar y sincronizar canal de logs de auditoría
@@ -3598,6 +3657,29 @@
             } catch (err) {
                 console.error('[Error Auditoría]:', err);
             }
+        }
+
+        function renderAuditPagination() {
+            const el = document.getElementById('audit-pagination');
+            if (!el) return;
+            const page = window.auditPage || 0;
+            const pages = Math.max(1, Math.ceil((window.auditTotal || 0) / 25));
+            el.innerHTML = `<button class="btn-retro" ${page <= 0 ? 'disabled' : ''} onclick="changeAuditPage(-1)">◀ ANTERIOR</button><span style="color: var(--usmc-gold);">PÁGINA ${page + 1} / ${pages} · ${window.auditTotal || 0} REGISTROS</span><button class="btn-retro" ${page + 1 >= pages ? 'disabled' : ''} onclick="changeAuditPage(1)">SIGUIENTE ▶</button>`;
+        }
+
+        function changeAuditPage(delta) {
+            const pages = Math.max(1, Math.ceil((window.auditTotal || 0) / 25));
+            window.auditPage = Math.min(Math.max((window.auditPage || 0) + delta, 0), pages - 1);
+            loadAuditoriaData();
+        }
+
+        async function loadAdminAuditLogs() {
+            const tbody = document.getElementById('admin-audit-logs-tbody');
+            if (!tbody) return;
+            const res = await fetch('/api/admin/audit-logs?limit=50', { headers: { 'Authorization': `Bearer ${adminToken}` } });
+            if (!res.ok) return;
+            const data = await res.json();
+            tbody.innerHTML = (data.logs || []).map(log => `<tr><td style="font-size:0.8rem;color:#728c75;">${log.created_at}</td><td style="color:#a8c7ad;">${log.actor}</td><td style="color:var(--usmc-gold);">${log.action}</td><td style="font-family:var(--font-mono);">${log.target_id || '—'}</td><td>${log.details || '—'}</td></tr>`).join('') || '<tr><td colspan="5">No hay acciones administrativas registradas.</td></tr>';
         }
 
         async function saveEconomyLogChannel() {

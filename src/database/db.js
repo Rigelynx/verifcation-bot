@@ -101,6 +101,17 @@ function initDatabase() {
         );
     `);
 
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS admin_audit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            actor TEXT NOT NULL,
+            action TEXT NOT NULL,
+            target_id TEXT DEFAULT NULL,
+            details TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+    `);
+
     // Comprobar si hay preguntas iniciales por defecto
     const countStmt = db.prepare('SELECT COUNT(*) as count FROM questions');
     const { count } = countStmt.get();
@@ -348,6 +359,16 @@ function removeVerification(discordId) {
     return true;
 }
 
+function addAdminAuditLog(actor, action, targetId = null, details = '') {
+    db.prepare(`INSERT INTO admin_audit_logs (actor, action, target_id, details) VALUES (?, ?, ?, ?)`).run(
+        actor || 'ADMIN_WEB', action, targetId, details
+    );
+}
+
+function getAdminAuditLogs(limit = 50, offset = 0) {
+    return db.prepare('SELECT * FROM admin_audit_logs ORDER BY id DESC LIMIT ? OFFSET ?').all(limit, offset);
+}
+
 module.exports = {
     db,
     getConfig,
@@ -364,5 +385,7 @@ module.exports = {
     getVerificationById,
     getAllVerifications,
     updateVerificationStatus,
-    removeVerification
+    removeVerification,
+    addAdminAuditLog,
+    getAdminAuditLogs
 };

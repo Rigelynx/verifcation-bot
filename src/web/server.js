@@ -241,8 +241,13 @@ function createWebServer(discordClient) {
     app.post('/api/admin/verifications/:discordId/action', requireAdmin, async (req, res) => {
         const { discordId } = req.params;
         const { action, reason } = req.body; // action: 'APROBADO' | 'RECHAZADO'
+        if (!['APROBADO', 'RECHAZADO'].includes(action)) {
+            return res.status(400).json({ success: false, message: 'Acción de verificación inválida.' });
+        }
 
-        const updated = db.updateVerificationStatus(discordId, action, 'ADMIN_WEB', reason);
+        const reviewer = process.env.ADMIN_NAME || 'ADMIN_WEB';
+        const updated = db.updateVerificationStatus(discordId, action, reviewer, reason);
+        db.addAdminAuditLog(reviewer, `VERIFICACION_${action}`, discordId, reason || 'Sin motivo adicional');
 
         // Notificar en Discord y asignar/remover roles
         if (discordClient && discordClient.isReady()) {
@@ -258,6 +263,7 @@ function createWebServer(discordClient) {
     app.delete('/api/admin/verifications/:discordId', requireAdmin, (req, res) => {
         const { discordId } = req.params;
         db.removeVerification(discordId);
+        db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', 'ELIMINAR_EXPEDIENTE', discordId);
         res.json({ success: true });
     });
 
@@ -282,9 +288,10 @@ function createWebServer(discordClient) {
     // Listar cuentas de economía con buscador y resolución de usuarios reales
     app.get('/api/admin/economy/accounts', requireAdmin, async (req, res) => {
         try {
-            const limit = parseInt(req.query.limit, 10) || 50;
+            const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 100);
+            const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
             const search = req.query.search || '';
-            const accounts = economyDb.getAllEconomyAccounts(limit, search);
+            const accounts = economyDb.getAllEconomyAccounts(limit, search, offset);
 
             // Sincronizar y enriquecer datos reales de Discord
             if (discordClient && discordClient.isReady()) {
@@ -305,7 +312,7 @@ function createWebServer(discordClient) {
                 }
             }
 
-            res.json({ success: true, accounts });
+            res.json({ success: true, accounts, total: economyDb.countEconomyAccounts(search), limit, offset });
         } catch (e) {
             res.status(500).json({ success: false, message: e.message });
         }
@@ -315,7 +322,7 @@ function createWebServer(discordClient) {
     app.post('/api/admin/economy/accounts/quick-adjust', requireAdmin, async (req, res) => {
         try {
             const { discordId, action, amount, target } = req.body;
-            if (!discordId || !['add', 'remove', 'set'].includes(action) || isNaN(parseInt(amount, 10))) {
+            if (!discordId || !['add', 'remove', 'set'].includes(action) || !Number.isInteger(Number(amount)) || Number(amount) < 0) {
                 return res.status(400).json({ success: false, message: 'Parámetros de ajuste inválidos.' });
             }
 
@@ -332,6 +339,7 @@ function createWebServer(discordClient) {
             }
 
             const acc = economyDb.adminAdjustBalance(discordId, action, parseInt(amount, 10), target || 'wallet');
+            db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', `AJUSTE_CUENTA_${action.toUpperCase()}`, discordId, `${amount} en ${target || 'wallet'}`);
             res.json({ success: true, account: acc });
         } catch (e) {
             res.status(500).json({ success: false, message: e.message });
@@ -342,11 +350,19 @@ function createWebServer(discordClient) {
     app.post('/api/admin/economy/accounts/:discordId/adjust', requireAdmin, (req, res) => {
         const { discordId } = req.params;
         const { action, amount, target } = req.body; // action: 'add'|'remove'|'set', target: 'wallet'|'bank'
-        if (!['add', 'remove', 'set'].includes(action) || isNaN(parseInt(amount, 10))) {
+        if (!['add', 'remove', 'set'].includes(action) || !Number.isInteger(Number(amount)) || Number(amount) < 0) {
             return res.status(400).json({ success: false, message: 'Parámetros de ajuste inválidos.' });
         }
         const acc = economyDb.adminAdjustBalance(discordId, action, parseInt(amount, 10), target || 'wallet');
+        db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', `AJUSTE_CUENTA_${action.toUpperCase()}`, discordId, `${amount} en ${target || 'wallet'}`);
         res.json({ success: true, account: acc });
+    });
+
+    app.delete('/api/admin/economy/accounts/:discordId', requireAdmin, (req, res) => {
+        const { discordId } = req.params;
+        const deleted = economyDb.deleteEconomyAccount(discordId);
+        if (deleted) db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', 'ELIMINAR_CUENTA', discordId, 'Cuenta e inventario eliminados; historial contable conservado.');
+        res.json({ success: deleted, message: deleted ? 'Cuenta eliminada. El historial contable fue conservado.' : 'No se encontró la cuenta.' });
     });
 
     // Consultar permisos y estado de comandos económicos
@@ -912,15 +928,18 @@ function createWebServer(discordClient) {
 
     // Listado de transacciones enriquecidas con filtros y buscador
     app.get('/api/admin/economy/transactions', requireAdmin, (req, res) => {
-        const { type, search, discord_id, limit, offset } = req.query;
-        const transactions = economyDb.getEnrichedTransactions({
+        const { type, search, discord_id, from, to, limit, offset } = req.query;
+        const filters = {
             discordId: discord_id || null,
             type: type || null,
             search: search || '',
-            limit: parseInt(limit, 10) || 50,
-            offset: parseInt(offset, 10) || 0
-        });
-        res.json({ success: true, transactions });
+            from: from || null,
+            to: to || null,
+            limit: Math.min(Math.max(parseInt(limit, 10) || 25, 1), 100),
+            offset: Math.max(parseInt(offset, 10) || 0, 0)
+        };
+        const transactions = economyDb.getEnrichedTransactions(filters);
+        res.json({ success: true, transactions, total: economyDb.countEnrichedTransactions(filters), limit: filters.limit, offset: filters.offset });
     });
 
     // Eliminar un registro contable específico por ID
@@ -930,6 +949,7 @@ function createWebServer(discordClient) {
             return res.status(400).json({ success: false, message: 'ID numérico inválido.' });
         }
         const success = economyDb.deleteTransaction(id);
+        if (success) db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', 'ELIMINAR_TRANSACCION', String(id));
         res.json({ success, message: success ? 'Registro contable eliminado exitosamente.' : 'No se encontró el registro.' });
     });
 
@@ -940,12 +960,14 @@ function createWebServer(discordClient) {
             return res.status(400).json({ success: false, message: 'No se enviaron identificadores válidos para eliminar.' });
         }
         const count = economyDb.deleteTransactions(ids);
+        if (count) db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', 'ELIMINAR_TRANSACCIONES_LOTE', null, `${count} registros`);
         res.json({ success: true, count, message: `Se eliminaron ${count} registro(s) contable(s).` });
     });
 
     // Vaciar / Eliminar todos los registros contables del libro
     app.delete('/api/admin/economy/transactions', requireAdmin, (req, res) => {
         const count = economyDb.clearAllTransactions();
+        if (count) db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', 'VACIAR_LIBRO_CONTABLE', null, `${count} registros`);
         res.json({ success: true, count, message: `Se han purgado todos los registros contables (${count} eliminados).` });
     });
 
@@ -961,6 +983,12 @@ function createWebServer(discordClient) {
         const { discordId } = req.params;
         const profile = economyDb.getUserFinancialProfile(discordId);
         res.json({ success: true, profile });
+    });
+
+    app.get('/api/admin/audit-logs', requireAdmin, (req, res) => {
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 100);
+        const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+        res.json({ success: true, logs: db.getAdminAuditLogs(limit, offset), limit, offset });
     });
 
     return app;

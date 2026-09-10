@@ -442,7 +442,7 @@ function getLeaderboard(limit = 10) {
     return stmt.all(limit);
 }
 
-function getAllEconomyAccounts(limit = 50, search = '') {
+function getAllEconomyAccounts(limit = 50, search = '', offset = 0) {
     if (search && search.trim().length > 0) {
         const stmt = db.prepare(`
             SELECT a.*, (a.wallet + a.bank) as net_worth, 
@@ -452,10 +452,10 @@ function getAllEconomyAccounts(limit = 50, search = '') {
             WHERE (LENGTH(a.discord_id) >= 17 AND a.discord_id GLOB '[0-9]*')
               AND (a.discord_id LIKE ? OR a.username LIKE ? OR v.username LIKE ?)
             ORDER BY net_worth DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
         `);
         const q = `%${search.trim()}%`;
-        return stmt.all(q, q, q, limit);
+        return stmt.all(q, q, q, limit, offset);
     } else {
         const stmt = db.prepare(`
             SELECT a.*, (a.wallet + a.bank) as net_worth, 
@@ -464,10 +464,29 @@ function getAllEconomyAccounts(limit = 50, search = '') {
             LEFT JOIN verifications v ON a.discord_id = v.discord_id
             WHERE LENGTH(a.discord_id) >= 17 AND a.discord_id GLOB '[0-9]*'
             ORDER BY net_worth DESC
-            LIMIT ?
+            LIMIT ? OFFSET ?
         `);
-        return stmt.all(limit);
+        return stmt.all(limit, offset);
     }
+}
+
+function countEconomyAccounts(search = '') {
+    const q = `%${String(search || '').trim()}%`;
+    return db.prepare(`
+        SELECT COUNT(*) AS total
+        FROM economy_accounts a
+        LEFT JOIN verifications v ON a.discord_id = v.discord_id
+        WHERE LENGTH(a.discord_id) >= 17 AND a.discord_id GLOB '[0-9]*'
+          AND (? = '%%' OR a.discord_id LIKE ? OR a.username LIKE ? OR v.username LIKE ?)
+    `).get(q, q, q, q).total;
+}
+
+function deleteEconomyAccount(discordId) {
+    const tx = db.transaction(() => {
+        db.prepare('DELETE FROM economy_inventory WHERE discord_id = ?').run(discordId);
+        return db.prepare('DELETE FROM economy_accounts WHERE discord_id = ?').run(discordId).changes;
+    });
+    return tx() > 0;
 }
 
 // =========================================================================
@@ -581,7 +600,7 @@ function getRecentTransactions(discordId = null, limit = 20) {
 /**
  * Consulta contable enriquecida uniendo transacciones con cuentas para auditoría completa
  */
-function getEnrichedTransactions({ discordId = null, type = null, search = '', limit = 50, offset = 0 } = {}) {
+function getEnrichedTransactions({ discordId = null, type = null, search = '', from = null, to = null, limit = 50, offset = 0 } = {}) {
     let query = `
         SELECT t.*, 
                COALESCE(a.username, 'Combatiente Desconocido') as username, 
@@ -610,10 +629,24 @@ function getEnrichedTransactions({ discordId = null, type = null, search = '', l
         params.push(s, s, s);
     }
 
+    if (from) { query += ` AND date(t.timestamp) >= date(?)`; params.push(from); }
+    if (to) { query += ` AND date(t.timestamp) <= date(?)`; params.push(to); }
+
     query += ` ORDER BY t.timestamp DESC, t.id DESC LIMIT ? OFFSET ?`;
     params.push(limit, offset);
 
     return db.prepare(query).all(...params);
+}
+
+function countEnrichedTransactions({ discordId = null, type = null, search = '', from = null, to = null } = {}) {
+    let query = `SELECT COUNT(*) AS total FROM economy_transactions t LEFT JOIN economy_accounts a ON t.discord_id = a.discord_id WHERE 1=1`;
+    const params = [];
+    if (discordId) { query += ' AND t.discord_id = ?'; params.push(discordId); }
+    if (type && type !== 'ALL') { query += ' AND t.type = ?'; params.push(type); }
+    if (search && search.trim()) { query += ' AND (t.discord_id LIKE ? OR a.username LIKE ? OR t.details LIKE ?)'; const s = `%${search.trim()}%`; params.push(s, s, s); }
+    if (from) { query += ' AND date(t.timestamp) >= date(?)'; params.push(from); }
+    if (to) { query += ' AND date(t.timestamp) <= date(?)'; params.push(to); }
+    return db.prepare(query).get(...params).total;
 }
 
 /**
@@ -1864,6 +1897,8 @@ module.exports = {
     transfer,
     getLeaderboard,
     getAllEconomyAccounts,
+    countEconomyAccounts,
+    deleteEconomyAccount,
     adminAdjustBalance,
     getRecentTransactions,
     getEconomySettings,
@@ -1914,6 +1949,7 @@ module.exports = {
     massPayoutEvent,
     getEventRegistrations,
     getEnrichedTransactions,
+    countEnrichedTransactions,
     getTreasuryStats,
     getUserFinancialProfile,
     deleteTransaction,
