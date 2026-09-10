@@ -82,11 +82,14 @@ function initDatabase() {
             answers_json TEXT NOT NULL,
             status TEXT DEFAULT 'PENDIENTE',
             reviewer_id TEXT DEFAULT NULL,
+            reviewer_name TEXT DEFAULT NULL,
             reason TEXT DEFAULT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
     `);
+
+    try { db.exec("ALTER TABLE verifications ADD COLUMN reviewer_name TEXT DEFAULT NULL;"); } catch (e) { }
 
     // 4. Tabla de tokens temporales de verificación efímera
     db.exec(`
@@ -343,13 +346,13 @@ function getAllVerifications(statusFilter = null) {
     }
 }
 
-function updateVerificationStatus(discordId, status, reviewerId = null, reason = null) {
+function updateVerificationStatus(discordId, status, reviewerId = null, reason = null, reviewerName = null) {
     const stmt = db.prepare(`
         UPDATE verifications 
-        SET status = ?, reviewer_id = ?, reason = ?, updated_at = CURRENT_TIMESTAMP
+        SET status = ?, reviewer_id = ?, reviewer_name = ?, reason = ?, updated_at = CURRENT_TIMESTAMP
         WHERE discord_id = ?
     `);
-    stmt.run(status, reviewerId, reason, discordId);
+    stmt.run(status, reviewerId, reviewerName, reason, discordId);
     return getVerificationByDiscordId(discordId);
 }
 

@@ -1546,7 +1546,7 @@
                         </td>
                         <td style="font-family: var(--font-mono); color: var(--usmc-gold);">${v.discord_id}</td>
                         <td><span class="status-badge ${badgeClass}">${v.status}</span></td>
-                        <td style="color: #a8c7ad; font-size: 0.8rem;">${v.reviewer_id || (v.status === 'PENDIENTE' ? 'PENDIENTE' : 'NO REGISTRADO')}</td>
+                        <td style="color: #a8c7ad; font-size: 0.8rem;">${v.reviewer_name ? `${v.reviewer_name}<br><small style="color:#728c75;">ID: ${v.reviewer_id}</small>` : (v.reviewer_id || (v.status === 'PENDIENTE' ? 'PENDIENTE' : 'NO REGISTRADO'))}</td>
                         <td>
                             <button class="action-icon-btn" onclick="openDossierModal('${v.discord_id}')">👁️ VER EXPEDIENTE</button>
                             ${v.status === 'PENDIENTE' ? `
@@ -1615,7 +1615,7 @@
                         <h2 style="color: #fff; font-family: var(--font-tech); font-size: 1.4rem;">${dossier.username}</h2>
                         <p style="color: var(--usmc-gold);">DISCORD ID: ${dossier.discord_id}</p>
                         <p style="font-size: 0.8rem; color: #8fa892;">ESTADO: <span class="status-badge ${dossier.status.toLowerCase()}">${dossier.status}</span></p>
-                        ${dossier.reviewer_id ? `<p style="font-size: 0.8rem; color: #a8c7ad; margin-top: 4px;">RESUELTO POR: ${dossier.reviewer_id}</p>` : ''}
+                        ${dossier.reviewer_id ? `<p style="font-size: 0.8rem; color: #a8c7ad; margin-top: 4px;">RESUELTO POR: ${dossier.reviewer_name || 'Discord'}<br><span style="color:#728c75;">ID: ${dossier.reviewer_id}</span></p>` : ''}
                         ${dossier.reason ? `<p style="font-size: 0.8rem; color: #ff7a7a; margin-top: 4px;">MOTIVO: ${dossier.reason}</p>` : ''}
                     </div>
                 </div>

@@ -81,7 +81,7 @@ module.exports = {
                 { 'Acreditación': 'Verificación manual directa por Estado Mayor' },
                 'APROBADO'
             );
-            db.updateVerificationStatus(targetUser.id, 'APROBADO', interaction.user.id, reason);
+            db.updateVerificationStatus(targetUser.id, 'APROBADO', interaction.user.id, reason, interaction.user.tag);
 
             // Aplicar roles
             await applyVerifiedRole(interaction.guild, targetUser.id, config);
@@ -107,7 +107,7 @@ module.exports = {
             const config = db.getConfig(guildId);
 
             // Actualizar en base de datos
-            db.updateVerificationStatus(targetUser.id, 'RECHAZADO', interaction.user.id, reason);
+            db.updateVerificationStatus(targetUser.id, 'RECHAZADO', interaction.user.id, reason, interaction.user.tag);
 
             // Quitar rol de verificado
             const member = await interaction.guild.members.fetch(targetUser.id).catch(() => null);

@@ -462,7 +462,7 @@ Para formalizar tu ingreso a la base militar:
             }
 
             const targetDiscordId = customId.replace('approve_verify_', '');
-            const updated = db.updateVerificationStatus(targetDiscordId, 'APROBADO', interaction.user.id, 'Aprobado vía Discord por oficial');
+            const updated = db.updateVerificationStatus(targetDiscordId, 'APROBADO', interaction.user.id, 'Aprobado vía Discord por oficial', interaction.user.tag);
             
             await handleStatusChange(client, interaction.guildId, updated, 'APROBADO', null, interaction.user.tag);
 
@@ -526,7 +526,7 @@ Para formalizar tu ingreso a la base militar:
             const targetDiscordId = interaction.customId.replace('modal_reject_', '');
             const reason = interaction.fields.getTextInputValue('reject_reason');
 
-            const updated = db.updateVerificationStatus(targetDiscordId, 'RECHAZADO', interaction.user.id, reason);
+            const updated = db.updateVerificationStatus(targetDiscordId, 'RECHAZADO', interaction.user.id, reason, interaction.user.tag);
 
             await handleStatusChange(client, interaction.guildId, updated, 'RECHAZADO', reason, interaction.user.tag);
 
