@@ -266,7 +266,10 @@ function getAccount(discordId, defaultGuildId = 'GLOBAL', username = '', avatar 
 
     if (!account) {
         const settings = getEconomySettings(defaultGuildId);
-        const startingWallet = settings ? settings.starting_balance : 100;
+        // El saldo inicial puede ser 0. No usar un fallback basado en falsy aquí.
+        const startingWallet = settings && settings.starting_balance !== null && settings.starting_balance !== undefined
+            ? Number(settings.starting_balance)
+            : 100;
 
         const insert = db.prepare(`
             INSERT INTO economy_accounts (discord_id, username, avatar, wallet, bank, bank_capacity)
@@ -294,9 +297,9 @@ function getAccount(discordId, defaultGuildId = 'GLOBAL', username = '', avatar 
     return account;
 }
 
-function syncAccountUser(discordId, username = '', avatar = '') {
+function syncAccountUser(discordId, username = '', avatar = '', guildId = 'GLOBAL') {
     if (!discordId) return;
-    return getAccount(discordId, 'GLOBAL', username, avatar);
+    return getAccount(discordId, guildId || 'GLOBAL', username, avatar);
 }
 
 function updateCooldown(discordId, type, timestamp = Math.floor(Date.now() / 1000)) {

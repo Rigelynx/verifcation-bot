@@ -85,6 +85,12 @@ module.exports = {
 
             // Aplicar roles
             await applyVerifiedRole(interaction.guild, targetUser.id, config);
+            economyDb.syncAccountUser(
+                targetUser.id,
+                targetUser.tag,
+                targetUser.displayAvatarURL({ extension: 'png', size: 128 }),
+                guildId
+            );
 
             // DM al usuario
             targetUser.send(`🎖️ **[COMUNICADO USMC]** Has sido verificado manualmente por el oficial <@${interaction.user.id}>.`).catch(() => {});

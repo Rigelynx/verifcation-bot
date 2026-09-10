@@ -22,7 +22,8 @@ async function processShopPurchase(interaction, itemId) {
     economyDb.syncAccountUser(
         interaction.user.id,
         interaction.user.tag || interaction.user.username,
-        interaction.user.displayAvatarURL({ extension: 'png', size: 128 })
+        interaction.user.displayAvatarURL({ extension: 'png', size: 128 }),
+        interaction.guildId
     );
 
     const result = economyDb.purchaseShopItem(interaction.user.id, itemId, userRoleIds);
@@ -293,7 +294,8 @@ module.exports = {
         economyDb.syncAccountUser(
             interaction.user.id,
             interaction.user.tag || interaction.user.username,
-            interaction.user.displayAvatarURL({ extension: 'png', size: 128 })
+            interaction.user.displayAvatarURL({ extension: 'png', size: 128 }),
+            interaction.guildId
         );
 
         // Verificación de permisos y activación del comando

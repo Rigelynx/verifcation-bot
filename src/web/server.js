@@ -298,7 +298,7 @@ function createWebServer(discordClient) {
                             if (user) {
                                 acc.username = user.tag || user.username;
                                 acc.avatar = user.displayAvatarURL({ extension: 'png', size: 128 });
-                                economyDb.syncAccountUser(acc.discord_id, acc.username, acc.avatar);
+                                economyDb.syncAccountUser(acc.discord_id, acc.username, acc.avatar, process.env.GUILD_ID || 'GLOBAL');
                             }
                         } catch (e) {}
                     }
@@ -326,7 +326,7 @@ function createWebServer(discordClient) {
                         user = await discordClient.users.fetch(discordId).catch(() => null);
                     }
                     if (user) {
-                        economyDb.syncAccountUser(discordId, user.tag || user.username, user.displayAvatarURL({ extension: 'png', size: 128 }));
+                        economyDb.syncAccountUser(discordId, user.tag || user.username, user.displayAvatarURL({ extension: 'png', size: 128 }), process.env.GUILD_ID || 'GLOBAL');
                     }
                 } catch (e) {}
             }
@@ -505,7 +505,7 @@ function createWebServer(discordClient) {
                         let user = discordClient.users.cache.get(target);
                         if (!user) user = await discordClient.users.fetch(target).catch(() => null);
                         if (user) {
-                            economyDb.syncAccountUser(target, user.tag || user.username, user.displayAvatarURL({ extension: 'png', size: 128 }));
+                            economyDb.syncAccountUser(target, user.tag || user.username, user.displayAvatarURL({ extension: 'png', size: 128 }), process.env.GUILD_ID || 'GLOBAL');
                         }
                     } catch (e) {}
                 }

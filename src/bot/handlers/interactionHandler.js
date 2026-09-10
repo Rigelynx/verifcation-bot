@@ -18,17 +18,6 @@ const { buildEventRosterPanel } = require('../commands/eventos');
 const { buildHelpPanel } = require('../commands/help');
 
 async function handleInteraction(interaction, client, commands) {
-    // Sincronización automática de identidad del combatiente en el sistema contable
-    if (interaction.user) {
-        try {
-            economyDb.syncAccountUser(
-                interaction.user.id,
-                interaction.user.tag || interaction.user.username,
-                interaction.user.displayAvatarURL({ extension: 'png', size: 128 })
-            );
-        } catch (e) {}
-    }
-
     // 1. Manejo de Comandos Slash
     if (interaction.isChatInputCommand()) {
         const command = commands.get(interaction.commandName);

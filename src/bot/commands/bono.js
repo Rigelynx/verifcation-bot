@@ -162,7 +162,8 @@ module.exports = {
         economyDb.syncAccountUser(
             interaction.user.id,
             interaction.user.tag || interaction.user.username,
-            interaction.user.displayAvatarURL({ extension: 'png', size: 128 })
+            interaction.user.displayAvatarURL({ extension: 'png', size: 128 }),
+            interaction.guildId
         );
 
         // =========================================================================

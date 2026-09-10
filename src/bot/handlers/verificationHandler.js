@@ -1,5 +1,6 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const db = require('../../database/db');
+const economyDb = require('../../database/economyDb');
 const { parseRoleIds } = require('../utils/roleUtils');
 
 async function handleNewSubmission(client, guildId, record, mode) {
@@ -11,6 +12,7 @@ async function handleNewSubmission(client, guildId, record, mode) {
         // MODO AUTOMÁTICO: Otorga el rol inmediatamente
         if (mode === 'auto') {
             await applyVerifiedRole(guild, record.discord_id, config);
+            economyDb.syncAccountUser(record.discord_id, record.username, record.avatar, guildId);
             sendDirectMessage(client, record.discord_id, `🎖️ **[COMUNICADO USMC]** Tu verificación militar ha sido aprobada de manera automática. Ya posees acceso a las instalaciones.`);
             logToChannel(guild, config.log_channel_id, createAuditEmbed(record, 'AUTOMÁTICO', 'Verificado por sistema autónomo'));
             return;
@@ -72,6 +74,7 @@ async function handleStatusChange(client, guildId, record, action, reason, moder
 
         if (action === 'APROBADO') {
             await applyVerifiedRole(guild, record.discord_id, config);
+            economyDb.syncAccountUser(record.discord_id, record.username, record.avatar, guildId);
             sendDirectMessage(client, record.discord_id, `🎖️ **[COMUNICADO USMC]** ¡Felicitaciones recluta! Tu expediente ha sido **APROBADO** por ${moderatorTag}. Ahora cuentas con acreditación oficial.`);
             logToChannel(guild, config.log_channel_id, createAuditEmbed(record, 'APROBADO', `Aprobado por ${moderatorTag}`));
         } else if (action === 'RECHAZADO') {
