@@ -24,6 +24,34 @@ async function handleInteraction(interaction, client, commands) {
         if (!command) return;
 
         try {
+            // La matriz del panel web funciona como una compuerta general y
+            // permite controlar también cada subcomando individualmente.
+            const subcommand = typeof interaction.options.getSubcommand === 'function'
+                ? interaction.options.getSubcommand(false)
+                : null;
+            const subcommandGroup = typeof interaction.options.getSubcommandGroup === 'function'
+                ? interaction.options.getSubcommandGroup(false)
+                : null;
+            const commandPermissionKey = subcommand
+                ? `${interaction.commandName}:${subcommandGroup ? `${subcommandGroup}:` : ''}${subcommand}`
+                : interaction.commandName;
+
+            const commandPermission = economyDb.isCommandAllowed(interaction.commandName, interaction.member);
+            const subcommandPermission = commandPermissionKey === interaction.commandName
+                ? commandPermission
+                : economyDb.isCommandAllowed(commandPermissionKey, interaction.member);
+            const effectivePermission = !commandPermission.allowed ? commandPermission : subcommandPermission;
+            // Cada comando conserva además sus validaciones específicas
+            // (oficial, administrador o permisos nativos de Discord).
+            if (!effectivePermission.allowed) {
+                return interaction.reply({
+                    content: effectivePermission.reason === 'DISABLED'
+                        ? `🔒 **Protocolo Inactivo:** El comando \`/${commandPermissionKey.replaceAll(':', ' ')}\` se encuentra temporalmente deshabilitado por el Estado Mayor.`
+                        : `🔒 **Acceso Denegado:** Tu rango militar actual no cuenta con la autorización requerida para ejecutar \`/${commandPermissionKey.replaceAll(':', ' ')}\`.`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
             await command.execute(interaction);
         } catch (error) {
             console.error(`[Comando Error: ${interaction.commandName}]`, error);

@@ -868,7 +868,7 @@
                             🛡️ MATRIZ DE CONTROL DE PROTOCOLOS Y PERMISOS DE COMANDOS
                         </h4>
                         <p style="color: #728c75; font-size: 0.85rem;">
-                            Habilita o desactiva la ejecución de comandos económicos y restringe su acceso a rangos militares específicos. (Los administradores de Discord tienen bypass total).
+                            Habilita o desactiva la ejecución de comandos del bot y restringe su acceso a rangos militares específicos. (Los administradores de Discord tienen bypass total).
                         </p>
                     </div>
 
@@ -888,6 +888,7 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="command-permissions-pagination" style="display: flex; justify-content: center; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 15px;"></div>
                 </div>
 
                 <!-- ========================================================================= -->
@@ -4060,16 +4061,57 @@
         // MÓDULO JAVASCRIPT: CONTROL DE DIRECTIVAS Y PERMISOS DE COMANDOS
         // =========================================================================
         let allCommandPerms = [];
+        let commandPermissionsPage = 1;
+        const COMMANDS_PER_PAGE = 10;
         const COMMAND_METAS = {
-            'trabajar': { label: '/trabajar', desc: 'Guardias de vigilancia y turnos de servicio militar.' },
-            'crimen': { label: '/crimen', desc: 'Misiones clandestinas de alto riesgo con probabilidad de sanción.' },
-            'robar': { label: '/robar', desc: 'Asaltos e incautaciones de efectivo entre combatientes.' },
-            'pagar': { label: '/pagar', desc: 'Transferencias directas de créditos entre combatientes.' },
-            'depositar': { label: '/depositar', desc: 'Depósito de fondos en la caja fuerte del banco militar.' },
-            'retirar': { label: '/retirar', desc: 'Retiro de fondos de la caja fuerte a la cartera.' },
-            'ranking': { label: '/ranking', desc: 'Consulta del escalafón de riqueza y patrimonio militar.' },
-            'tienda': { label: '/tienda', desc: 'Panel interactivo de armería, compras y suministros.' },
-            'bono': { label: '/bono', desc: 'Sistema de bonificaciones y panel interactivo de reclamo extraordinario.' }
+            'admin': { label: '/admin', desc: 'Administración general del sistema.' },
+            'admin:verificar-manual': { label: '/admin verificar-manual', desc: 'Verificación manual de un recluta.' },
+            'admin:desverificar': { label: '/admin desverificar', desc: 'Revocación de una verificación militar.' },
+            'admin:panel-web': { label: '/admin panel-web', desc: 'Enlace y credenciales del Centro de Mando Web.' },
+            'admin:configurar': { label: '/admin configurar', desc: 'Configuración de roles, canales y modo de verificación.' },
+            'bono': { label: '/bono', desc: 'Sistema general de bonificaciones militares.' },
+            'bono:panel': { label: '/bono panel', desc: 'Publicación del panel de reclamo de bonos.' },
+            'bono:crear': { label: '/bono crear', desc: 'Creación de un bono militar.' },
+            'bono:eliminar': { label: '/bono eliminar', desc: 'Eliminación de un bono militar.' },
+            'bono:reset_reclamos': { label: '/bono reset_reclamos', desc: 'Reinicio de reclamos de un bono.' },
+            'bono:lista': { label: '/bono lista', desc: 'Listado de bonos militares.' },
+            'bono:reclamar': { label: '/bono reclamar', desc: 'Reclamo de una asignación disponible.' },
+            'bono:dar': { label: '/bono dar', desc: 'Asignación directa de un bono.' },
+            'bono:masivo': { label: '/bono masivo', desc: 'Asignación masiva de bonos.' },
+            'bono:estado': { label: '/bono estado', desc: 'Consulta del estado de bonos.' },
+            'datos-usuario': { label: '/datos-usuario', desc: 'Consulta clasificada del expediente militar.' },
+            'economia': { label: '/economia', desc: 'Acceso general al sistema económico.' },
+            'economia:balance': { label: '/economia balance', desc: 'Consulta de estado de cuenta y patrimonio.' },
+            'economia:depositar': { label: '/economia depositar', desc: 'Depósito de fondos en el banco militar.' },
+            'economia:retirar': { label: '/economia retirar', desc: 'Retiro de fondos a la cartera.' },
+            'economia:pagar': { label: '/economia pagar', desc: 'Transferencia de créditos entre combatientes.' },
+            'economia:trabajar': { label: '/economia trabajar', desc: 'Guardias y turnos de servicio militar.' },
+            'economia:crimen': { label: '/economia crimen', desc: 'Misión clandestina de alto riesgo.' },
+            'economia:robar': { label: '/economia robar', desc: 'Asalto e incautación de efectivo.' },
+            'economia:ranking': { label: '/economia ranking', desc: 'Escalafón de riqueza y patrimonio.' },
+            'economia:admin:dar': { label: '/economia admin dar', desc: 'Ajuste administrativo para acreditar fondos.' },
+            'economia:admin:quitar': { label: '/economia admin quitar', desc: 'Ajuste administrativo para retirar fondos.' },
+            'economia:admin:fijar': { label: '/economia admin fijar', desc: 'Fijación administrativa de un saldo.' },
+            'evento': { label: '/evento', desc: 'Gestión general de operaciones militares.' },
+            'evento:convocar': { label: '/evento convocar', desc: 'Convocatoria y registro de una operación.' },
+            'evento:confirmar': { label: '/evento confirmar', desc: 'Panel de confirmación de asistencia.' },
+            'evento:panel_pago': { label: '/evento panel_pago', desc: 'Panel de reclamo de paga militar.' },
+            'evento:pagar_todos': { label: '/evento pagar_todos', desc: 'Liquidación de paga a los participantes.' },
+            'evento:lista': { label: '/evento lista', desc: 'Pase de lista táctico en tiempo real.' },
+            'evento:iniciar': { label: '/evento iniciar', desc: 'Inicio del rastreo de presencia.' },
+            'evento:finalizar': { label: '/evento finalizar', desc: 'Finalización de una operación.' },
+            'evento:estado': { label: '/evento estado', desc: 'Estado de participantes y operación.' },
+            'help': { label: '/help', desc: 'Manual táctico y guía de comandos.' },
+            'mod': { label: '/mod', desc: 'Moderación militar general.' },
+            'mod:ban': { label: '/mod ban', desc: 'Baneo permanente de un usuario.' },
+            'mod:kick': { label: '/mod kick', desc: 'Expulsión de un usuario.' },
+            'mod:timeout': { label: '/mod timeout', desc: 'Aislamiento temporal de un usuario.' },
+            'mod:purge': { label: '/mod purge', desc: 'Eliminación masiva de mensajes.' },
+            'panel-verificacion': { label: '/panel-verificacion', desc: 'Publicación del panel de verificación.' },
+            'tienda': { label: '/tienda', desc: 'Acceso general a la armería militar.' },
+            'tienda:panel': { label: '/tienda panel', desc: 'Panel interactivo de la tienda.' },
+            'tienda:comprar': { label: '/tienda comprar', desc: 'Compra directa de un suministro.' },
+            'tienda:inventario': { label: '/tienda inventario', desc: 'Consulta de inventario militar.' }
         };
 
         async function loadCommandsData() {
@@ -4080,6 +4122,7 @@
                 if (res.ok) {
                     const data = await res.json();
                     allCommandPerms = data.commands || [];
+                    commandPermissionsPage = 1;
                     renderCommandPermissions();
                 }
             } catch (err) {
@@ -4098,7 +4141,12 @@
 
             const rolesList = (guildResources && guildResources.roles) ? guildResources.roles : [];
 
-            tbody.innerHTML = allCommandPerms.map(cmd => {
+            const totalPages = Math.max(1, Math.ceil(allCommandPerms.length / COMMANDS_PER_PAGE));
+            commandPermissionsPage = Math.min(Math.max(commandPermissionsPage, 1), totalPages);
+            const pageStart = (commandPermissionsPage - 1) * COMMANDS_PER_PAGE;
+            const pageCommands = allCommandPerms.slice(pageStart, pageStart + COMMANDS_PER_PAGE);
+
+            tbody.innerHTML = pageCommands.map(cmd => {
                 const meta = COMMAND_METAS[cmd.command_name] || { label: `/${cmd.command_name}`, desc: 'Protocolo de comando militar' };
                 const isEnabled = cmd.is_enabled;
 
@@ -4152,6 +4200,39 @@
                     </tr>
                 `;
             }).join('');
+
+            renderCommandPermissionsPagination(totalPages);
+        }
+
+        function renderCommandPermissionsPagination(totalPages) {
+            const pagination = document.getElementById('command-permissions-pagination');
+            if (!pagination) return;
+
+            if (totalPages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+
+            const pageButtons = Array.from({ length: totalPages }, (_, index) => {
+                const page = index + 1;
+                const activeStyle = page === commandPermissionsPage
+                    ? 'background: var(--usmc-gold); color: #101810; border-color: var(--usmc-gold);'
+                    : '';
+                return `<button type="button" class="btn-retro" style="padding: 5px 10px; ${activeStyle}" onclick="goToCommandPermissionsPage(${page})">${page}</button>`;
+            }).join('');
+
+            pagination.innerHTML = `
+                <button type="button" class="btn-retro" style="padding: 5px 10px;" ${commandPermissionsPage === 1 ? 'disabled' : ''} onclick="goToCommandPermissionsPage(${commandPermissionsPage - 1})">◀ ANTERIOR</button>
+                ${pageButtons}
+                <button type="button" class="btn-retro" style="padding: 5px 10px;" ${commandPermissionsPage === totalPages ? 'disabled' : ''} onclick="goToCommandPermissionsPage(${commandPermissionsPage + 1})">SIGUIENTE ▶</button>
+                <span style="color: #728c75; font-size: 0.8rem; margin-left: 5px;">Página ${commandPermissionsPage} de ${totalPages}</span>
+            `;
+        }
+
+        function goToCommandPermissionsPage(page) {
+            const totalPages = Math.max(1, Math.ceil(allCommandPerms.length / COMMANDS_PER_PAGE));
+            commandPermissionsPage = Math.min(Math.max(page, 1), totalPages);
+            renderCommandPermissions();
         }
 
         function addRoleToCmd(cmdName, roleId) {

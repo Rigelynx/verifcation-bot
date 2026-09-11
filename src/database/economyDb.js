@@ -225,11 +225,41 @@ function initEconomyTables() {
         );
     `);
 
-    // Sembrar comandos por defecto si no existen
-    const defaultCmds = ['trabajar', 'crimen', 'robar', 'pagar', 'depositar', 'retirar', 'ranking', 'tienda', 'bono'];
+    // Sembrar todos los protocolos configurables, incluidos sus subcomandos.
+    const defaultCmds = [
+        'admin', 'admin:verificar-manual', 'admin:desverificar', 'admin:panel-web', 'admin:configurar',
+        'bono', 'bono:panel', 'bono:crear', 'bono:eliminar', 'bono:reset_reclamos', 'bono:lista', 'bono:reclamar', 'bono:dar', 'bono:masivo', 'bono:estado',
+        'datos-usuario',
+        'economia', 'economia:balance', 'economia:depositar', 'economia:retirar', 'economia:pagar', 'economia:trabajar', 'economia:crimen', 'economia:robar', 'economia:ranking',
+        'economia:admin:dar', 'economia:admin:quitar', 'economia:admin:fijar',
+        'evento', 'evento:convocar', 'evento:confirmar', 'evento:panel_pago', 'evento:pagar_todos', 'evento:lista', 'evento:iniciar', 'evento:finalizar', 'evento:estado',
+        'help',
+        'mod', 'mod:ban', 'mod:kick', 'mod:timeout', 'mod:purge',
+        'panel-verificacion',
+        'tienda', 'tienda:panel', 'tienda:comprar', 'tienda:inventario'
+    ];
     const insertCmd = db.prepare('INSERT OR IGNORE INTO economy_command_permissions (command_name, is_enabled, allowed_roles) VALUES (?, 1, ?)');
     for (const c of defaultCmds) {
         insertCmd.run(c, '[]');
+    }
+
+    // Migrar la primera versión de la matriz (que guardaba subcomandos de
+    // economía sin prefijo) a sus rutas completas, sin perder restricciones.
+    const legacyCommandMap = {
+        balance: 'economia:balance', trabajar: 'economia:trabajar', crimen: 'economia:crimen',
+        robar: 'economia:robar', pagar: 'economia:pagar', depositar: 'economia:depositar',
+        retirar: 'economia:retirar', ranking: 'economia:ranking'
+    };
+    const findCmd = db.prepare('SELECT is_enabled, allowed_roles FROM economy_command_permissions WHERE command_name = ?');
+    const moveCmd = db.prepare('UPDATE economy_command_permissions SET is_enabled = ?, allowed_roles = ? WHERE command_name = ?');
+    const removeCmd = db.prepare('DELETE FROM economy_command_permissions WHERE command_name = ?');
+    for (const [legacyName, canonicalName] of Object.entries(legacyCommandMap)) {
+        const legacy = findCmd.get(legacyName);
+        const canonical = findCmd.get(canonicalName);
+        if (legacy && canonical) {
+            moveCmd.run(legacy.is_enabled, legacy.allowed_roles, canonicalName);
+        }
+        if (legacy) removeCmd.run(legacyName);
     }
 
     // Migraciones seguras para columnas avanzadas de eventos y pases de lista
