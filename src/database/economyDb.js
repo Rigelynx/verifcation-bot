@@ -232,7 +232,7 @@ function initEconomyTables() {
         'datos-usuario',
         'economia', 'economia:balance', 'economia:depositar', 'economia:retirar', 'economia:pagar', 'economia:trabajar', 'economia:crimen', 'economia:robar', 'economia:ranking',
         'economia:admin:dar', 'economia:admin:quitar', 'economia:admin:fijar',
-        'evento', 'evento:convocar', 'evento:confirmar', 'evento:panel_pago', 'evento:pagar_todos', 'evento:lista', 'evento:iniciar', 'evento:finalizar', 'evento:estado',
+        'evento:convocar', 'evento:confirmar', 'evento:panel_pago', 'evento:pagar_todos', 'evento:lista', 'evento:iniciar', 'evento:finalizar', 'evento:estado',
         'help',
         'mod', 'mod:ban', 'mod:kick', 'mod:timeout', 'mod:purge',
         'panel-verificacion',
@@ -261,6 +261,10 @@ function initEconomyTables() {
         }
         if (legacy) removeCmd.run(legacyName);
     }
+
+    // /evento no forma parte de los comandos expuestos en el panel web;
+    // sus subcomandos sí permanecen configurables.
+    db.prepare("DELETE FROM economy_command_permissions WHERE command_name = 'evento'").run();
 
     // Migraciones seguras para columnas avanzadas de eventos y pases de lista
     try {
