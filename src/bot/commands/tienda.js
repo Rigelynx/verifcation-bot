@@ -298,18 +298,18 @@ module.exports = {
             interaction.guildId
         );
 
+        const sub = interaction.options.getSubcommand(false) || 'panel';
+
         // Verificación de permisos y activación del comando
-        const permCheck = economyDb.isCommandAllowed('tienda', interaction.member);
+        const permCheck = economyDb.isCommandAllowed(`tienda:${sub}`, interaction.member);
         if (!permCheck.allowed) {
             return interaction.reply({
                 content: permCheck.reason === 'DISABLED'
-                    ? '🔒 **Protocolo Inactivo:** La armería y tienda militar se encuentra temporalmente cerrada por orden del Estado Mayor.'
-                    : '🔒 **Acceso Denegado:** Tu rango militar actual no cuenta con autorización para acceder a la armería.',
+                    ? `🔒 **Protocolo Inactivo:** El protocolo \`/tienda ${sub}\` se encuentra temporalmente cerrado por orden del Estado Mayor.`
+                    : '🔒 **Acceso Denegado:** Tu rango militar actual no cuenta con autorización para acceder a este módulo de la armería.',
                 flags: MessageFlags.Ephemeral
             });
         }
-
-        const sub = interaction.options.getSubcommand(false) || 'panel';
 
         // ==========================================
         // /tienda panel (o /tienda por defecto)

@@ -389,6 +389,23 @@ function createWebServer(discordClient) {
         }
     });
 
+    // Actualización masiva de permisos de comandos (habilitar/desactivar en lote)
+    app.post('/api/admin/economy/commands/bulk', requireAdmin, (req, res) => {
+        try {
+            const { updates } = req.body;
+            if (!Array.isArray(updates)) {
+                return res.status(400).json({ success: false, message: 'Se requiere una lista válida de actualizaciones.' });
+            }
+            const commands = economyDb.bulkUpdateCommandPermissions(updates);
+            if (db.addAdminAuditLog) {
+                db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', 'CONFIGURACION_COMANDOS_LOTE', 'COMANDOS', `Actualizados ${updates.length} comandos en lote.`);
+            }
+            res.json({ success: true, commands });
+        } catch (e) {
+            res.status(500).json({ success: false, message: e.message });
+        }
+    });
+
     // =========================================================================
     // ENDPOINTS DE BONOS MILITARES (PANEL INTERACTIVO Y DISTRIBUCIÓN)
     // =========================================================================

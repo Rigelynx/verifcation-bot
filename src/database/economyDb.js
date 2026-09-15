@@ -225,18 +225,18 @@ function initEconomyTables() {
         );
     `);
 
-    // Sembrar todos los protocolos configurables, incluidos sus subcomandos.
+    // Sembrar todos los protocolos configurables del bot (42 comandos ejecutables reales)
     const defaultCmds = [
-        'admin', 'admin:verificar-manual', 'admin:desverificar', 'admin:panel-web', 'admin:configurar',
-        'bono', 'bono:panel', 'bono:crear', 'bono:eliminar', 'bono:reset_reclamos', 'bono:lista', 'bono:reclamar', 'bono:dar', 'bono:masivo', 'bono:estado',
+        'admin:verificar-manual', 'admin:desverificar', 'admin:panel-web', 'admin:configurar',
+        'bono:panel', 'bono:crear', 'bono:eliminar', 'bono:reset_reclamos', 'bono:lista', 'bono:reclamar', 'bono:dar', 'bono:masivo', 'bono:estado',
         'datos-usuario',
-        'economia', 'economia:balance', 'economia:depositar', 'economia:retirar', 'economia:pagar', 'economia:trabajar', 'economia:crimen', 'economia:robar', 'economia:ranking',
+        'economia:balance', 'economia:depositar', 'economia:retirar', 'economia:pagar', 'economia:trabajar', 'economia:crimen', 'economia:robar', 'economia:ranking',
         'economia:admin:dar', 'economia:admin:quitar', 'economia:admin:fijar',
         'evento:convocar', 'evento:confirmar', 'evento:panel_pago', 'evento:pagar_todos', 'evento:lista', 'evento:iniciar', 'evento:finalizar', 'evento:estado',
         'help',
-        'mod', 'mod:ban', 'mod:kick', 'mod:timeout', 'mod:purge',
+        'mod:ban', 'mod:kick', 'mod:timeout', 'mod:purge',
         'panel-verificacion',
-        'tienda', 'tienda:panel', 'tienda:comprar', 'tienda:inventario'
+        'tienda:panel', 'tienda:comprar', 'tienda:inventario'
     ];
     const insertCmd = db.prepare('INSERT OR IGNORE INTO economy_command_permissions (command_name, is_enabled, allowed_roles) VALUES (?, 1, ?)');
     for (const c of defaultCmds) {
@@ -262,9 +262,8 @@ function initEconomyTables() {
         if (legacy) removeCmd.run(legacyName);
     }
 
-    // /evento no forma parte de los comandos expuestos en el panel web;
-    // sus subcomandos sí permanecen configurables.
-    db.prepare("DELETE FROM economy_command_permissions WHERE command_name = 'evento'").run();
+    // Depurar comandos raíz obsoletos/innecesarios que no son ejecutables por sí mismos en Discord
+    db.prepare("DELETE FROM economy_command_permissions WHERE command_name IN ('admin', 'bono', 'economia', 'mod', 'tienda', 'evento')").run();
 
     // Migraciones seguras para columnas avanzadas de eventos y pases de lista
     try {
@@ -553,23 +552,73 @@ function updateCommandPermission(commandName, isEnabled, allowedRoles = []) {
     };
 }
 
+function bulkUpdateCommandPermissions(updates) {
+    if (!Array.isArray(updates) || updates.length === 0) return getCommandPermissions();
+    const stmt = db.prepare(`
+        INSERT INTO economy_command_permissions (command_name, is_enabled, allowed_roles)
+        VALUES (?, ?, ?)
+        ON CONFLICT(command_name) DO UPDATE SET
+            is_enabled = excluded.is_enabled,
+            allowed_roles = COALESCE(excluded.allowed_roles, economy_command_permissions.allowed_roles)
+    `);
+    const bulkTx = db.transaction((list) => {
+        for (const item of list) {
+            if (!item.command_name) continue;
+            const isEnabled = item.is_enabled !== undefined ? (item.is_enabled ? 1 : 0) : 1;
+            const rolesJson = item.allowed_roles ? JSON.stringify(item.allowed_roles) : '[]';
+            stmt.run(item.command_name, isEnabled, rolesJson);
+        }
+    });
+    bulkTx(updates);
+    return getCommandPermissions();
+}
+
 function isCommandAllowed(commandName, member) {
-    if (!member) return { allowed: true };
-    // Administradores de Discord siempre tienen bypass total
-    if (member.permissions && member.permissions.has(8n)) {
-        return { allowed: true };
+    if (!commandName) return { allowed: true };
+
+    // Buscar el comando por su clave canónica exacta (ej: 'economia:balance')
+    let perm = db.prepare('SELECT is_enabled, allowed_roles FROM economy_command_permissions WHERE command_name = ?').get(commandName);
+
+    // Fallback: si se consulta un subcomando sin prefijo (ej: 'balance' -> buscar '%:balance')
+    if (!perm && !commandName.includes(':')) {
+        const matching = db.prepare("SELECT is_enabled, allowed_roles FROM economy_command_permissions WHERE command_name LIKE ?").get(`%:${commandName}`);
+        if (matching) perm = matching;
     }
 
-    const perm = db.prepare('SELECT is_enabled, allowed_roles FROM economy_command_permissions WHERE command_name = ?').get(commandName);
     if (!perm) return { allowed: true };
 
+    // 1. REGLA CRÍTICA DE DESACTIVACIÓN:
+    // Si el comando fue desactivado (is_enabled === 0), está DESHABILITADO PARA TODOS,
+    // incluidos los Administradores de Discord. De esta forma, si el Estado Mayor desactiva
+    // un protocolo en el panel web, realmente no podrá ejecutarse en Discord.
     if (perm.is_enabled === 0) {
         return { allowed: false, reason: 'DISABLED' };
     }
 
+    if (!member) return { allowed: true };
+
+    // 2. BYPASS DE ROLES PARA ADMINISTRADORES:
+    // Los miembros con permiso nativo de Administrador de Discord (8n) tienen bypass
+    // exclusivamente sobre la lista de roles autorizados (allowed_roles).
+    if (member.permissions && typeof member.permissions.has === 'function' && member.permissions.has(8n)) {
+        return { allowed: true };
+    }
+
+    // 3. Verificación de roles autorizados
     const roles = JSON.parse(perm.allowed_roles || '[]');
     if (roles.length > 0) {
-        const memberRoles = member.roles ? member.roles.cache.map(r => r.id) : [];
+        let memberRoles = [];
+        if (Array.isArray(member.roles)) {
+            memberRoles = member.roles.map(r => typeof r === 'string' ? r : (r.id || String(r)));
+        } else if (member.roles && member.roles.cache) {
+            if (typeof member.roles.cache.map === 'function') {
+                memberRoles = member.roles.cache.map(r => r.id || r);
+            } else if (member.roles.cache instanceof Map || typeof member.roles.cache.keys === 'function') {
+                memberRoles = Array.from(member.roles.cache.keys());
+            } else if (Array.isArray(member.roles.cache)) {
+                memberRoles = member.roles.cache.map(r => r.id || r);
+            }
+        }
         const hasRole = roles.some(rId => memberRoles.includes(rId));
         if (!hasRole) {
             return { allowed: false, reason: 'ROLE_RESTRICTED', requiredRoles: roles };
@@ -1962,6 +2011,7 @@ module.exports = {
     syncAccountUser,
     getCommandPermissions,
     updateCommandPermission,
+    bulkUpdateCommandPermissions,
     isCommandAllowed,
     getAllBonusPanels,
     getBonusPanelById,

@@ -133,12 +133,13 @@ module.exports = {
         }
 
         // Verificación de activación y permisos por rol para comandos estándar
-        const permCheck = economyDb.isCommandAllowed(sub, interaction.member);
+        const commandKey = group ? `economia:${group}:${sub}` : `economia:${sub}`;
+        const permCheck = economyDb.isCommandAllowed(commandKey, interaction.member);
         if (!permCheck.allowed) {
             return interaction.reply({
                 content: permCheck.reason === 'DISABLED'
-                    ? `🔒 **Protocolo Inactivo:** La orden militar \`/${sub}\` se encuentra temporalmente deshabilitada por el Estado Mayor.`
-                    : `🔒 **Acceso Denegado:** Tu rango militar actual no cuenta con la autorización requerida para ejecutar \`/${sub}\`.`,
+                    ? `🔒 **Protocolo Inactivo:** La orden militar \`/${commandKey.replaceAll(':', ' ')}\` se encuentra temporalmente deshabilitada por el Estado Mayor.`
+                    : `🔒 **Acceso Denegado:** Tu rango militar actual no cuenta con la autorización requerida para ejecutar \`/${commandKey.replaceAll(':', ' ')}\`.`,
                 flags: MessageFlags.Ephemeral
             });
         }
