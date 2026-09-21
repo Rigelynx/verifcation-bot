@@ -1216,7 +1216,11 @@ function getActiveEvents(guildId) {
 function getRecentEvents(guildId, limit = 25) {
     return db.prepare(`
         SELECT * FROM event_payouts
-        WHERE guild_id = ? OR guild_id = 'GLOBAL'
+        WHERE (guild_id = ? OR guild_id = 'GLOBAL')
+          AND (
+              status = 'ACTIVE'
+              OR COALESCE(ended_at, created_at) >= datetime('now', '-7 days')
+          )
         ORDER BY CASE WHEN status = 'ACTIVE' THEN 0 ELSE 1 END, id DESC
         LIMIT ?
     `).all(guildId, Math.min(Math.max(limit, 1), 25));
@@ -1442,6 +1446,32 @@ function getEventHistory(guildId = 'GLOBAL', limit = 15) {
         LIMIT ?
     `);
     return stmt.all(guildId, limit);
+}
+
+function deleteEventRecord(eventId, guildId) {
+    const event = getEventById(eventId);
+    if (!event || (event.guild_id !== guildId && event.guild_id !== 'GLOBAL')) {
+        return { success: false, message: 'Evento no encontrado en este servidor.' };
+    }
+    if (event.status === 'ACTIVE') {
+        return { success: false, message: 'No se puede borrar un evento activo. Finalízalo primero.' };
+    }
+
+    const remove = db.transaction(() => {
+        const attendance = db.prepare('DELETE FROM event_attendance WHERE event_id = ?').run(eventId);
+        const deleted = db.prepare('DELETE FROM event_payouts WHERE id = ?').run(eventId);
+        return { attendanceCount: attendance.changes, eventCount: deleted.changes };
+    });
+    const result = remove();
+
+    return {
+        success: result.eventCount === 1,
+        event,
+        attendanceCount: result.attendanceCount,
+        message: result.eventCount === 1
+            ? `Evento #${eventId} y ${result.attendanceCount} registro(s) de asistencia eliminados.`
+            : 'No se pudo eliminar el evento.'
+    };
 }
 
 /**
@@ -2024,6 +2054,7 @@ module.exports = {
     getUserEventRecord,
     claimEventPayout,
     getEventHistory,
+    deleteEventRecord,
     syncAccountUser,
     getCommandPermissions,
     updateCommandPermission,

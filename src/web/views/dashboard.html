@@ -836,6 +836,9 @@
                         <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.1rem; margin-bottom: 4px;">
                             📜 REGISTRO HISTÓRICO DE OPERACIONES Y PAGOS
                         </h4>
+                        <p style="color: #728c75; font-size: 0.85rem;">
+                            El historial permanece archivado aquí. Discord muestra únicamente eventos activos y los finalizados durante los últimos 7 días.
+                        </p>
                     </div>
 
                     <div class="retro-table-wrapper" style="margin-top: 12px;">
@@ -845,15 +848,17 @@
                                     <th>ID</th>
                                     <th>OPERACIÓN</th>
                                     <th>TIPO</th>
+                                    <th>ESTADO</th>
                                     <th>FECHA</th>
                                     <th>PARTICIPANTES</th>
                                     <th>ELEGIBLES</th>
                                     <th>RECLAMADOS</th>
                                     <th>TOTAL PAGADO</th>
+                                    <th style="text-align: right;">ACCIÓN</th>
                                 </tr>
                             </thead>
                             <tbody id="event-history-tbody">
-                                <tr><td colspan="8" style="text-align: center; color: #728c75;">Cargando historial de misiones...</td></tr>
+                                <tr><td colspan="10" style="text-align: center; color: #728c75;">Cargando historial de misiones...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -3297,7 +3302,7 @@
                 }
 
                 // 2. Cargar Historial
-                const resHist = await fetch('/api/admin/events/history', {
+                const resHist = await fetch('/api/admin/events/history?limit=500', {
                     headers: { 'Authorization': `Bearer ${adminToken}` }
                 });
                 if (resHist.ok) {
@@ -4121,7 +4126,7 @@
             const sym = globalEcoSettings.currency_symbol || '$';
 
             if (history.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #728c75;">Sin operaciones concluidas en los archivos históricos.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: #728c75;">Sin operaciones en los archivos históricos.</td></tr>`;
                 return;
             }
 
@@ -4132,14 +4137,44 @@
                         <td style="font-family: var(--font-mono); color: var(--usmc-gold);">#${ev.id}</td>
                         <td style="font-weight: bold; color: #fff;">${ev.name}</td>
                         <td><span class="status-badge" style="background: rgba(0,204,255,0.15); color: var(--usmc-blue);">${ev.event_type}</span></td>
+                        <td><span class="status-badge" style="background: ${ev.status === 'ACTIVE' ? 'rgba(56,229,77,0.15)' : 'rgba(212,175,55,0.15)'}; color: ${ev.status === 'ACTIVE' ? 'var(--usmc-green)' : 'var(--usmc-gold)'};">${ev.status}</span></td>
                         <td style="font-size: 0.8rem; color: #8fa892;">${dateStr}</td>
                         <td style="text-align: center;">${ev.total_attendees}</td>
                         <td style="text-align: center; color: var(--usmc-green); font-weight: bold;">${ev.eligible_count}</td>
                         <td style="text-align: center; color: var(--usmc-gold);">${ev.claimed_count}</td>
                         <td style="font-weight: bold; color: #fff;">${sym}${(ev.total_paid || 0).toLocaleString()}</td>
+                        <td style="text-align: right;">
+                            ${ev.status === 'ACTIVE'
+                                ? '<span style="color: #728c75; font-size: 0.75rem;">EN CURSO</span>'
+                                : `<button class="btn-retro danger" style="font-size: 0.72rem; padding: 4px 8px;" onclick="deleteEventRecord(${ev.id})">🗑️ BORRAR</button>`}
+                        </td>
                     </tr>
                 `;
             }).join('');
+        }
+
+        async function deleteEventRecord(eventId) {
+            const confirmed = confirm(`¿BORRAR PERMANENTEMENTE EL EVENTO #${eventId}?\n\nTambién se eliminarán todos sus registros de asistencia. Esta acción no se puede deshacer.`);
+            if (!confirmed) return;
+
+            try {
+                const res = await fetch(`/api/admin/events/${eventId}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    TerminalFX.playBeepError();
+                    return alert(`❌ ${data.message || 'No se pudo borrar el evento.'}`);
+                }
+
+                TerminalFX.playBeepSuccess();
+                alert(`✅ ${data.message}`);
+                loadEventsData();
+            } catch (err) {
+                TerminalFX.playBeepError();
+                alert(`❌ ${err.message}`);
+            }
         }
 
         // =========================================================================

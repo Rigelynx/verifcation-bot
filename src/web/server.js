@@ -934,9 +934,31 @@ function createWebServer(discordClient) {
     // Historial de eventos concluidos
     app.get('/api/admin/events/history', requireAdmin, (req, res) => {
         const guildId = process.env.GUILD_ID || 'GLOBAL';
-        const limit = parseInt(req.query.limit, 10) || 15;
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
         const history = economyDb.getEventHistory(guildId, limit);
         res.json({ success: true, history });
+    });
+
+    // Borrado permanente de un evento histórico y sus registros de asistencia
+    app.delete('/api/admin/events/:id', requireAdmin, (req, res) => {
+        const eventId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(eventId) || eventId <= 0) {
+            return res.status(400).json({ success: false, message: 'ID de evento inválido.' });
+        }
+
+        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const result = economyDb.deleteEventRecord(eventId, guildId);
+        if (!result.success) {
+            return res.status(result.event?.status === 'ACTIVE' ? 409 : 404).json(result);
+        }
+
+        db.addAdminAuditLog(
+            process.env.ADMIN_NAME || 'ADMIN_WEB',
+            'ELIMINAR_EVENTO',
+            String(eventId),
+            `${result.event.name} | ${result.attendanceCount} registros de asistencia`
+        );
+        return res.json(result);
     });
 
     // =========================================================================
