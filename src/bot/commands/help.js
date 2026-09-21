@@ -66,8 +66,9 @@ function buildHelpPanel(page = 1, guildId = 'GLOBAL') {
                     { name: '🛒 `/tienda panel`', value: 'Abre el catálogo interactivo con paginación, saldo actualizado y compra rápida.', inline: false },
                     { name: '📦 `/tienda comprar <id>` · `/tienda inventario`', value: 'Compra un artículo por su ID y revisa tu inventario y beneficios obtenidos.', inline: false },
                     { name: '📢 `/evento convocar <nombre> <paga_base> [...]`', value: '*(Oficiales)* Crea una operación con paga, cupo, plazo y canales configurables.', inline: false },
+                    { name: '🎓 `/evento entrenamiento <nombre> <rol> [...]`', value: '*(Oficiales)* Registra participantes y entrega el rol a quienes permanezcan aprobados al finalizar.', inline: false },
                     { name: '📍 `/evento confirmar [canal]`', value: '*(Oficiales)* Publica un pase de lista para confirmar asistencia.', inline: false },
-                    { name: '📋 `/evento lista` · `/evento estado`', value: '*(Oficiales)* Consulta el roster y el estado actual de la operación.', inline: false },
+                    { name: '📋 `/evento lista [evento_id]` · `/evento estado [evento_id]`', value: '*(Oficiales)* Elige y consulta rosters activos o finalizados; permite retirar reprobados.', inline: false },
                     { name: '📡 `/evento iniciar` · `/evento finalizar`', value: '*(Oficiales)* Registra actividad en voz, chat o modalidad híbrida y calcula la permanencia.', inline: false },
                     { name: '💵 `/evento panel_pago [canal]`', value: '*(Oficiales)* Publica el panel para que los participantes elegibles reclamen su paga.', inline: false },
                     { name: '⚡ `/evento pagar_todos`', value: '*(Oficiales)* Liquida de forma masiva a los participantes confirmados.', inline: false }

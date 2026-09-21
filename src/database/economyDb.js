@@ -225,14 +225,14 @@ function initEconomyTables() {
         );
     `);
 
-    // Sembrar todos los protocolos configurables del bot (42 comandos ejecutables reales)
+    // Sembrar todos los protocolos configurables del bot
     const defaultCmds = [
         'admin:verificar-manual', 'admin:desverificar', 'admin:panel-web', 'admin:configurar',
         'bono:panel', 'bono:crear', 'bono:eliminar', 'bono:reset_reclamos', 'bono:lista', 'bono:reclamar', 'bono:dar', 'bono:masivo', 'bono:estado',
         'datos-usuario',
         'economia:balance', 'economia:depositar', 'economia:retirar', 'economia:pagar', 'economia:trabajar', 'economia:crimen', 'economia:robar', 'economia:ranking',
         'economia:admin:dar', 'economia:admin:quitar', 'economia:admin:fijar',
-        'evento:convocar', 'evento:confirmar', 'evento:panel_pago', 'evento:pagar_todos', 'evento:lista', 'evento:iniciar', 'evento:finalizar', 'evento:estado',
+        'evento:convocar', 'evento:entrenamiento', 'evento:confirmar', 'evento:panel_pago', 'evento:pagar_todos', 'evento:lista', 'evento:iniciar', 'evento:finalizar', 'evento:estado',
         'help',
         'mod:ban', 'mod:kick', 'mod:timeout', 'mod:purge',
         'panel-verificacion',
@@ -274,6 +274,7 @@ function initEconomyTables() {
         if (!pCols.includes('confirmation_message_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN confirmation_message_id TEXT DEFAULT NULL");
         if (!pCols.includes('phase')) db.exec("ALTER TABLE event_payouts ADD COLUMN phase TEXT DEFAULT 'ACTIVE'");
         if (!pCols.includes('max_participants')) db.exec("ALTER TABLE event_payouts ADD COLUMN max_participants INTEGER DEFAULT 0");
+        if (!pCols.includes('reward_role_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN reward_role_id TEXT DEFAULT NULL");
     } catch (e) {
         console.error('[Migration Error event_payouts]:', e.message);
     }
@@ -1164,14 +1165,9 @@ function createEvent({
     grace_period_minutes = 5,
     min_attendance_percent = 80,
     max_participants = 0,
-    phase = null
+    phase = null,
+    reward_role_id = null
 }) {
-    // Si hay otro evento activo en el servidor, lo cancelamos o evitamos duplicidad
-    const active = getActiveEvent(guild_id);
-    if (active) {
-        return { success: false, message: `Ya existe una operación militar activa: [${active.name}]. Finalízala primero.` };
-    }
-
     const initialPhase = phase || (event_type === 'REGISTRATION' ? 'REGISTRATION' : 'ACTIVE');
 
     const stmt = db.prepare(`
@@ -1179,9 +1175,9 @@ function createEvent({
             guild_id, name, event_type, target_channel_id, payout_channel_id,
             registration_channel_id, confirmation_channel_id,
             base_reward, claim_deadline_hours, grace_period_minutes, min_attendance_percent,
-            max_participants, phase, status
+            max_participants, phase, reward_role_id, status
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
     `);
 
     const info = stmt.run(
@@ -1197,15 +1193,33 @@ function createEvent({
         grace_period_minutes,
         min_attendance_percent,
         max_participants || 0,
-        initialPhase
+        initialPhase,
+        reward_role_id
     );
 
     return { success: true, event: getEventById(info.lastInsertRowid) };
 }
 
 function getActiveEvent(guildId) {
-    const stmt = db.prepare("SELECT * FROM event_payouts WHERE (guild_id = ? OR guild_id = 'GLOBAL') AND status = 'ACTIVE' LIMIT 1");
+    const stmt = db.prepare("SELECT * FROM event_payouts WHERE (guild_id = ? OR guild_id = 'GLOBAL') AND status = 'ACTIVE' ORDER BY id DESC LIMIT 1");
     return stmt.get(guildId);
+}
+
+function getActiveEvents(guildId) {
+    return db.prepare(`
+        SELECT * FROM event_payouts
+        WHERE (guild_id = ? OR guild_id = 'GLOBAL') AND status = 'ACTIVE'
+        ORDER BY id DESC
+    `).all(guildId);
+}
+
+function getRecentEvents(guildId, limit = 25) {
+    return db.prepare(`
+        SELECT * FROM event_payouts
+        WHERE guild_id = ? OR guild_id = 'GLOBAL'
+        ORDER BY CASE WHEN status = 'ACTIVE' THEN 0 ELSE 1 END, id DESC
+        LIMIT ?
+    `).all(guildId, Math.min(Math.max(limit, 1), 25));
 }
 
 function getEventById(id) {
@@ -1442,7 +1456,7 @@ function registerUserForEvent(eventId, discordId, username = '') {
 
     // Comprobar límite de reclutas si está configurado
     if (event.max_participants > 0) {
-        const count = db.prepare("SELECT COUNT(*) as c FROM event_attendance WHERE event_id = ? AND status != 'CANCELLED'").get(eventId).c;
+        const count = db.prepare("SELECT COUNT(*) as c FROM event_attendance WHERE event_id = ? AND status NOT IN ('CANCELLED', 'EXPELLED')").get(eventId).c;
         if (count >= event.max_participants) {
             return { success: false, message: `⚠️ Cupo militar agotado: se ha alcanzado el límite máximo de ${event.max_participants} reclutas.` };
         }
@@ -2000,6 +2014,8 @@ module.exports = {
     getBestRoleRewardForUser,
     createEvent,
     getActiveEvent,
+    getActiveEvents,
+    getRecentEvents,
     getEventById,
     recordAttendanceHeartbeat,
     recordChatActivity,

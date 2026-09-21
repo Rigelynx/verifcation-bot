@@ -4,6 +4,7 @@ const {
     ActionRowBuilder, 
     ButtonBuilder, 
     ButtonStyle, 
+    StringSelectMenuBuilder,
     ChannelType, 
     MessageFlags 
 } = require('discord.js');
@@ -17,25 +18,34 @@ const { finishAndPublishEvent } = require('../handlers/eventTracker');
 function buildRegistrationPanel(event, settings = null) {
     const sym = settings ? settings.currency_symbol : '$';
     const maxRecruitsText = event.max_participants > 0 ? `\`${event.max_participants} soldados\`` : '`Sin Límite (Ilimitado)`';
+    const isTraining = event.event_type === 'TRAINING';
+    const rewardText = isTraining
+        ? `> 🎓 **Rol para aprobados:** <@&${event.reward_role_id}>`
+        : `> 💰 **Paga de Misión:** \`${sym}${event.base_reward.toLocaleString()}\` *(+ Bonificación por Rango Militar)*\n> ⏱️ **Vigencia de Cobro:** \`${event.claim_deadline_hours || 24} horas\` tras finalizar`;
+    const introText = isTraining
+        ? 'Todos los aspirantes deben registrarse. Al terminar, el oficial retirará de la lista a los reprobados y el rol se entregará a quienes permanezcan.'
+        : 'Todos los combatientes interesados en participar y hacerse acreedores a la asignación presupuestaria deben formalizar su inscripción pulsando el botón táctico inferior.';
+    const instructions = isTraining
+        ? '1. Pulsa **`[ 📝 REGISTRARSE EN LA OPERACIÓN ]`** para entrar en la lista.\n2. Al concluir, el oficial retirará del roster a quienes no aprobaron.\n3. Al finalizar el entrenamiento, recibirás automáticamente el rol configurado.'
+        : '1. Pulsa **`[ 📝 REGISTRARSE EN LA OPERACIÓN ]`** para entrar en la lista previa.\n2. Al concluir el evento, el oficial abrirá el **Pase de Lista** para confirmar tu presencia.\n3. Una vez confirmada tu asistencia, podrás cobrar tus créditos.';
 
     const embed = new EmbedBuilder()
         .setColor(0x00b4d8) // Tactical Blue
         .setTitle(`📋 [CONVOCATORIA MILITAR DE OPERACIÓN // ${event.name.toUpperCase()}]`)
         .setDescription(`
-**El Mando Supremo de la Base USMC ha abierto la lista de alistamiento para la misión.**
+**El Mando Supremo de la Base USMC ha abierto la lista de alistamiento.**
 
-Todos los combatientes interesados en participar y hacerse acreedores a la asignación presupuestaria deben formalizar su inscripción pulsando el botón táctico inferior.
+${introText}
 
 > 🎖️ **Misión:** \`${event.name}\`
-> 💰 **Paga de Misión:** \`${sym}${event.base_reward.toLocaleString()}\` *(+ Bonificación por Rango Militar)*
+${rewardText}
 > 👥 **Cupo de Escuadrón:** ${maxRecruitsText}
-> ⏱️ **Vigencia de Cobro:** \`${event.claim_deadline_hours || 24} horas\` tras finalizar
 > 🛡️ **Fase Actual:** \`CONVOCATORIA Y ALISTAMIENTO ACTIVO\`
         `)
         .addFields(
             { 
                 name: '📌 Instrucciones Tácticas', 
-                value: '1. Pulsa **`[ 📝 REGISTRARSE EN LA OPERACIÓN ]`** para entrar en la lista previa.\n2. Al concluir el evento, el oficial abrirá el **Pase de Lista** para confirmar tu presencia.\n3. Una vez confirmada tu asistencia, podrás cobrar tus créditos.', 
+                value: instructions,
                 inline: false 
             }
         )
@@ -139,6 +149,16 @@ function buildEventRosterPanel(event, page = 1, settings = null) {
     const registeredCount = roster.length;
     const confirmedCount = roster.filter(r => r.attendance_confirmed === 1 || r.is_eligible === 1).length;
     const claimedCount = roster.filter(r => r.claimed === 1).length;
+    const isTraining = event.event_type === 'TRAINING';
+    const rosterInstructions = isTraining
+        ? '*Retira con `[🗑️ #]` a quienes reprobaron. Los que permanezcan recibirán el rol al finalizar.*'
+        : '*Para retirar a un recluta y bloquear su asistencia, pulsa su botón de borrado `[🗑️ #]`.*';
+    const attendanceSummary = isTraining
+        ? `> 🎓 **Aprobados actuales:** \`${registeredCount}\``
+        : `> ✅ **Asistencia Confirmada:** \`${confirmedCount}\``;
+    const rewardSummary = isTraining
+        ? `> 🎓 **Rol al finalizar:** <@&${event.reward_role_id}>`
+        : `> 💵 **Haberes Cobrados:** \`${claimedCount}\`\n> 💰 **Paga Base:** \`${sym}${event.base_reward.toLocaleString()}\``;
 
     const PAGE_SIZE = 5;
     const totalPages = Math.max(1, Math.ceil(roster.length / PAGE_SIZE));
@@ -163,14 +183,13 @@ function buildEventRosterPanel(event, page = 1, settings = null) {
         .setTitle(`📋 [ROSTER TÁCTICO // OPERACIÓN #${event.id} // ${event.name.toUpperCase()}]`)
         .setDescription(`
 **Panel de control de alistamiento militar en tiempo real.**
-*Para retirar a un recluta y bloquear su asistencia, pulsa su botón de borrado \`[🗑️ #]\`.*
+${rosterInstructions}
 
 > 🎖️ **Operación:** \`${event.name}\` (\`${event.event_type}\`)
 > 🛡️ **Fase Actual:** \`${event.phase || event.status}\`
 > 👥 **Total Inscritos:** \`${registeredCount}\` ${event.max_participants > 0 ? `/ ${event.max_participants}` : ''}
-> ✅ **Asistencia Confirmada:** \`${confirmedCount}\`
-> 💵 **Haberes Cobrados:** \`${claimedCount}\`
-> 💰 **Paga Base:** \`${sym}${event.base_reward.toLocaleString()}\`
+${attendanceSummary}
+${rewardSummary}
 
 **Soldados en esta Página (${currentPage}/${totalPages}):**
 ${listText}
@@ -223,6 +242,73 @@ ${listText}
     return { embeds: [embed], components };
 }
 
+function buildEventPicker(events) {
+    const embed = new EmbedBuilder()
+        .setColor(0x00b4d8)
+        .setTitle('📋 [SELECCIONAR EVENTO]')
+        .setDescription('Elige una operación activa o reciente para abrir su roster. Los eventos finalizados siguen disponibles para revisión y corrección.')
+        .setFooter({ text: `${events.length} evento(s) disponible(s)` });
+
+    const select = new StringSelectMenuBuilder()
+        .setCustomId('event_roster_select')
+        .setPlaceholder('Selecciona un evento')
+        .addOptions(events.map(event => ({
+            label: `#${event.id} - ${event.name}`.slice(0, 100),
+            description: `${event.status === 'ACTIVE' ? 'Activo' : 'Finalizado'} | ${event.event_type}`.slice(0, 100),
+            value: String(event.id)
+        })));
+
+    return { embeds: [embed], components: [new ActionRowBuilder().addComponents(select)] };
+}
+
+function resolveActiveEvent(guildId, requestedId) {
+    const activeEvents = economyDb.getActiveEvents(guildId);
+    if (requestedId) {
+        const event = economyDb.getEventById(requestedId);
+        if (!event || (event.guild_id !== guildId && event.guild_id !== 'GLOBAL')) {
+            return { error: `No existe el evento #${requestedId} en este servidor.` };
+        }
+        if (event.status !== 'ACTIVE') {
+            return { error: `El evento #${requestedId} ya está finalizado.` };
+        }
+        return { event };
+    }
+    if (activeEvents.length === 1) return { event: activeEvents[0] };
+    if (activeEvents.length === 0) return { error: 'No hay ninguna operación militar activa en este momento.' };
+    return { error: `Hay ${activeEvents.length} eventos activos. Indica \`evento_id\` (puedes consultarlo con \`/evento lista\`).` };
+}
+
+async function awardTrainingRole(interaction, event) {
+    const role = interaction.guild.roles.cache.get(event.reward_role_id) || await interaction.guild.roles.fetch(event.reward_role_id).catch(() => null);
+    if (!role) throw new Error('El rol configurado ya no existe en el servidor.');
+    if (role.managed || !role.editable) {
+        throw new Error(`No puedo administrar el rol ${role}. Revisa que mi rol esté por encima y que tenga permiso para gestionar roles.`);
+    }
+
+    const roster = economyDb.getEventRegistrations(event.id);
+    const awarded = [];
+    const alreadyHadRole = [];
+    const failed = [];
+
+    for (const attendee of roster) {
+        try {
+            const member = await interaction.guild.members.fetch(attendee.discord_id);
+            if (member.roles.cache.has(role.id)) {
+                alreadyHadRole.push(attendee.discord_id);
+            } else {
+                await member.roles.add(role, `Aprobado en entrenamiento #${event.id}: ${event.name}`);
+                awarded.push(attendee.discord_id);
+            }
+        } catch (error) {
+            failed.push({ discordId: attendee.discord_id, reason: error.message });
+        }
+    }
+
+    if (event.status === 'ACTIVE') economyDb.finalizeEvent(event.id);
+    economyDb.setEventPhase(event.id, 'ENDED');
+    return { role, rosterCount: roster.length, awarded, alreadyHadRole, failed };
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('evento')
@@ -238,22 +324,34 @@ module.exports = {
                 .addIntegerOption(opt => opt.setName('plazo_horas').setDescription('Horas límite para cobrar tras finalizar (default: 24h)').setMinValue(1).setRequired(false))
         )
         .addSubcommand(sub =>
+            sub.setName('entrenamiento')
+                .setDescription('Crea un entrenamiento y entrega un rol a quienes permanezcan aprobados en la lista')
+                .addStringOption(opt => opt.setName('nombre').setDescription('Nombre del entrenamiento').setRequired(true))
+                .addRoleOption(opt => opt.setName('rol').setDescription('Rol que recibirán los aprobados').setRequired(true))
+                .addChannelOption(opt => opt.setName('canal_registro').setDescription('Canal donde publicar el panel de inscripción').addChannelTypes(ChannelType.GuildText).setRequired(false))
+                .addIntegerOption(opt => opt.setName('cupo_maximo').setDescription('Límite de participantes (opcional)').setMinValue(1).setRequired(false))
+        )
+        .addSubcommand(sub =>
             sub.setName('confirmar')
                 .setDescription('Publica el panel interactivo para que los reclutas confirmen su asistencia presencial')
                 .addChannelOption(opt => opt.setName('canal').setDescription('Canal donde publicar el botón de confirmación').addChannelTypes(ChannelType.GuildText).setRequired(false))
+                .addIntegerOption(opt => opt.setName('evento_id').setDescription('ID del evento; necesario cuando hay varios activos').setMinValue(1).setRequired(false))
         )
         .addSubcommand(sub =>
             sub.setName('panel_pago')
                 .setDescription('Publica el panel con botón de reclamo de paga militar para los asistentes confirmados')
                 .addChannelOption(opt => opt.setName('canal').setDescription('Canal donde publicar el cobro (por defecto canal de pago)').addChannelTypes(ChannelType.GuildText).setRequired(false))
+                .addIntegerOption(opt => opt.setName('evento_id').setDescription('ID del evento; necesario cuando hay varios activos').setMinValue(1).setRequired(false))
         )
         .addSubcommand(sub =>
             sub.setName('pagar_todos')
                 .setDescription('Liquidación directa e inmediata: deposita la paga a todos los confirmados sin esperar que pulsen')
+                .addIntegerOption(opt => opt.setName('evento_id').setDescription('ID del evento; necesario cuando hay varios activos').setMinValue(1).setRequired(false))
         )
         .addSubcommand(sub =>
             sub.setName('lista')
                 .setDescription('Visualiza el pase de lista táctico en tiempo real (con paginación y expulsión)')
+                .addIntegerOption(opt => opt.setName('evento_id').setDescription('ID del evento activo o finalizado que deseas revisar').setMinValue(1).setRequired(false))
         )
         .addSubcommand(sub =>
             sub.setName('iniciar')
@@ -274,16 +372,19 @@ module.exports = {
         .addSubcommand(sub =>
             sub.setName('finalizar')
                 .setDescription('Concluye la operación activa y emite el botón de cobro para los asistentes')
+                .addIntegerOption(opt => opt.setName('evento_id').setDescription('ID del evento; necesario cuando hay varios activos').setMinValue(1).setRequired(false))
         )
         .addSubcommand(sub =>
             sub.setName('estado')
                 .setDescription('Verifica los participantes y estado en tiempo real de la operación activa')
+                .addIntegerOption(opt => opt.setName('evento_id').setDescription('ID del evento; necesario cuando hay varios activos').setMinValue(1).setRequired(false))
         ),
 
     buildRegistrationPanel,
     buildConfirmationPanel,
     buildPayoutPanel,
     buildEventRosterPanel,
+    buildEventPicker,
 
     async execute(interaction) {
         if (!hasOfficerPermission(interaction)) {
@@ -356,15 +457,63 @@ module.exports = {
         }
 
         // ==========================================
+        // /evento entrenamiento (Registro + rol para aprobados)
+        // ==========================================
+        if (sub === 'entrenamiento') {
+            const name = interaction.options.getString('nombre');
+            const rewardRole = interaction.options.getRole('rol');
+            const regChannel = interaction.options.getChannel('canal_registro') || interaction.channel;
+            const maxParticipants = interaction.options.getInteger('cupo_maximo') || 0;
+
+            if (!regChannel.isTextBased()) {
+                return interaction.reply({ content: '❌ El canal de registro debe ser un canal de texto.', flags: MessageFlags.Ephemeral });
+            }
+            if (rewardRole.managed || !rewardRole.editable) {
+                return interaction.reply({
+                    content: `❌ No puedo entregar ${rewardRole}. Mi rol debe estar por encima y debo tener permiso para gestionar roles.`,
+                    flags: MessageFlags.Ephemeral
+                });
+            }
+
+            const result = economyDb.createEvent({
+                guild_id: guildId,
+                name,
+                event_type: 'TRAINING',
+                target_channel_id: regChannel.id,
+                payout_channel_id: regChannel.id,
+                registration_channel_id: regChannel.id,
+                confirmation_channel_id: regChannel.id,
+                base_reward: 0,
+                max_participants: maxParticipants,
+                phase: 'REGISTRATION',
+                reward_role_id: rewardRole.id
+            });
+
+            const panelData = buildRegistrationPanel(result.event, settings);
+            try {
+                const sentMsg = await regChannel.send(panelData);
+                economyDb.setEventPhase(result.event.id, 'REGISTRATION', {
+                    registration_channel_id: regChannel.id,
+                    registration_message_id: sentMsg.id
+                });
+                return interaction.reply({
+                    content: `🎓 **Entrenamiento #${result.event.id} creado.** Registro publicado en <#${regChannel.id}> y rol para aprobados: ${rewardRole}.`,
+                    flags: MessageFlags.Ephemeral
+                });
+            } catch (err) {
+                return interaction.reply({ content: `❌ Error al publicar el entrenamiento: ${err.message}`, flags: MessageFlags.Ephemeral });
+            }
+        }
+
+        // ==========================================
         // 2. /evento confirmar (NUEVO: Confirmar Asistencia)
         // ==========================================
         if (sub === 'confirmar') {
-            const active = economyDb.getActiveEvent(guildId);
-            if (!active) {
-                return interaction.reply({
-                    content: '⚠️ No hay ninguna operación militar activa en este momento.',
-                    flags: MessageFlags.Ephemeral
-                });
+            const resolved = resolveActiveEvent(guildId, interaction.options.getInteger('evento_id'));
+            if (!resolved.event) return interaction.reply({ content: `⚠️ ${resolved.error}`, flags: MessageFlags.Ephemeral });
+            const active = resolved.event;
+            if (active.event_type === 'TRAINING') {
+                return interaction.reply({ content: 'ℹ️ Los entrenamientos no usan confirmación: elimina a los reprobados desde `/evento lista` y luego finaliza.', flags: MessageFlags.Ephemeral });
             }
 
             const targetChannel = interaction.options.getChannel('canal') || 
@@ -400,12 +549,11 @@ module.exports = {
         // 3. /evento panel_pago (NUEVO: Publicar Botón de Cobro)
         // ==========================================
         if (sub === 'panel_pago') {
-            const active = economyDb.getActiveEvent(guildId);
-            if (!active) {
-                return interaction.reply({
-                    content: '⚠️ No hay ninguna operación militar activa para liquidar.',
-                    flags: MessageFlags.Ephemeral
-                });
+            const resolved = resolveActiveEvent(guildId, interaction.options.getInteger('evento_id'));
+            if (!resolved.event) return interaction.reply({ content: `⚠️ ${resolved.error}`, flags: MessageFlags.Ephemeral });
+            const active = resolved.event;
+            if (active.event_type === 'TRAINING') {
+                return interaction.reply({ content: 'ℹ️ Los entrenamientos entregan el rol con `/evento finalizar` y no generan panel de pago.', flags: MessageFlags.Ephemeral });
             }
 
             const targetChannel = interaction.options.getChannel('canal') || 
@@ -446,12 +594,11 @@ module.exports = {
         // 4. /evento pagar_todos (NUEVO: Pago Masivo Directo)
         // ==========================================
         if (sub === 'pagar_todos') {
-            const active = economyDb.getActiveEvent(guildId);
-            if (!active) {
-                return interaction.reply({
-                    content: '⚠️ No hay ninguna operación militar activa para liquidar.',
-                    flags: MessageFlags.Ephemeral
-                });
+            const resolved = resolveActiveEvent(guildId, interaction.options.getInteger('evento_id'));
+            if (!resolved.event) return interaction.reply({ content: `⚠️ ${resolved.error}`, flags: MessageFlags.Ephemeral });
+            const active = resolved.event;
+            if (active.event_type === 'TRAINING') {
+                return interaction.reply({ content: 'ℹ️ Los entrenamientos no pagan créditos; usa `/evento finalizar` para entregar el rol.', flags: MessageFlags.Ephemeral });
             }
 
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -488,16 +635,24 @@ ${previewPaid}
         // 5. /evento lista (Reporte Táctico Paginado con Expulsión)
         // ==========================================
         if (sub === 'lista') {
-            const active = economyDb.getActiveEvent(guildId);
-            if (!active) {
+            const requestedId = interaction.options.getInteger('evento_id');
+            if (requestedId) {
+                const event = economyDb.getEventById(requestedId);
+                if (!event || (event.guild_id !== guildId && event.guild_id !== 'GLOBAL')) {
+                    return interaction.reply({ content: `⚠️ No existe el evento #${requestedId} en este servidor.`, flags: MessageFlags.Ephemeral });
+                }
+                const panel = buildEventRosterPanel(event, 1, settings);
+                return interaction.reply({ ...panel, flags: MessageFlags.Ephemeral });
+            }
+
+            const events = economyDb.getRecentEvents(guildId, 25);
+            if (events.length === 0) {
                 return interaction.reply({
-                    content: 'ℹ️ No hay ninguna operación militar activa en este momento.',
+                    content: 'ℹ️ No hay operaciones disponibles para consultar.',
                     flags: MessageFlags.Ephemeral
                 });
             }
-
-            const panel = buildEventRosterPanel(active, 1, settings);
-            return interaction.reply({ ...panel, flags: MessageFlags.Ephemeral });
+            return interaction.reply({ ...buildEventPicker(events), flags: MessageFlags.Ephemeral });
         }
 
         // ==========================================
@@ -574,13 +729,9 @@ El rastreo de presencia militar ha sido activado exitosamente.
         // 7. /evento estado (Existente: Monitor en vivo)
         // ==========================================
         if (sub === 'estado') {
-            const active = economyDb.getActiveEvent(guildId);
-            if (!active) {
-                return interaction.reply({
-                    content: 'ℹ️ No hay ninguna operación militar activa en este momento.',
-                    flags: MessageFlags.Ephemeral
-                });
-            }
+            const resolved = resolveActiveEvent(guildId, interaction.options.getInteger('evento_id'));
+            if (!resolved.event) return interaction.reply({ content: `ℹ️ ${resolved.error}`, flags: MessageFlags.Ephemeral });
+            const active = resolved.event;
 
             const attendees = economyDb.getEventAttendance(active.id);
             const durationMinutes = Math.floor((Date.now() - new Date(active.created_at).getTime()) / 60000);
@@ -620,17 +771,36 @@ ${previewAttendees}
         // 8. /evento finalizar (Existente: Auto tracker)
         // ==========================================
         if (sub === 'finalizar') {
-            const active = economyDb.getActiveEvent(guildId);
-            if (!active) {
-                return interaction.reply({
-                    content: '⚠️ No hay ninguna operación militar en curso para finalizar.',
-                    flags: MessageFlags.Ephemeral
-                });
+            const requestedId = interaction.options.getInteger('evento_id');
+            let active;
+            if (requestedId) {
+                active = economyDb.getEventById(requestedId);
+                if (!active || (active.guild_id !== guildId && active.guild_id !== 'GLOBAL')) {
+                    return interaction.reply({ content: `⚠️ No existe el evento #${requestedId} en este servidor.`, flags: MessageFlags.Ephemeral });
+                }
+                if (active.status !== 'ACTIVE' && active.event_type !== 'TRAINING') {
+                    return interaction.reply({ content: `⚠️ El evento #${requestedId} ya está finalizado.`, flags: MessageFlags.Ephemeral });
+                }
+            } else {
+                const resolved = resolveActiveEvent(guildId, null);
+                if (!resolved.event) return interaction.reply({ content: `⚠️ ${resolved.error}`, flags: MessageFlags.Ephemeral });
+                active = resolved.event;
             }
 
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
             try {
+                if (active.event_type === 'TRAINING') {
+                    const summary = await awardTrainingRole(interaction, active);
+                    const failedPreview = summary.failed.slice(0, 5).map(item => `<@${item.discordId}>`).join(', ');
+                    const retryText = summary.failed.length > 0
+                        ? `\n⚠️ No se pudo asignar a **${summary.failed.length}** miembro(s): ${failedPreview}${summary.failed.length > 5 ? '…' : ''}. Puedes corregir el problema y repetir \`/evento finalizar evento_id:${active.id}\`.`
+                        : '';
+                    return interaction.editReply({
+                        content: `✅ **Entrenamiento #${active.id} finalizado.** Rol ${summary.role} entregado a **${summary.awarded.length}** aprobado(s); **${summary.alreadyHadRole.length}** ya lo tenían. Total en la lista final: **${summary.rosterCount}**.${retryText}`
+                    });
+                }
+
                 const summary = await finishAndPublishEvent(interaction.client, active.id);
 
                 return interaction.editReply({

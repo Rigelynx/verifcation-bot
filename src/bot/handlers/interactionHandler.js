@@ -178,15 +178,15 @@ Para formalizar tu ingreso a la base militar:
 
             const regEmbed = new EmbedBuilder()
                 .setColor(0x00b4d8)
-                .setTitle('🎖️ [INSCRIPCIÓN A OPERACIÓN REGISTRADA]')
+                .setTitle(res.event?.event_type === 'TRAINING' ? '🎓 [INSCRIPCIÓN A ENTRENAMIENTO REGISTRADA]' : '🎖️ [INSCRIPCIÓN A OPERACIÓN REGISTRADA]')
                 .setDescription(`
 ¡Atención combatiente! Has sido incorporado en la lista oficial de la operación militar.
 
 > 📍 **Misión:** \`${res.event ? res.event.name : `#${eventId}`}\`
 > 👤 **Recluta:** <@${interaction.user.id}> (\`${username}\`)
-> 🛡️ **Estado:** \`REGISTRADO EN CONVOCATORIA (LISTO PARA EL DESPLIEGUE)\`
+> 🛡️ **Estado:** \`${res.event?.event_type === 'TRAINING' ? 'REGISTRADO EN ENTRENAMIENTO' : 'REGISTRADO EN CONVOCATORIA (LISTO PARA EL DESPLIEGUE)'}\`
 
-*Permanece atento para confirmar tu asistencia cuando el oficial abra el Pase de Lista.*
+*${res.event?.event_type === 'TRAINING' ? 'Si apruebas y permaneces en la lista final, recibirás el rol configurado.' : 'Permanece atento para confirmar tu asistencia cuando el oficial abra el Pase de Lista.'}*
                 `)
                 .setFooter({ text: `Operación ID: #${eventId} • USMC Roster System` })
                 .setTimestamp();
@@ -345,8 +345,11 @@ Para formalizar tu ingreso a la base militar:
             const panel = buildEventRosterPanel(event, page, settings);
 
             await interaction.update(panel);
+            const consequence = event.event_type === 'TRAINING'
+                ? 'No recibirá el rol al finalizar.'
+                : 'No podrá confirmar asistencia ni recibir cobros.';
             return interaction.followUp({
-                content: `🗑️ **Soldado Dado de Baja:** <@${targetDiscordId}> (\`${expelRes.username}\`) ha sido expulsado de la operación #${eventId}. No podrá confirmar asistencia ni recibir cobros.`,
+                content: `🗑️ **Soldado Dado de Baja:** <@${targetDiscordId}> (\`${expelRes.username}\`) ha sido retirado del evento #${eventId}. ${consequence}`,
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -536,6 +539,19 @@ Para formalizar tu ingreso a la base militar:
     // 2.5. Manejo de Menú Desplegable de la Tienda
     // =====================================================
     if (interaction.isStringSelectMenu()) {
+        if (interaction.customId === 'event_roster_select') {
+            if (!hasOfficerPermission(interaction)) {
+                return interaction.reply({ content: '❌ Solo oficiales y administradores pueden consultar este roster.', flags: MessageFlags.Ephemeral });
+            }
+            const eventId = parseInt(interaction.values[0], 10);
+            const event = economyDb.getEventById(eventId);
+            if (!event || (event.guild_id !== interaction.guildId && event.guild_id !== 'GLOBAL')) {
+                return interaction.reply({ content: '❌ Evento no encontrado en este servidor.', flags: MessageFlags.Ephemeral });
+            }
+            const settings = economyDb.getEconomySettings(interaction.guildId);
+            return interaction.update(buildEventRosterPanel(event, 1, settings));
+        }
+
         if (interaction.customId === 'select_buy_shop') {
             const itemId = parseInt(interaction.values[0], 10);
             return processShopPurchase(interaction, itemId);

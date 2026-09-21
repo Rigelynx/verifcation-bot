@@ -17,10 +17,9 @@ function initEventMonitoring(client) {
 
             // Recorrer todos los servidores donde está el bot
             for (const guild of client.guilds.cache.values()) {
-                const activeEvent = economyDb.getActiveEvent(guild.id);
-                if (!activeEvent) continue;
-
-                if (activeEvent.event_type === 'VOICE' || activeEvent.event_type === 'HYBRID') {
+                const activeEvents = economyDb.getActiveEvents(guild.id);
+                for (const activeEvent of activeEvents) {
+                    if (activeEvent.event_type !== 'VOICE' && activeEvent.event_type !== 'HYBRID') continue;
                     const channel = guild.channels.cache.get(activeEvent.target_channel_id);
                     if (channel && channel.isVoiceBased()) {
                         // Miembros actualmente conectados en la sala de voz
@@ -50,17 +49,15 @@ function handleVoiceStateUpdate(oldState, newState) {
         const guild = newState.guild || oldState.guild;
         if (!guild) return;
 
-        const activeEvent = economyDb.getActiveEvent(guild.id);
-        if (!activeEvent) return;
-
-        if (activeEvent.event_type !== 'VOICE' && activeEvent.event_type !== 'HYBRID') return;
-
         const member = newState.member;
         if (!member || member.user.bot) return;
 
-        // Entró al canal objetivo del evento
-        if (newState.channelId === activeEvent.target_channel_id) {
-            economyDb.recordAttendanceHeartbeat(activeEvent.id, member.id, member.user.tag, 5);
+        for (const activeEvent of economyDb.getActiveEvents(guild.id)) {
+            if (activeEvent.event_type !== 'VOICE' && activeEvent.event_type !== 'HYBRID') continue;
+            // Entró al canal objetivo del evento
+            if (newState.channelId === activeEvent.target_channel_id) {
+                economyDb.recordAttendanceHeartbeat(activeEvent.id, member.id, member.user.tag, 5);
+            }
         }
     } catch (err) {
         console.error('[VoiceStateUpdate Handler Error]:', err.message);
@@ -74,13 +71,11 @@ function handleChatMessage(message) {
     try {
         if (!message.guild || message.author.bot) return;
 
-        const activeEvent = economyDb.getActiveEvent(message.guild.id);
-        if (!activeEvent) return;
-
-        if (activeEvent.event_type !== 'TEXT' && activeEvent.event_type !== 'HYBRID') return;
-
-        if (message.channel.id === activeEvent.target_channel_id) {
-            economyDb.recordChatActivity(activeEvent.id, message.author.id, message.author.tag);
+        for (const activeEvent of economyDb.getActiveEvents(message.guild.id)) {
+            if (activeEvent.event_type !== 'TEXT' && activeEvent.event_type !== 'HYBRID') continue;
+            if (message.channel.id === activeEvent.target_channel_id) {
+                economyDb.recordChatActivity(activeEvent.id, message.author.id, message.author.tag);
+            }
         }
     } catch (err) {
         console.error('[Event MessageCreate Error]:', err.message);
@@ -148,8 +143,8 @@ El mando del Cuartel General ha liberado la nómina de fondos para todos los rec
 
     const sentMessage = await payoutChannel.send({ embeds: [embed], components: [row] });
 
-    // Guardar el message_id en la base de datos
-    economyDb.finalizeEvent(eventId, sentMessage.id);
+    // Guardar el message_id sin recalcular ni extender el plazo de cobro.
+    economyDb.setEventPhase(eventId, 'ENDED', { discord_message_id: sentMessage.id });
 
     return { event: updatedEvent, eligibleCount, totalAttendees: attendance.length };
 }
