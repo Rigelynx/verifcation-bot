@@ -1173,6 +1173,29 @@
         </div>
     </div>
 
+    <!-- MODAL ROSTER HISTÓRICO DE EVENTO -->
+    <div id="event-roster-modal" class="dossier-modal">
+        <div class="dossier-modal-content retro-window" style="max-width: 1050px;">
+            <div class="window-titlebar">
+                <div class="titlebar-left">
+                    <span class="led-indicator led-green"></span>
+                    <span>ARCHIVO DE OPERACIÓN &bull; ROSTER COMPLETO</span>
+                </div>
+                <div class="window-controls">
+                    <button class="win-btn" onclick="closeEventRosterModal()">X</button>
+                </div>
+            </div>
+            <div style="padding: 22px;">
+                <div id="event-roster-modal-content">
+                    <!-- Contenido dinámico -->
+                </div>
+                <div class="btn-command-group" style="margin-top: 20px;">
+                    <button class="btn-retro" onclick="closeEventRosterModal()">CERRAR ROSTER</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- MODAL AGREGAR/EDITAR PREGUNTA -->
     <div id="question-modal" class="dossier-modal">
         <div class="dossier-modal-content retro-window">
@@ -4144,13 +4167,90 @@
                         <td style="text-align: center; color: var(--usmc-gold);">${ev.claimed_count}</td>
                         <td style="font-weight: bold; color: #fff;">${sym}${(ev.total_paid || 0).toLocaleString()}</td>
                         <td style="text-align: right;">
-                            ${ev.status === 'ACTIVE'
-                                ? '<span style="color: #728c75; font-size: 0.75rem;">EN CURSO</span>'
-                                : `<button class="btn-retro danger" style="font-size: 0.72rem; padding: 4px 8px;" onclick="deleteEventRecord(${ev.id})">🗑️ BORRAR</button>`}
+                            <div style="display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap;">
+                                <button class="btn-retro" style="font-size: 0.72rem; padding: 4px 8px;" onclick="showEventRoster(${ev.id})">👥 VER ROSTER</button>
+                                ${ev.status === 'ACTIVE'
+                                    ? '<span style="color: #728c75; font-size: 0.75rem; align-self: center;">EN CURSO</span>'
+                                    : `<button class="btn-retro danger" style="font-size: 0.72rem; padding: 4px 8px;" onclick="deleteEventRecord(${ev.id})">🗑️ BORRAR</button>`}
+                            </div>
                         </td>
                     </tr>
                 `;
             }).join('');
+        }
+
+        function escapeEventText(value) {
+            return String(value ?? '').replace(/[&<>"']/g, char => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+            })[char]);
+        }
+
+        function formatEventRecordDate(value, unixFallback = null) {
+            const date = value ? new Date(value) : (unixFallback ? new Date(unixFallback * 1000) : null);
+            return date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : '--';
+        }
+
+        async function showEventRoster(eventId) {
+            const modal = document.getElementById('event-roster-modal');
+            const content = document.getElementById('event-roster-modal-content');
+            modal.style.display = 'block';
+            content.innerHTML = '<div style="padding: 30px; text-align: center; color: #728c75;">Cargando roster histórico...</div>';
+
+            try {
+                const res = await fetch(`/api/admin/events/${eventId}/attendees`, {
+                    headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.message || 'No se pudo cargar el roster.');
+
+                const event = data.event;
+                const attendees = data.attendees || [];
+                const sym = globalEcoSettings.currency_symbol || '$';
+                const rows = attendees.map(attendee => {
+                    const statusColors = {
+                        CONFIRMED: 'var(--usmc-green)',
+                        REGISTERED: '#00ccff',
+                        EXPELLED: '#ff5555',
+                        CANCELLED: '#9aa79c',
+                        PRESENT: 'var(--usmc-amber)'
+                    };
+                    const status = attendee.status || 'PRESENT';
+                    const paid = attendee.claimed === 1
+                        ? `${sym}${(attendee.payout_amount || 0).toLocaleString()}`
+                        : '--';
+                    return `
+                        <tr>
+                            <td style="font-weight: bold; color: #fff;">${escapeEventText(attendee.username || 'Sin nombre')}</td>
+                            <td style="font-family: var(--font-mono); font-size: 0.78rem;">${escapeEventText(attendee.discord_id)}</td>
+                            <td><span class="status-badge" style="color: ${statusColors[status] || '#fff'};">${escapeEventText(status)}</span></td>
+                            <td style="text-align: center;">${attendee.attendance_confirmed === 1 ? '✅ SÍ' : '—'}</td>
+                            <td style="text-align: center;">${Math.floor((attendee.total_seconds_present || 0) / 60)} min / ${attendee.message_count || 0} msgs</td>
+                            <td style="font-size: 0.78rem; color: #8fa892;">${formatEventRecordDate(attendee.registered_at, attendee.first_seen)}</td>
+                            <td style="font-weight: bold; color: ${attendee.claimed === 1 ? 'var(--usmc-gold)' : '#728c75'};">${paid}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                content.innerHTML = `
+                    <div style="margin-bottom: 16px; border-left: 3px solid var(--usmc-gold); padding-left: 12px;">
+                        <h3 style="margin: 0 0 5px; color: #fff; font-family: var(--font-tech);">${escapeEventText(event.name)} [#${event.id}]</h3>
+                        <div style="font-size: 0.8rem; color: #8fa892;">${escapeEventText(event.event_type)} &bull; ${escapeEventText(event.status)} &bull; ${attendees.length} registro(s), incluidos retirados y cancelados</div>
+                    </div>
+                    <div class="retro-table-wrapper" style="max-height: 60vh; overflow: auto;">
+                        <table class="retro-table">
+                            <thead><tr><th>USUARIO</th><th>DISCORD ID</th><th>ESTADO</th><th>CONFIRMÓ</th><th>PRESENCIA</th><th>REGISTRO</th><th>PAGO</th></tr></thead>
+                            <tbody>${rows || '<tr><td colspan="7" style="text-align:center; color:#728c75;">Este evento no tiene participantes registrados.</td></tr>'}</tbody>
+                        </table>
+                    </div>
+                `;
+            } catch (err) {
+                TerminalFX.playBeepError();
+                content.innerHTML = `<div style="padding: 25px; color: #ff5555; text-align: center;">${escapeEventText(err.message)}</div>`;
+            }
+        }
+
+        function closeEventRosterModal() {
+            document.getElementById('event-roster-modal').style.display = 'none';
         }
 
         async function deleteEventRecord(eventId) {

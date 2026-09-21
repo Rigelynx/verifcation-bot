@@ -939,6 +939,23 @@ function createWebServer(discordClient) {
         res.json({ success: true, history });
     });
 
+    // Consultar el roster histórico completo, incluidos retirados y cancelados
+    app.get('/api/admin/events/:id/attendees', requireAdmin, (req, res) => {
+        const eventId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(eventId) || eventId <= 0) {
+            return res.status(400).json({ success: false, message: 'ID de evento inválido.' });
+        }
+
+        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const event = economyDb.getEventById(eventId);
+        if (!event || (event.guild_id !== guildId && event.guild_id !== 'GLOBAL')) {
+            return res.status(404).json({ success: false, message: 'Evento no encontrado en este servidor.' });
+        }
+
+        const attendees = economyDb.getEventRegistrations(eventId, true);
+        return res.json({ success: true, event, attendees });
+    });
+
     // Borrado permanente de un evento histórico y sus registros de asistencia
     app.delete('/api/admin/events/:id', requireAdmin, (req, res) => {
         const eventId = parseInt(req.params.id, 10);
