@@ -934,9 +934,12 @@ function createWebServer(discordClient) {
     // Historial de eventos concluidos
     app.get('/api/admin/events/history', requireAdmin, (req, res) => {
         const guildId = process.env.GUILD_ID || 'GLOBAL';
-        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 500);
-        const history = economyDb.getEventHistory(guildId, limit);
-        res.json({ success: true, history });
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
+        const total = economyDb.countEventHistory(guildId);
+        const totalPages = Math.max(1, Math.ceil(total / limit));
+        const page = Math.min(Math.max(parseInt(req.query.page, 10) || 1, 1), totalPages);
+        const history = economyDb.getEventHistory(guildId, limit, (page - 1) * limit);
+        res.json({ success: true, history, total, page, totalPages, limit });
     });
 
     // Consultar el roster histórico completo, incluidos retirados y cancelados
@@ -952,8 +955,10 @@ function createWebServer(discordClient) {
             return res.status(404).json({ success: false, message: 'Evento no encontrado en este servidor.' });
         }
 
-        const attendees = economyDb.getEventRegistrations(eventId, true);
-        return res.json({ success: true, event, attendees });
+        const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
+        const roster = economyDb.getEventRegistrationsPage(eventId, page, limit);
+        return res.json({ success: true, event, ...roster });
     });
 
     // Borrado permanente de un evento histórico y sus registros de asistencia

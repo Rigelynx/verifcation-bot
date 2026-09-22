@@ -1433,7 +1433,15 @@ function claimEventPayout(eventId, discordId, userRoleIds = []) {
     };
 }
 
-function getEventHistory(guildId = 'GLOBAL', limit = 15) {
+function countEventHistory(guildId = 'GLOBAL') {
+    return db.prepare(`
+        SELECT COUNT(*) AS count
+        FROM event_payouts e
+        WHERE e.guild_id = ? OR e.guild_id = 'GLOBAL'
+    `).get(guildId).count;
+}
+
+function getEventHistory(guildId = 'GLOBAL', limit = 15, offset = 0) {
     const stmt = db.prepare(`
         SELECT e.*, 
             (SELECT COUNT(*) FROM event_attendance WHERE event_id = e.id) as total_attendees,
@@ -1442,10 +1450,10 @@ function getEventHistory(guildId = 'GLOBAL', limit = 15) {
             (SELECT COALESCE(SUM(payout_amount), 0) FROM event_attendance WHERE event_id = e.id) as total_paid
         FROM event_payouts e
         WHERE e.guild_id = ? OR e.guild_id = 'GLOBAL'
-        ORDER BY e.created_at DESC
-        LIMIT ?
+        ORDER BY e.created_at DESC, e.id DESC
+        LIMIT ? OFFSET ?
     `);
-    return stmt.all(guildId, limit);
+    return stmt.all(guildId, limit, offset);
 }
 
 function deleteEventRecord(eventId, guildId) {
@@ -1739,7 +1747,7 @@ function massPayoutEvent(eventId, discordClient = null, officerDiscordId = null)
 function getEventRegistrations(eventId, includeExpelled = false) {
     const query = includeExpelled
         ? `
-        SELECT a.*, 
+        SELECT a.*,
                COALESCE(acc.avatar, '') as avatar,
                acc.wallet, 
                acc.bank
@@ -1759,6 +1767,28 @@ function getEventRegistrations(eventId, includeExpelled = false) {
         ORDER BY a.attendance_confirmed DESC, a.registered_at ASC, a.total_seconds_present DESC
         `;
     return db.prepare(query).all(eventId);
+}
+
+function getEventRegistrationsPage(eventId, page = 1, limit = 10) {
+    const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 50);
+    const total = db.prepare('SELECT COUNT(*) AS count FROM event_attendance WHERE event_id = ?').get(eventId).count;
+    const totalPages = Math.max(1, Math.ceil(total / safeLimit));
+    const safePage = Math.min(Math.max(parseInt(page, 10) || 1, 1), totalPages);
+    const offset = (safePage - 1) * safeLimit;
+
+    const attendees = db.prepare(`
+        SELECT a.*,
+               COALESCE(acc.avatar, '') as avatar,
+               acc.wallet,
+               acc.bank
+        FROM event_attendance a
+        LEFT JOIN economy_accounts acc ON a.discord_id = acc.discord_id
+        WHERE a.event_id = ?
+        ORDER BY a.attendance_confirmed DESC, a.registered_at ASC, a.total_seconds_present DESC
+        LIMIT ? OFFSET ?
+    `).all(eventId, safeLimit, offset);
+
+    return { attendees, total, page: safePage, totalPages, limit: safeLimit };
 }
 
 // =========================================================================
@@ -2054,6 +2084,7 @@ module.exports = {
     getUserEventRecord,
     claimEventPayout,
     getEventHistory,
+    countEventHistory,
     deleteEventRecord,
     syncAccountUser,
     getCommandPermissions,
@@ -2079,6 +2110,7 @@ module.exports = {
     manualToggleAttendance,
     massPayoutEvent,
     getEventRegistrations,
+    getEventRegistrationsPage,
     getEnrichedTransactions,
     countEnrichedTransactions,
     getTreasuryStats,

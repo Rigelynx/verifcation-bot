@@ -862,6 +862,7 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="event-history-pagination" style="display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 14px;"></div>
                 </div>
 
                 <!-- ========================================================================= -->
@@ -3312,8 +3313,9 @@
         // MÓDULO JAVASCRIPT: OPERACIONES Y PAGOS AUTOMÁTICOS (VOZ & CHAT)
         // =========================================================================
         let currentActiveEvent = null;
+        let eventHistoryPage = 1;
 
-        async function loadEventsData() {
+        async function loadEventsData(historyPage = eventHistoryPage) {
             try {
                 // 1. Cargar Evento Activo
                 const resActive = await fetch('/api/admin/events/active', {
@@ -3325,12 +3327,12 @@
                 }
 
                 // 2. Cargar Historial
-                const resHist = await fetch('/api/admin/events/history?limit=500', {
+                const resHist = await fetch(`/api/admin/events/history?page=${historyPage}&limit=10`, {
                     headers: { 'Authorization': `Bearer ${adminToken}` }
                 });
                 if (resHist.ok) {
                     const data = await resHist.json();
-                    renderEventHistory(data.history || []);
+                    renderEventHistory(data);
                 }
             } catch (err) {
                 console.error('[Error cargando eventos]:', err);
@@ -4144,39 +4146,48 @@
             document.getElementById('financial-profile-modal').style.display = 'none';
         }
 
-        function renderEventHistory(history) {
+        function renderEventHistory(data) {
             const tbody = document.getElementById('event-history-tbody');
+            const pagination = document.getElementById('event-history-pagination');
+            const history = data.history || [];
+            eventHistoryPage = data.page || 1;
             const sym = globalEcoSettings.currency_symbol || '$';
 
             if (history.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="10" style="text-align: center; color: #728c75;">Sin operaciones en los archivos históricos.</td></tr>`;
-                return;
+            } else {
+                tbody.innerHTML = history.map(ev => {
+                    const dateStr = new Date(ev.created_at).toLocaleString();
+                    return `
+                        <tr>
+                            <td style="font-family: var(--font-mono); color: var(--usmc-gold);">#${ev.id}</td>
+                            <td style="font-weight: bold; color: #fff;">${escapeEventText(ev.name)}</td>
+                            <td><span class="status-badge" style="background: rgba(0,204,255,0.15); color: var(--usmc-blue);">${escapeEventText(ev.event_type)}</span></td>
+                            <td><span class="status-badge" style="background: ${ev.status === 'ACTIVE' ? 'rgba(56,229,77,0.15)' : 'rgba(212,175,55,0.15)'}; color: ${ev.status === 'ACTIVE' ? 'var(--usmc-green)' : 'var(--usmc-gold)'};">${escapeEventText(ev.status)}</span></td>
+                            <td style="font-size: 0.8rem; color: #8fa892;">${dateStr}</td>
+                            <td style="text-align: center;">${ev.total_attendees}</td>
+                            <td style="text-align: center; color: var(--usmc-green); font-weight: bold;">${ev.eligible_count}</td>
+                            <td style="text-align: center; color: var(--usmc-gold);">${ev.claimed_count}</td>
+                            <td style="font-weight: bold; color: #fff;">${sym}${(ev.total_paid || 0).toLocaleString()}</td>
+                            <td style="text-align: right;">
+                                <div style="display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap;">
+                                    <button class="btn-retro" style="font-size: 0.72rem; padding: 4px 8px;" onclick="showEventRoster(${ev.id})">👥 VER ROSTER</button>
+                                    ${ev.status === 'ACTIVE'
+                                        ? '<span style="color: #728c75; font-size: 0.75rem; align-self: center;">EN CURSO</span>'
+                                        : `<button class="btn-retro danger" style="font-size: 0.72rem; padding: 4px 8px;" onclick="deleteEventRecord(${ev.id})">🗑️ BORRAR</button>`}
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
             }
 
-            tbody.innerHTML = history.map(ev => {
-                const dateStr = new Date(ev.created_at).toLocaleString();
-                return `
-                    <tr>
-                        <td style="font-family: var(--font-mono); color: var(--usmc-gold);">#${ev.id}</td>
-                        <td style="font-weight: bold; color: #fff;">${ev.name}</td>
-                        <td><span class="status-badge" style="background: rgba(0,204,255,0.15); color: var(--usmc-blue);">${ev.event_type}</span></td>
-                        <td><span class="status-badge" style="background: ${ev.status === 'ACTIVE' ? 'rgba(56,229,77,0.15)' : 'rgba(212,175,55,0.15)'}; color: ${ev.status === 'ACTIVE' ? 'var(--usmc-green)' : 'var(--usmc-gold)'};">${ev.status}</span></td>
-                        <td style="font-size: 0.8rem; color: #8fa892;">${dateStr}</td>
-                        <td style="text-align: center;">${ev.total_attendees}</td>
-                        <td style="text-align: center; color: var(--usmc-green); font-weight: bold;">${ev.eligible_count}</td>
-                        <td style="text-align: center; color: var(--usmc-gold);">${ev.claimed_count}</td>
-                        <td style="font-weight: bold; color: #fff;">${sym}${(ev.total_paid || 0).toLocaleString()}</td>
-                        <td style="text-align: right;">
-                            <div style="display: flex; justify-content: flex-end; gap: 6px; flex-wrap: wrap;">
-                                <button class="btn-retro" style="font-size: 0.72rem; padding: 4px 8px;" onclick="showEventRoster(${ev.id})">👥 VER ROSTER</button>
-                                ${ev.status === 'ACTIVE'
-                                    ? '<span style="color: #728c75; font-size: 0.75rem; align-self: center;">EN CURSO</span>'
-                                    : `<button class="btn-retro danger" style="font-size: 0.72rem; padding: 4px 8px;" onclick="deleteEventRecord(${ev.id})">🗑️ BORRAR</button>`}
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
+            const totalPages = data.totalPages || 1;
+            pagination.innerHTML = `
+                <button class="btn-retro" style="min-width: 110px;" onclick="loadEventsData(${eventHistoryPage - 1})" ${eventHistoryPage <= 1 ? 'disabled' : ''}>◀ ANTERIOR</button>
+                <span style="min-width: 190px; text-align: center; color: var(--usmc-gold); font-family: var(--font-mono);">PÁGINA ${eventHistoryPage} / ${totalPages} &bull; ${data.total || 0} EVENTOS</span>
+                <button class="btn-retro" style="min-width: 110px;" onclick="loadEventsData(${eventHistoryPage + 1})" ${eventHistoryPage >= totalPages ? 'disabled' : ''}>SIGUIENTE ▶</button>
+            `;
         }
 
         function escapeEventText(value) {
@@ -4190,14 +4201,14 @@
             return date && !Number.isNaN(date.getTime()) ? date.toLocaleString() : '--';
         }
 
-        async function showEventRoster(eventId) {
+        async function showEventRoster(eventId, page = 1) {
             const modal = document.getElementById('event-roster-modal');
             const content = document.getElementById('event-roster-modal-content');
             modal.style.display = 'block';
-            content.innerHTML = '<div style="padding: 30px; text-align: center; color: #728c75;">Cargando roster histórico...</div>';
+            content.innerHTML = `<div style="padding: 30px; text-align: center; color: #728c75;">Cargando página ${page} del roster...</div>`;
 
             try {
-                const res = await fetch(`/api/admin/events/${eventId}/attendees`, {
+                const res = await fetch(`/api/admin/events/${eventId}/attendees?page=${page}&limit=10`, {
                     headers: { 'Authorization': `Bearer ${adminToken}` }
                 });
                 const data = await res.json();
@@ -4205,6 +4216,9 @@
 
                 const event = data.event;
                 const attendees = data.attendees || [];
+                const currentPage = data.page || 1;
+                const totalPages = data.totalPages || 1;
+                const totalRecords = data.total || 0;
                 const sym = globalEcoSettings.currency_symbol || '$';
                 const rows = attendees.map(attendee => {
                     const statusColors = {
@@ -4234,13 +4248,18 @@
                 content.innerHTML = `
                     <div style="margin-bottom: 16px; border-left: 3px solid var(--usmc-gold); padding-left: 12px;">
                         <h3 style="margin: 0 0 5px; color: #fff; font-family: var(--font-tech);">${escapeEventText(event.name)} [#${event.id}]</h3>
-                        <div style="font-size: 0.8rem; color: #8fa892;">${escapeEventText(event.event_type)} &bull; ${escapeEventText(event.status)} &bull; ${attendees.length} registro(s), incluidos retirados y cancelados</div>
+                        <div style="font-size: 0.8rem; color: #8fa892;">${escapeEventText(event.event_type)} &bull; ${escapeEventText(event.status)} &bull; ${totalRecords} registro(s), incluidos retirados y cancelados</div>
                     </div>
                     <div class="retro-table-wrapper" style="max-height: 60vh; overflow: auto;">
                         <table class="retro-table">
                             <thead><tr><th>USUARIO</th><th>DISCORD ID</th><th>ESTADO</th><th>CONFIRMÓ</th><th>PRESENCIA</th><th>REGISTRO</th><th>PAGO</th></tr></thead>
                             <tbody>${rows || '<tr><td colspan="7" style="text-align:center; color:#728c75;">Este evento no tiene participantes registrados.</td></tr>'}</tbody>
                         </table>
+                    </div>
+                    <div style="display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 14px;">
+                        <button class="btn-retro" style="min-width: 110px;" onclick="showEventRoster(${event.id}, ${currentPage - 1})" ${currentPage <= 1 ? 'disabled' : ''}>◀ ANTERIOR</button>
+                        <span style="min-width: 120px; text-align: center; color: var(--usmc-gold); font-family: var(--font-mono);">PÁGINA ${currentPage} / ${totalPages}</span>
+                        <button class="btn-retro" style="min-width: 110px;" onclick="showEventRoster(${event.id}, ${currentPage + 1})" ${currentPage >= totalPages ? 'disabled' : ''}>SIGUIENTE ▶</button>
                     </div>
                 `;
             } catch (err) {
