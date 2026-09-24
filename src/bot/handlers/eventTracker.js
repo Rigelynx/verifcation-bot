@@ -1,4 +1,3 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const economyDb = require('../../database/economyDb');
 
 // Intervalo en segundos para el latido de presencia en voz
@@ -82,76 +81,8 @@ function handleChatMessage(message) {
     }
 }
 
-/**
- * Finaliza un evento activo y publica el mensaje con botón de cobro en Discord
- */
-async function finishAndPublishEvent(client, eventId) {
-
-    const event = economyDb.getEventById(eventId);
-    if (!event) throw new Error('Evento no encontrado');
-
-    const guild = client.guilds.cache.get(event.guild_id);
-    if (!guild) throw new Error('Servidor de Discord no encontrado');
-
-    const payoutChannel = guild.channels.cache.get(event.payout_channel_id) || guild.channels.cache.first();
-    if (!payoutChannel || !payoutChannel.isTextBased()) {
-        throw new Error('Canal de publicación de pagos no encontrado o no es de texto.');
-    }
-
-    // Finalizar en DB y calcular elegibilidad
-    const updatedEvent = economyDb.finalizeEvent(eventId);
-    const attendance = economyDb.getEventAttendance(eventId);
-    const eligibleCount = attendance.filter(a => a.is_eligible === 1).length;
-
-    const settings = economyDb.getEconomySettings(event.guild_id);
-    const currencySym = settings ? settings.currency_symbol : '$';
-
-    const deadlineHours = event.claim_deadline_hours || 24;
-    const expiresTimestamp = `<t:${updatedEvent.claim_expires_at}:R>`;
-
-    const embed = new EmbedBuilder()
-        .setColor(0x38e54d)
-        .setTitle(`🎖️ [OPERACIÓN CONCLUIDA] // ${event.name.toUpperCase()}`)
-        .setDescription(`
-**La misión militar ha finalizado satisfactoriamente.**
-
-El mando del Cuartel General ha liberado la nómina de fondos para todos los reclutas y oficiales que cumplieron con la presencia requerida de principio a fin.
-
-> 💰 **Paga Base:** \`${currencySym}${event.base_reward.toLocaleString()}\` *(+ Bonificación por Rango Militar)*
-> ⏱️ **Tolerancia a Desconexión Aplicada:** \`${event.grace_period_minutes} min\`
-> 👥 **Personal Detectado:** \`${attendance.length}\` reclutas
-> ✅ **Personal Elegible:** \`${eligibleCount}\` aptos para cobro
-> ⏳ **Plazo Límite de Reclamo:** Expira en ${expiresTimestamp}
-        `)
-        .addFields(
-            {
-                name: '📋 Instrucciones de Cobro',
-                value: 'Haz clic en el botón verde inferior **`[ RECLAMAR PAGA MILITAR ]`**. El sistema verificará tu asistencia táctica y depositará los fondos directamente en tu cartera.',
-                inline: false
-            }
-        )
-        .setFooter({ text: `Operación ID: #${event.id} • USMC Tactical Payout System`, iconURL: guild.iconURL() })
-        .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`claim_event_${event.id}`)
-            .setLabel('RECLAMAR PAGA MILITAR')
-            .setStyle(ButtonStyle.Success)
-            .setEmoji('💵')
-    );
-
-    const sentMessage = await payoutChannel.send({ embeds: [embed], components: [row] });
-
-    // Guardar el message_id sin recalcular ni extender el plazo de cobro.
-    economyDb.setEventPhase(eventId, 'ENDED', { discord_message_id: sentMessage.id });
-
-    return { event: updatedEvent, eligibleCount, totalAttendees: attendance.length };
-}
-
 module.exports = {
     initEventMonitoring,
     handleVoiceStateUpdate,
-    handleChatMessage,
-    finishAndPublishEvent
+    handleChatMessage
 };

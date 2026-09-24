@@ -232,7 +232,7 @@ function initEconomyTables() {
         'datos-usuario',
         'economia:balance', 'economia:depositar', 'economia:retirar', 'economia:pagar', 'economia:trabajar', 'economia:crimen', 'economia:robar', 'economia:ranking',
         'economia:admin:dar', 'economia:admin:quitar', 'economia:admin:fijar',
-        'evento:convocar', 'evento:entrenamiento', 'evento:confirmar', 'evento:panel_pago', 'evento:pagar_todos', 'evento:lista', 'evento:iniciar', 'evento:finalizar', 'evento:estado',
+        'evento:convocar', 'evento:entrenamiento', 'evento:lista', 'evento:iniciar', 'evento:finalizar', 'evento:estado',
         'help',
         'mod:ban', 'mod:kick', 'mod:timeout', 'mod:purge',
         'panel-verificacion',
@@ -264,6 +264,7 @@ function initEconomyTables() {
 
     // Depurar comandos raíz obsoletos/innecesarios que no son ejecutables por sí mismos en Discord
     db.prepare("DELETE FROM economy_command_permissions WHERE command_name IN ('admin', 'bono', 'economia', 'mod', 'tienda', 'evento')").run();
+    db.prepare("DELETE FROM economy_command_permissions WHERE command_name IN ('evento:confirmar', 'evento:panel_pago', 'evento:pagar_todos')").run();
 
     // Migraciones seguras para columnas avanzadas de eventos y pases de lista
     try {
@@ -578,13 +579,7 @@ function isCommandAllowed(commandName, member) {
     if (!commandName) return { allowed: true };
 
     // Buscar el comando por su clave canónica exacta (ej: 'economia:balance')
-    let perm = db.prepare('SELECT is_enabled, allowed_roles FROM economy_command_permissions WHERE command_name = ?').get(commandName);
-
-    // Fallback: si se consulta un subcomando sin prefijo (ej: 'balance' -> buscar '%:balance')
-    if (!perm && !commandName.includes(':')) {
-        const matching = db.prepare("SELECT is_enabled, allowed_roles FROM economy_command_permissions WHERE command_name LIKE ?").get(`%:${commandName}`);
-        if (matching) perm = matching;
-    }
+    const perm = db.prepare('SELECT is_enabled, allowed_roles FROM economy_command_permissions WHERE command_name = ?').get(commandName);
 
     if (!perm) return { allowed: true };
 
@@ -596,37 +591,50 @@ function isCommandAllowed(commandName, member) {
         return { allowed: false, reason: 'DISABLED' };
     }
 
-    if (!member) return { allowed: true };
+    if (!member) return { allowed: true, grantedByRole: false };
 
     // 2. BYPASS DE ROLES PARA ADMINISTRADORES:
     // Los miembros con permiso nativo de Administrador de Discord (8n) tienen bypass
     // exclusivamente sobre la lista de roles autorizados (allowed_roles).
-    if (member.permissions && typeof member.permissions.has === 'function' && member.permissions.has(8n)) {
-        return { allowed: true };
+    const hasAdminPermission = member.permissions && typeof member.permissions.has === 'function'
+        ? member.permissions.has(8n)
+        : (() => {
+            try { return (BigInt(member.permissions || 0) & 8n) === 8n; }
+            catch { return false; }
+        })();
+    if (hasAdminPermission) {
+        return { allowed: true, grantedByRole: false };
     }
 
     // 3. Verificación de roles autorizados
-    const roles = JSON.parse(perm.allowed_roles || '[]');
+    let roles = [];
+    try {
+        const parsed = JSON.parse(perm.allowed_roles || '[]');
+        roles = Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+        roles = [];
+    }
     if (roles.length > 0) {
         let memberRoles = [];
         if (Array.isArray(member.roles)) {
             memberRoles = member.roles.map(r => typeof r === 'string' ? r : (r.id || String(r)));
         } else if (member.roles && member.roles.cache) {
-            if (typeof member.roles.cache.map === 'function') {
-                memberRoles = member.roles.cache.map(r => r.id || r);
+            if (Array.isArray(member.roles.cache)) {
+                memberRoles = member.roles.cache.map(r => typeof r === 'string' ? r : (r.id || String(r)));
             } else if (member.roles.cache instanceof Map || typeof member.roles.cache.keys === 'function') {
                 memberRoles = Array.from(member.roles.cache.keys());
-            } else if (Array.isArray(member.roles.cache)) {
+            } else if (typeof member.roles.cache.map === 'function') {
                 memberRoles = member.roles.cache.map(r => r.id || r);
             }
         }
         const hasRole = roles.some(rId => memberRoles.includes(rId));
         if (!hasRole) {
-            return { allowed: false, reason: 'ROLE_RESTRICTED', requiredRoles: roles };
+                return { allowed: false, reason: 'ROLE_RESTRICTED', requiredRoles: roles };
         }
+        return { allowed: true, grantedByRole: true, matchedRoles: roles.filter(rId => memberRoles.includes(rId)) };
     }
 
-    return { allowed: true };
+    return { allowed: true, grantedByRole: false };
 }
 
 function adminAdjustBalance(discordId, action, amount, target = 'wallet') {
@@ -1686,10 +1694,23 @@ function massPayoutEvent(eventId, discordClient = null, officerDiscordId = null)
     const event = getEventById(eventId);
     if (!event) return { success: false, message: 'Operación militar no encontrada.' };
 
-    const attendees = db.prepare("SELECT * FROM event_attendance WHERE event_id = ? AND is_eligible = 1 AND claimed = 0 AND status != 'EXPELLED' AND status != 'CANCELLED'").all(eventId);
-    if (attendees.length === 0) {
-        return { success: false, message: 'No hay reclutas confirmados pendientes de cobro para esta operación.' };
+    // En convocatorias, el oficial valida la asistencia retirando ausentes desde
+    // /evento lista. Por tanto, todos los que permanezcan en el roster son aptos.
+    // Los eventos automáticos conservan el cálculo por permanencia/actividad.
+    if (event.event_type === 'REGISTRATION') {
+        db.prepare(`
+            UPDATE event_attendance
+            SET is_eligible = 1,
+                attendance_confirmed = 1,
+                attendance_confirmed_at = COALESCE(attendance_confirmed_at, CURRENT_TIMESTAMP),
+                status = 'CONFIRMED'
+            WHERE event_id = ? AND status NOT IN ('EXPELLED', 'CANCELLED')
+        `).run(eventId);
+    } else {
+        finalizeAttendanceCalculation(eventId);
     }
+
+    const attendees = db.prepare("SELECT * FROM event_attendance WHERE event_id = ? AND is_eligible = 1 AND claimed = 0 AND status NOT IN ('EXPELLED', 'CANCELLED')").all(eventId);
 
     const guild = discordClient && event.guild_id !== 'GLOBAL' ? discordClient.guilds.cache.get(event.guild_id) : null;
     let totalPaid = 0;
@@ -1728,7 +1749,7 @@ function massPayoutEvent(eventId, discordClient = null, officerDiscordId = null)
             paidList.push({ discord_id: att.discord_id, username: att.username, amount: finalAmount, role: bestRole.role_name });
         }
 
-        // Si todos cobraron, finalizar evento
+        // La liquidación y el cierre son una sola operación atómica.
         db.prepare("UPDATE event_payouts SET status = 'ENDED', ended_at = CURRENT_TIMESTAMP, phase = 'ENDED' WHERE id = ?").run(eventId);
     });
     tx();
@@ -1737,7 +1758,8 @@ function massPayoutEvent(eventId, discordClient = null, officerDiscordId = null)
         success: true,
         paidCount: paidList.length,
         totalDistributed: totalPaid,
-        paidList
+        paidList,
+        eligibleCount: attendees.length
     };
 }
 

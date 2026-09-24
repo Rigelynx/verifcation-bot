@@ -11,7 +11,7 @@ const {
 const db = require('../../database/db');
 const economyDb = require('../../database/economyDb');
 const { handleStatusChange } = require('./verificationHandler');
-const { hasOfficerPermission } = require('./permissionHandler');
+const { hasOfficerPermission, grantConfiguredCommandPermission } = require('./permissionHandler');
 const { hasAnyRole } = require('../utils/roleUtils');
 const { processShopPurchase, buildShopPanel } = require('../commands/tienda');
 const { buildEventRosterPanel } = require('../commands/eventos');
@@ -36,11 +36,7 @@ async function handleInteraction(interaction, client, commands) {
                 ? `${interaction.commandName}:${subcommandGroup ? `${subcommandGroup}:` : ''}${subcommand}`
                 : interaction.commandName;
 
-            const commandPermission = economyDb.isCommandAllowed(interaction.commandName, interaction.member);
-            const subcommandPermission = commandPermissionKey === interaction.commandName
-                ? commandPermission
-                : economyDb.isCommandAllowed(commandPermissionKey, interaction.member);
-            const effectivePermission = !commandPermission.allowed ? commandPermission : subcommandPermission;
+            const effectivePermission = economyDb.isCommandAllowed(commandPermissionKey, interaction.member);
             // Cada comando conserva además sus validaciones específicas
             // (oficial, administrador o permisos nativos de Discord).
             if (!effectivePermission.allowed) {
@@ -50,6 +46,12 @@ async function handleInteraction(interaction, client, commands) {
                         : `🔒 **Acceso Denegado:** Tu rango militar actual no cuenta con la autorización requerida para ejecutar \`/${commandPermissionKey.replaceAll(':', ' ')}\`.`,
                     flags: MessageFlags.Ephemeral
                 });
+            }
+
+            // El rol configurado para esta clave exacta satisface las barreras
+            // internas de oficial/admin durante esta interacción solamente.
+            if (effectivePermission.grantedByRole) {
+                grantConfiguredCommandPermission(interaction);
             }
 
             await command.execute(interaction);
@@ -186,7 +188,7 @@ Para formalizar tu ingreso a la base militar:
 > 👤 **Recluta:** <@${interaction.user.id}> (\`${username}\`)
 > 🛡️ **Estado:** \`${res.event?.event_type === 'TRAINING' ? 'REGISTRADO EN ENTRENAMIENTO' : 'REGISTRADO EN CONVOCATORIA (LISTO PARA EL DESPLIEGUE)'}\`
 
-*${res.event?.event_type === 'TRAINING' ? 'Si apruebas y permaneces en la lista final, recibirás el rol configurado.' : 'Permanece atento para confirmar tu asistencia cuando el oficial abra el Pase de Lista.'}*
+*${res.event?.event_type === 'TRAINING' ? 'Si apruebas y permaneces en la lista final, recibirás el rol configurado.' : 'Si permaneces en la lista final, recibirás tu paga automáticamente al cerrar la operación.'}*
                 `)
                 .setFooter({ text: `Operación ID: #${eventId} • USMC Roster System` })
                 .setTimestamp();
@@ -347,7 +349,7 @@ Para formalizar tu ingreso a la base militar:
             await interaction.update(panel);
             const consequence = event.event_type === 'TRAINING'
                 ? 'No recibirá el rol al finalizar.'
-                : 'No podrá confirmar asistencia ni recibir cobros.';
+                : 'No será incluido en la liquidación automática.';
             return interaction.followUp({
                 content: `🗑️ **Soldado Dado de Baja:** <@${targetDiscordId}> (\`${expelRes.username}\`) ha sido retirado del evento #${eventId}. ${consequence}`,
                 flags: MessageFlags.Ephemeral

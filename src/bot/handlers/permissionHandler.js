@@ -2,6 +2,28 @@ const { PermissionFlagsBits } = require('discord.js');
 const db = require('../../database/db');
 const { hasAnyRole } = require('../utils/roleUtils');
 
+// Una concesión vive solo durante la interacción cuyo comando fue autorizado
+// por la matriz web. Los botones y futuras interacciones no heredan el permiso.
+const configuredCommandGrants = new WeakSet();
+
+function grantConfiguredCommandPermission(interaction) {
+    if (interaction && typeof interaction === 'object') configuredCommandGrants.add(interaction);
+}
+
+function hasConfiguredCommandPermission(interaction) {
+    return !!interaction && configuredCommandGrants.has(interaction);
+}
+
+function hasNativePermission(member, permission) {
+    const permissions = member?.permissions;
+    if (permissions && typeof permissions.has === 'function') return permissions.has(permission);
+    try {
+        return (BigInt(permissions || 0) & permission) === permission;
+    } catch {
+        return false;
+    }
+}
+
 /**
  * Comprueba si un miembro posee credenciales de Oficial para:
  * - Consultar expedientes con /datos-usuario
@@ -11,9 +33,11 @@ const { hasAnyRole } = require('../utils/roleUtils');
 function hasOfficerPermission(interaction) {
     if (!interaction.guild || !interaction.member) return false;
 
+    if (hasConfiguredCommandPermission(interaction)) return true;
+
     // 1. Propietario del servidor o Administrador nativo siempre autorizados
     if (interaction.guild.ownerId === interaction.user.id || 
-        interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        hasNativePermission(interaction.member, PermissionFlagsBits.Administrator)) {
         return true;
     }
 
@@ -30,7 +54,7 @@ function hasOfficerPermission(interaction) {
     }
 
     // 4. Permiso nativo de moderación en Discord (Moderador)
-    if (interaction.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+    if (hasNativePermission(interaction.member, PermissionFlagsBits.ModerateMembers)) {
         return true;
     }
 
@@ -46,9 +70,11 @@ function hasOfficerPermission(interaction) {
 function hasAdminPermission(interaction) {
     if (!interaction.guild || !interaction.member) return false;
 
+    if (hasConfiguredCommandPermission(interaction)) return true;
+
     // 1. Propietario del servidor o Administrador nativo siempre autorizados
     if (interaction.guild.ownerId === interaction.user.id || 
-        interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        hasNativePermission(interaction.member, PermissionFlagsBits.Administrator)) {
         return true;
     }
 
@@ -64,5 +90,8 @@ function hasAdminPermission(interaction) {
 
 module.exports = {
     hasOfficerPermission,
-    hasAdminPermission
+    hasAdminPermission,
+    grantConfiguredCommandPermission,
+    hasConfiguredCommandPermission,
+    hasNativePermission
 };

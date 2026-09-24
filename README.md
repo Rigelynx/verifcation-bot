@@ -130,8 +130,13 @@ verificationbotusmc/
 │   │   │   ├── verify.html         # Terminal táctica de reclutamiento (cuestionario)
 │   │   │   └── dashboard.html      # Centro de Mando Web de Administración
 │   │   └── public/
-│   │       ├── military-retro.css  # Estilos retro tácticos 90s/2000s
-│   │       └── terminal-effects.js # Efectos sonoros y CRT
+│   │       ├── military-retro.css      # Estilos retro tácticos 90s/2000s
+│   │       ├── terminal-effects.js     # Efectos sonoros y CRT
+│   │       ├── dashboard-core.js       # Acceso, verificaciones y configuración
+│   │       ├── dashboard-economy.js    # Economía, bonos, tienda y rangos
+│   │       ├── dashboard-events.js     # Operaciones, rosters y liquidaciones
+│   │       ├── dashboard-audit.js      # Auditoría e historial financiero
+│   │       └── dashboard-commands.js   # Matriz de permisos de comandos
 │   └── bot/
 │       ├── client.js               # Cliente de Discord y registro de comandos
 │       ├── commands/

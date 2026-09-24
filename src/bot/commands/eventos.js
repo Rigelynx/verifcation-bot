@@ -10,7 +10,6 @@ const {
 } = require('discord.js');
 const economyDb = require('../../database/economyDb');
 const { hasOfficerPermission } = require('../handlers/permissionHandler');
-const { finishAndPublishEvent } = require('../handlers/eventTracker');
 
 /**
  * Genera el mensaje táctico del Panel de Registro / Convocatoria Militar
@@ -21,13 +20,13 @@ function buildRegistrationPanel(event, settings = null) {
     const isTraining = event.event_type === 'TRAINING';
     const rewardText = isTraining
         ? `> 🎓 **Rol para aprobados:** <@&${event.reward_role_id}>`
-        : `> 💰 **Paga de Misión:** \`${sym}${event.base_reward.toLocaleString()}\` *(+ Bonificación por Rango Militar)*\n> ⏱️ **Vigencia de Cobro:** \`${event.claim_deadline_hours || 24} horas\` tras finalizar`;
+        : `> 💰 **Paga de Misión:** \`${sym}${event.base_reward.toLocaleString()}\` *(+ Bonificación por Rango Militar)*\n> ⚡ **Liquidación:** \`Automática al finalizar\``;
     const introText = isTraining
         ? 'Todos los aspirantes deben registrarse. Al terminar, el oficial retirará de la lista a los reprobados y el rol se entregará a quienes permanezcan.'
         : 'Todos los combatientes interesados en participar y hacerse acreedores a la asignación presupuestaria deben formalizar su inscripción pulsando el botón táctico inferior.';
     const instructions = isTraining
         ? '1. Pulsa **`[ 📝 REGISTRARSE EN LA OPERACIÓN ]`** para entrar en la lista.\n2. Al concluir, el oficial retirará del roster a quienes no aprobaron.\n3. Al finalizar el entrenamiento, recibirás automáticamente el rol configurado.'
-        : '1. Pulsa **`[ 📝 REGISTRARSE EN LA OPERACIÓN ]`** para entrar en la lista previa.\n2. Al concluir el evento, el oficial abrirá el **Pase de Lista** para confirmar tu presencia.\n3. Una vez confirmada tu asistencia, podrás cobrar tus créditos.';
+        : '1. Pulsa **`[ 📝 REGISTRARSE EN LA OPERACIÓN ]`** para entrar en la lista.\n2. Al concluir, el oficial retirará del roster a quienes no asistieron.\n3. Los soldados que permanezcan recibirán su paga automáticamente al finalizar.';
 
     const embed = new EmbedBuilder()
         .setColor(0x00b4d8) // Tactical Blue
@@ -152,10 +151,12 @@ function buildEventRosterPanel(event, page = 1, settings = null) {
     const isTraining = event.event_type === 'TRAINING';
     const rosterInstructions = isTraining
         ? '*Retira con `[🗑️ #]` a quienes reprobaron. Los que permanezcan recibirán el rol al finalizar.*'
-        : '*Para retirar a un recluta y bloquear su asistencia, pulsa su botón de borrado `[🗑️ #]`.*';
+        : '*Esta lista valida la asistencia. Retira con `[🗑️ #]` a quienes no asistieron; todos los que permanezcan cobrarán al finalizar.*';
     const attendanceSummary = isTraining
         ? `> 🎓 **Aprobados actuales:** \`${registeredCount}\``
-        : `> ✅ **Asistencia Confirmada:** \`${confirmedCount}\``;
+        : event.event_type === 'REGISTRATION'
+            ? `> ✅ **Asistentes aprobados:** \`${registeredCount}\``
+            : `> ✅ **Asistencia Elegible:** \`${confirmedCount}\``;
     const rewardSummary = isTraining
         ? `> 🎓 **Rol al finalizar:** <@&${event.reward_role_id}>`
         : `> 💵 **Haberes Cobrados:** \`${claimedCount}\`\n> 💰 **Paga Base:** \`${sym}${event.base_reward.toLocaleString()}\``;
@@ -319,9 +320,7 @@ module.exports = {
                 .addStringOption(opt => opt.setName('nombre').setDescription('Nombre de la operación').setRequired(true))
                 .addIntegerOption(opt => opt.setName('paga_base').setDescription('Recompensa base en créditos').setMinValue(1).setRequired(true))
                 .addChannelOption(opt => opt.setName('canal_registro').setDescription('Canal donde publicar el panel de inscripción').addChannelTypes(ChannelType.GuildText).setRequired(false))
-                .addChannelOption(opt => opt.setName('canal_pago').setDescription('Canal donde se publicará el cobro').addChannelTypes(ChannelType.GuildText).setRequired(false))
                 .addIntegerOption(opt => opt.setName('cupo_maximo').setDescription('Límite de soldados (opcional, por defecto sin límite)').setMinValue(1).setRequired(false))
-                .addIntegerOption(opt => opt.setName('plazo_horas').setDescription('Horas límite para cobrar tras finalizar (default: 24h)').setMinValue(1).setRequired(false))
         )
         .addSubcommand(sub =>
             sub.setName('entrenamiento')
@@ -330,23 +329,6 @@ module.exports = {
                 .addRoleOption(opt => opt.setName('rol').setDescription('Rol que recibirán los aprobados').setRequired(true))
                 .addChannelOption(opt => opt.setName('canal_registro').setDescription('Canal donde publicar el panel de inscripción').addChannelTypes(ChannelType.GuildText).setRequired(false))
                 .addIntegerOption(opt => opt.setName('cupo_maximo').setDescription('Límite de participantes (opcional)').setMinValue(1).setRequired(false))
-        )
-        .addSubcommand(sub =>
-            sub.setName('confirmar')
-                .setDescription('Publica el panel interactivo para que los reclutas confirmen su asistencia presencial')
-                .addChannelOption(opt => opt.setName('canal').setDescription('Canal donde publicar el botón de confirmación').addChannelTypes(ChannelType.GuildText).setRequired(false))
-                .addIntegerOption(opt => opt.setName('evento_id').setDescription('ID del evento; necesario cuando hay varios activos').setMinValue(1).setRequired(false))
-        )
-        .addSubcommand(sub =>
-            sub.setName('panel_pago')
-                .setDescription('Publica el panel con botón de reclamo de paga militar para los asistentes confirmados')
-                .addChannelOption(opt => opt.setName('canal').setDescription('Canal donde publicar el cobro (por defecto canal de pago)').addChannelTypes(ChannelType.GuildText).setRequired(false))
-                .addIntegerOption(opt => opt.setName('evento_id').setDescription('ID del evento; necesario cuando hay varios activos').setMinValue(1).setRequired(false))
-        )
-        .addSubcommand(sub =>
-            sub.setName('pagar_todos')
-                .setDescription('Liquidación directa e inmediata: deposita la paga a todos los confirmados sin esperar que pulsen')
-                .addIntegerOption(opt => opt.setName('evento_id').setDescription('ID del evento; necesario cuando hay varios activos').setMinValue(1).setRequired(false))
         )
         .addSubcommand(sub =>
             sub.setName('lista')
@@ -363,15 +345,13 @@ module.exports = {
                     { name: 'Híbrido (Voz + Chat)', value: 'HYBRID' }
                 ).setRequired(true))
                 .addChannelOption(opt => opt.setName('canal_objetivo').setDescription('Canal de voz o chat donde se medirá la presencia').setRequired(true))
-                .addChannelOption(opt => opt.setName('canal_pago').setDescription('Canal de texto donde se publicará el botón de reclamo').addChannelTypes(ChannelType.GuildText).setRequired(true))
                 .addIntegerOption(opt => opt.setName('paga_base').setDescription('Recompensa base en créditos').setMinValue(1).setRequired(true))
-                .addIntegerOption(opt => opt.setName('plazo_horas').setDescription('Horas límite para reclamar el pago tras finalizar (default: 24h)').setMinValue(1).setRequired(false))
                 .addIntegerOption(opt => opt.setName('gracia_minutos').setDescription('Tolerancia en minutos si sufren desconexión (default: 5 min)').setMinValue(0).setRequired(false))
                 .addIntegerOption(opt => opt.setName('asistencia_minima').setDescription('Porcentaje mínimo de permanencia requerido (default: 80%)').setMinValue(10).setMaxValue(100).setRequired(false))
         )
         .addSubcommand(sub =>
             sub.setName('finalizar')
-                .setDescription('Concluye la operación activa y emite el botón de cobro para los asistentes')
+                .setDescription('Concluye la operación y paga de inmediato a los asistentes aprobados')
                 .addIntegerOption(opt => opt.setName('evento_id').setDescription('ID del evento; necesario cuando hay varios activos').setMinValue(1).setRequired(false))
         )
         .addSubcommand(sub =>
@@ -406,9 +386,7 @@ module.exports = {
             const name = interaction.options.getString('nombre');
             const baseReward = interaction.options.getInteger('paga_base');
             const regChannel = interaction.options.getChannel('canal_registro') || interaction.channel;
-            const payoutChannel = interaction.options.getChannel('canal_pago') || interaction.channel;
             const maxParticipants = interaction.options.getInteger('cupo_maximo') || 0;
-            const claimDeadlineHours = interaction.options.getInteger('plazo_horas') || 24;
 
             if (!regChannel.isTextBased()) {
                 return interaction.reply({
@@ -422,11 +400,10 @@ module.exports = {
                 name,
                 event_type: 'REGISTRATION',
                 target_channel_id: regChannel.id,
-                payout_channel_id: payoutChannel.id,
+                payout_channel_id: regChannel.id,
                 registration_channel_id: regChannel.id,
                 confirmation_channel_id: regChannel.id,
                 base_reward: baseReward,
-                claim_deadline_hours: claimDeadlineHours,
                 max_participants: maxParticipants,
                 phase: 'REGISTRATION'
             });
@@ -506,132 +483,6 @@ module.exports = {
         }
 
         // ==========================================
-        // 2. /evento confirmar (NUEVO: Confirmar Asistencia)
-        // ==========================================
-        if (sub === 'confirmar') {
-            const resolved = resolveActiveEvent(guildId, interaction.options.getInteger('evento_id'));
-            if (!resolved.event) return interaction.reply({ content: `⚠️ ${resolved.error}`, flags: MessageFlags.Ephemeral });
-            const active = resolved.event;
-            if (active.event_type === 'TRAINING') {
-                return interaction.reply({ content: 'ℹ️ Los entrenamientos no usan confirmación: elimina a los reprobados desde `/evento lista` y luego finaliza.', flags: MessageFlags.Ephemeral });
-            }
-
-            const targetChannel = interaction.options.getChannel('canal') || 
-                                  (active.confirmation_channel_id ? interaction.guild.channels.cache.get(active.confirmation_channel_id) : null) || 
-                                  interaction.channel;
-
-            if (!targetChannel.isTextBased()) {
-                return interaction.reply({ content: '❌ El canal debe ser de texto.', flags: MessageFlags.Ephemeral });
-            }
-
-            const confirmData = buildConfirmationPanel(active, settings);
-
-            try {
-                const sentMsg = await targetChannel.send(confirmData);
-                economyDb.setEventPhase(active.id, 'CONFIRMING', {
-                    confirmation_channel_id: targetChannel.id,
-                    confirmation_message_id: sentMsg.id
-                });
-
-                return interaction.reply({
-                    content: `📍 **Pase de Lista desplegado exitosamente en** <#${targetChannel.id}>. Los soldados pueden confirmar su asistencia ahora.`,
-                    flags: MessageFlags.Ephemeral
-                });
-            } catch (err) {
-                return interaction.reply({
-                    content: `❌ Error al enviar el pase de lista a <#${targetChannel.id}>: ${err.message}`,
-                    flags: MessageFlags.Ephemeral
-                });
-            }
-        }
-
-        // ==========================================
-        // 3. /evento panel_pago (NUEVO: Publicar Botón de Cobro)
-        // ==========================================
-        if (sub === 'panel_pago') {
-            const resolved = resolveActiveEvent(guildId, interaction.options.getInteger('evento_id'));
-            if (!resolved.event) return interaction.reply({ content: `⚠️ ${resolved.error}`, flags: MessageFlags.Ephemeral });
-            const active = resolved.event;
-            if (active.event_type === 'TRAINING') {
-                return interaction.reply({ content: 'ℹ️ Los entrenamientos entregan el rol con `/evento finalizar` y no generan panel de pago.', flags: MessageFlags.Ephemeral });
-            }
-
-            const targetChannel = interaction.options.getChannel('canal') || 
-                                  (active.payout_channel_id ? interaction.guild.channels.cache.get(active.payout_channel_id) : null) || 
-                                  interaction.channel;
-
-            if (!targetChannel.isTextBased()) {
-                return interaction.reply({ content: '❌ El canal de pago debe ser de texto.', flags: MessageFlags.Ephemeral });
-            }
-
-            // Marcar en DB como finalizado para habilitar reclamos
-            const finalized = economyDb.finalizeEvent(active.id);
-            const payoutData = buildPayoutPanel(finalized, settings, finalized.claim_expires_at);
-
-            try {
-                const sentMsg = await targetChannel.send(payoutData);
-                economyDb.setEventPhase(active.id, 'ENDED', {
-                    payout_channel_id: targetChannel.id,
-                    discord_message_id: sentMsg.id
-                });
-
-                const roster = economyDb.getEventRegistrations(active.id);
-                const eligible = roster.filter(r => r.is_eligible === 1).length;
-
-                return interaction.reply({
-                    content: `💵 **Panel de Cobro Militar publicado en** <#${targetChannel.id}>.\nSe detectaron **${roster.length}** soldados en lista, de los cuales **${eligible}** están acreditados con asistencia confirmada para cobrar.`,
-                    flags: MessageFlags.Ephemeral
-                });
-            } catch (err) {
-                return interaction.reply({
-                    content: `❌ Error al enviar el panel de pago: ${err.message}`,
-                    flags: MessageFlags.Ephemeral
-                });
-            }
-        }
-
-        // ==========================================
-        // 4. /evento pagar_todos (NUEVO: Pago Masivo Directo)
-        // ==========================================
-        if (sub === 'pagar_todos') {
-            const resolved = resolveActiveEvent(guildId, interaction.options.getInteger('evento_id'));
-            if (!resolved.event) return interaction.reply({ content: `⚠️ ${resolved.error}`, flags: MessageFlags.Ephemeral });
-            const active = resolved.event;
-            if (active.event_type === 'TRAINING') {
-                return interaction.reply({ content: 'ℹ️ Los entrenamientos no pagan créditos; usa `/evento finalizar` para entregar el rol.', flags: MessageFlags.Ephemeral });
-            }
-
-            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-            const result = economyDb.massPayoutEvent(active.id, interaction.client, interaction.user.id);
-            if (!result.success) {
-                return interaction.editReply({ content: `⚠️ ${result.message}` });
-            }
-
-            let previewPaid = result.paidList.slice(0, 10).map(p => `• <@${p.discord_id}> (\`${p.username}\`): **${sym}${p.amount.toLocaleString()}** [${p.role || 'Estándar'}]`).join('\n');
-            if (result.paidList.length > 10) previewPaid += `\n*...y ${result.paidList.length - 10} soldados más.*`;
-
-            const embed = new EmbedBuilder()
-                .setColor(0x38e54d)
-                .setTitle(`⚡ [LIQUIDACIÓN DIRECTA COMPLETADA // #${active.id}]`)
-                .setDescription(`
-Se ha realizado el depósito directo a la cartera militar de todos los soldados con asistencia confirmada.
-
-> 🎖️ **Operación:** \`${active.name}\`
-> 👥 **Combatientes Liquidados:** \`${result.paidCount}\`
-> 💰 **Total Fondos Desembolsados:** \`${sym}${result.totalDistributed.toLocaleString()}\`
-> 🛡️ **Oficial Pagador:** <@${interaction.user.id}>
-
-**Detalle de Haberes Transferidos:**
-${previewPaid}
-                `)
-                .setFooter({ text: 'Tesorería Militar USMC • Operación Finalizada' })
-                .setTimestamp();
-
-            return interaction.editReply({ embeds: [embed] });
-        }
-
-        // ==========================================
         // 5. /evento lista (Reporte Táctico Paginado con Expulsión)
         // ==========================================
         if (sub === 'lista') {
@@ -662,9 +513,7 @@ ${previewPaid}
             const name = interaction.options.getString('nombre');
             const eventType = interaction.options.getString('tipo');
             const targetChannel = interaction.options.getChannel('canal_objetivo');
-            const payoutChannel = interaction.options.getChannel('canal_pago');
             const baseReward = interaction.options.getInteger('paga_base');
-            const claimDeadlineHours = interaction.options.getInteger('plazo_horas') || 24;
             const graceMinutes = interaction.options.getInteger('gracia_minutos') !== null ? interaction.options.getInteger('gracia_minutos') : 5;
             const minPercent = interaction.options.getInteger('asistencia_minima') || 80;
 
@@ -686,9 +535,8 @@ ${previewPaid}
                 name,
                 event_type: eventType,
                 target_channel_id: targetChannel.id,
-                payout_channel_id: payoutChannel.id,
+                payout_channel_id: targetChannel.id,
                 base_reward: baseReward,
-                claim_deadline_hours: claimDeadlineHours,
                 grace_period_minutes: graceMinutes,
                 min_attendance_percent: minPercent
             });
@@ -714,11 +562,10 @@ ${previewPaid}
 El rastreo de presencia militar ha sido activado exitosamente.
 
 > 📍 **Canal Objetivo:** <#${targetChannel.id}> (\`${eventType}\`)
-> 📢 **Canal de Paga:** <#${payoutChannel.id}>
 > 💰 **Recompensa Base:** \`${sym}${baseReward.toLocaleString()}\`
 > 🛡️ **Tolerancia a Desconexión:** \`${graceMinutes} minutos\`
 > 📊 **Permanencia Requerida:** \`${minPercent}%\`
-> ⏱️ **Vigencia de Cobro:** \`${claimDeadlineHours} horas\` tras concluir
+> ⚡ **Liquidación:** \`Automática al finalizar\`
                 `)
                 .setFooter({ text: `Operación ID: #${result.event.id} • Ejecuta /evento finalizar al terminar.` });
 
@@ -762,7 +609,7 @@ El rastreo de presencia militar ha sido activado exitosamente.
 **Personal en Registro:**
 ${previewAttendees}
                 `)
-                .setFooter({ text: 'Usa /evento confirmar para pase de lista o /evento finalizar cuando concluya.' });
+                .setFooter({ text: 'Revisa /evento lista y usa /evento finalizar para liquidar la operación.' });
 
             return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         }
@@ -801,11 +648,32 @@ ${previewAttendees}
                     });
                 }
 
-                const summary = await finishAndPublishEvent(interaction.client, active.id);
+                const summary = economyDb.massPayoutEvent(active.id, interaction.client, interaction.user.id);
+                if (!summary.success) {
+                    return interaction.editReply({ content: `⚠️ ${summary.message}` });
+                }
 
-                return interaction.editReply({
-                    content: `✅ **Operación #${active.id} finalizada exitosamente.**\nSe detectaron **${summary.totalAttendees}** participantes, de los cuales **${summary.eligibleCount}** calificaron para cobrar. El botón de pago fue publicado en <#${active.payout_channel_id}>.`
-                });
+                let previewPaid = summary.paidList.slice(0, 10)
+                    .map(p => `• <@${p.discord_id}>: **${sym}${p.amount.toLocaleString()}** [${p.role || 'Estándar'}]`)
+                    .join('\n');
+                if (!previewPaid) previewPaid = '*No hubo asistentes elegibles pendientes de pago.*';
+                if (summary.paidList.length > 10) previewPaid += `\n*...y ${summary.paidList.length - 10} soldados más.*`;
+
+                const embed = new EmbedBuilder()
+                    .setColor(0x38e54d)
+                    .setTitle(`✅ [OPERACIÓN FINALIZADA Y PAGADA // #${active.id}]`)
+                    .setDescription(`
+> 🎖️ **Operación:** \`${active.name}\`
+> 👥 **Combatientes pagados:** \`${summary.paidCount}\`
+> 💰 **Total desembolsado:** \`${sym}${summary.totalDistributed.toLocaleString()}\`
+> 🛡️ **Oficial pagador:** <@${interaction.user.id}>
+
+${previewPaid}
+                    `)
+                    .setFooter({ text: 'Tesorería Militar USMC • Cierre y liquidación automática' })
+                    .setTimestamp();
+
+                return interaction.editReply({ embeds: [embed] });
             } catch (err) {
                 return interaction.editReply({
                     content: `❌ Error al finalizar la operación: ${err.message}`

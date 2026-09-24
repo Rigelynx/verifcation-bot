@@ -4,9 +4,8 @@ const cors = require('cors');
 const db = require('../database/db');
 const economyDb = require('../database/economyDb');
 const { hasAnyRole } = require('../bot/utils/roleUtils');
-const { finishAndPublishEvent } = require('../bot/handlers/eventTracker');
 const { buildBonusPanelMessage } = require('../bot/commands/bono');
-const { buildRegistrationPanel, buildConfirmationPanel, buildPayoutPanel } = require('../bot/commands/eventos');
+const { buildRegistrationPanel } = require('../bot/commands/eventos');
 
 function createWebServer(discordClient) {
     const app = express();
@@ -797,118 +796,24 @@ function createWebServer(discordClient) {
         }
     });
 
-    // Desplegar Panel de Confirmación de Asistencia a Discord
-    app.post('/api/admin/events/deploy-confirmation', requireAdmin, async (req, res) => {
+    // Retirar un ausente del roster antes de la liquidación automática
+    app.delete('/api/admin/events/attendance/:discordId', requireAdmin, (req, res) => {
         const guildId = process.env.GUILD_ID || 'GLOBAL';
         const active = economyDb.getActiveEvent(guildId);
         if (!active) {
             return res.status(404).json({ success: false, message: 'No hay operación militar activa.' });
         }
 
-        const channelId = req.body.channel_id || active.confirmation_channel_id || active.target_channel_id;
-        if (!discordClient || !discordClient.isReady()) {
-            return res.status(500).json({ success: false, message: 'Bot de Discord no conectado.' });
+        const discordId = String(req.params.discordId || '').trim();
+        if (!discordId) {
+            return res.status(400).json({ success: false, message: 'Discord ID requerido.' });
         }
 
-        const guild = discordClient.guilds.cache.get(active.guild_id) || discordClient.guilds.cache.first();
-        const channel = guild ? guild.channels.cache.get(channelId) : null;
-        if (!channel || !channel.isTextBased()) {
-            return res.status(400).json({ success: false, message: 'Canal de texto no válido.' });
-        }
-
-        try {
-            const settings = economyDb.getEconomySettings(active.guild_id);
-            const panelData = buildConfirmationPanel(active, settings);
-            const sentMsg = await channel.send(panelData);
-
-            economyDb.setEventPhase(active.id, 'CONFIRMING', {
-                confirmation_channel_id: channel.id,
-                confirmation_message_id: sentMsg.id
-            });
-
-            res.json({ success: true, message: `Pase de Lista publicado en #${channel.name}`, messageId: sentMsg.id });
-        } catch (err) {
-            console.error('[Deploy Confirm Error]:', err);
-            res.status(500).json({ success: false, message: `Error al desplegar confirmación: ${err.message}` });
-        }
+        const result = economyDb.expelUserFromEvent(active.id, discordId, process.env.ADMIN_NAME || 'ADMIN_WEB');
+        return res.status(result.success ? 200 : 400).json(result);
     });
 
-    // Desplegar Panel de Cobro a Discord (finaliza evento y publica botón de reclamo)
-    app.post('/api/admin/events/deploy-payout', requireAdmin, async (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
-        const active = economyDb.getActiveEvent(guildId);
-        if (!active) {
-            return res.status(404).json({ success: false, message: 'No hay operación militar activa.' });
-        }
-
-        const channelId = req.body.channel_id || active.payout_channel_id || active.target_channel_id;
-        if (!discordClient || !discordClient.isReady()) {
-            return res.status(500).json({ success: false, message: 'Bot de Discord no conectado.' });
-        }
-
-        const guild = discordClient.guilds.cache.get(active.guild_id) || discordClient.guilds.cache.first();
-        const channel = guild ? guild.channels.cache.get(channelId) : null;
-        if (!channel || !channel.isTextBased()) {
-            return res.status(400).json({ success: false, message: 'Canal de texto de pago no válido.' });
-        }
-
-        try {
-            const finalized = economyDb.finalizeEvent(active.id);
-            const settings = economyDb.getEconomySettings(active.guild_id);
-            const panelData = buildPayoutPanel(finalized, settings, finalized.claim_expires_at);
-            const sentMsg = await channel.send(panelData);
-
-            economyDb.setEventPhase(active.id, 'ENDED', {
-                payout_channel_id: channel.id,
-                discord_message_id: sentMsg.id
-            });
-
-            res.json({ success: true, message: `Panel de Cobro publicado en #${channel.name}`, messageId: sentMsg.id });
-        } catch (err) {
-            console.error('[Deploy Payout Error]:', err);
-            res.status(500).json({ success: false, message: `Error al desplegar cobro: ${err.message}` });
-        }
-    });
-
-    // Pago Masivo Directo desde la web a todos los confirmados
-    app.post('/api/admin/events/mass-payout', requireAdmin, async (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
-        const active = economyDb.getActiveEvent(guildId);
-        if (!active) {
-            return res.status(404).json({ success: false, message: 'No hay operación militar activa para liquidar.' });
-        }
-
-        try {
-            const summary = economyDb.massPayoutEvent(active.id, discordClient, 'COMANDO_WEB');
-            res.json({ success: true, summary });
-        } catch (err) {
-            console.error('[Mass Payout Error]:', err);
-            res.status(500).json({ success: false, message: `Error en liquidación masiva: ${err.message}` });
-        }
-    });
-
-    // Ajuste manual de asistencia / confirmación desde la tabla web
-    app.post('/api/admin/events/attendance/manual', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
-        const active = economyDb.getActiveEvent(guildId);
-        if (!active) {
-            return res.status(404).json({ success: false, message: 'No hay operación militar activa.' });
-        }
-
-        const { discord_id, is_eligible, is_confirmed } = req.body;
-        if (!discord_id) {
-            return res.status(400).json({ success: false, message: 'discord_id es requerido.' });
-        }
-
-        const result = economyDb.manualToggleAttendance(active.id, discord_id, {
-            isEligible: is_eligible,
-            isConfirmed: is_confirmed
-        });
-
-        res.json(result);
-    });
-
-    // Finalizar evento activo y publicar botón de cobro (retrocompatible)
+    // Finalizar evento activo y liquidar inmediatamente a los asistentes aprobados
     app.post('/api/admin/events/end', requireAdmin, async (req, res) => {
         const guildId = process.env.GUILD_ID || 'GLOBAL';
         const active = economyDb.getActiveEvent(guildId);
@@ -918,12 +823,10 @@ function createWebServer(discordClient) {
         }
 
         try {
-            if (!discordClient || !discordClient.isReady()) {
-                economyDb.finalizeEvent(active.id);
-                return res.json({ success: true, message: 'Operación finalizada en base de datos (bot desconectado de Discord).' });
+            const summary = economyDb.massPayoutEvent(active.id, discordClient, 'COMANDO_WEB');
+            if (!summary.success) {
+                return res.status(400).json(summary);
             }
-
-            const summary = await finishAndPublishEvent(discordClient, active.id);
             res.json({ success: true, summary });
         } catch (err) {
             console.error('[Finish Event Error]:', err);
