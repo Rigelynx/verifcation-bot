@@ -477,7 +477,7 @@ module.exports = {
                 .addIntegerOption(opt => opt.setName('paga_base').setDescription('Recompensa base en créditos').setMinValue(1).setRequired(true))
                 .addChannelOption(opt => opt.setName('canal_registro').setDescription('Canal donde publicar el panel de inscripción').addChannelTypes(ChannelType.GuildText).setRequired(false))
                 .addIntegerOption(opt => opt.setName('cupo_maximo').setDescription('Límite de soldados (opcional, por defecto sin límite)').setMinValue(1).setRequired(false))
-                .addIntegerOption(opt => opt.setName('plantilla_id').setDescription('ID de plantilla de acta configurada en el dashboard').setMinValue(1).setRequired(false))
+                .addIntegerOption(opt => opt.setName('plantilla_id').setDescription('Obligatoria: patrullaje #3, operación #4 u otra plantilla').setMinValue(1).setRequired(true))
         )
         .addSubcommand(sub =>
             sub.setName('entrenamiento')
@@ -486,7 +486,7 @@ module.exports = {
                 .addRoleOption(opt => opt.setName('rol').setDescription('Rol que recibirán los aprobados').setRequired(true))
                 .addChannelOption(opt => opt.setName('canal_registro').setDescription('Canal donde publicar el panel de inscripción').addChannelTypes(ChannelType.GuildText).setRequired(false))
                 .addIntegerOption(opt => opt.setName('cupo_maximo').setDescription('Límite de participantes (opcional)').setMinValue(1).setRequired(false))
-                .addIntegerOption(opt => opt.setName('plantilla_id').setDescription('ID de plantilla de acta configurada en el dashboard').setMinValue(1).setRequired(false))
+                .addIntegerOption(opt => opt.setName('plantilla_id').setDescription('Obligatoria: usa la plantilla de entrenamiento #2').setMinValue(1).setRequired(true))
         )
         .addSubcommand(sub =>
             sub.setName('lista')
@@ -506,7 +506,7 @@ module.exports = {
                 .addIntegerOption(opt => opt.setName('paga_base').setDescription('Recompensa base en créditos').setMinValue(1).setRequired(true))
                 .addIntegerOption(opt => opt.setName('gracia_minutos').setDescription('Tolerancia en minutos si sufren desconexión (default: 5 min)').setMinValue(0).setRequired(false))
                 .addIntegerOption(opt => opt.setName('asistencia_minima').setDescription('Porcentaje mínimo de permanencia requerido (default: 80%)').setMinValue(10).setMaxValue(100).setRequired(false))
-                .addIntegerOption(opt => opt.setName('plantilla_id').setDescription('ID de plantilla de acta configurada en el dashboard').setMinValue(1).setRequired(false))
+                .addIntegerOption(opt => opt.setName('plantilla_id').setDescription('Obligatoria: operación #4 u otra plantilla compatible').setMinValue(1).setRequired(true))
         )
         .addSubcommand(sub =>
             sub.setName('finalizar')
@@ -551,6 +551,10 @@ module.exports = {
             const regChannel = interaction.options.getChannel('canal_registro') || interaction.channel;
             const maxParticipants = interaction.options.getInteger('cupo_maximo') || 0;
             const templateId = interaction.options.getInteger('plantilla_id');
+
+            if (!templateId) {
+                return interaction.reply({ content: '❌ Debes seleccionar una plantilla: patrullaje `#3` u operación `#4`.', flags: MessageFlags.Ephemeral });
+            }
 
             if (!regChannel.isTextBased()) {
                 return interaction.reply({
@@ -607,6 +611,10 @@ module.exports = {
             const regChannel = interaction.options.getChannel('canal_registro') || interaction.channel;
             const maxParticipants = interaction.options.getInteger('cupo_maximo') || 0;
             const templateId = interaction.options.getInteger('plantilla_id');
+
+            if (!templateId) {
+                return interaction.reply({ content: '❌ Debes seleccionar la plantilla de entrenamiento `#2`.', flags: MessageFlags.Ephemeral });
+            }
 
             if (!regChannel.isTextBased()) {
                 return interaction.reply({ content: '❌ El canal de registro debe ser un canal de texto.', flags: MessageFlags.Ephemeral });
@@ -688,6 +696,10 @@ module.exports = {
             const graceMinutes = interaction.options.getInteger('gracia_minutos') !== null ? interaction.options.getInteger('gracia_minutos') : 5;
             const minPercent = interaction.options.getInteger('asistencia_minima') || 80;
             const templateId = interaction.options.getInteger('plantilla_id');
+
+            if (!templateId) {
+                return interaction.reply({ content: '❌ Debes seleccionar una plantilla de registro; para operaciones usa `#4`.', flags: MessageFlags.Ephemeral });
+            }
 
             if (eventType === 'VOICE' && !targetChannel.isVoiceBased()) {
                 return interaction.reply({

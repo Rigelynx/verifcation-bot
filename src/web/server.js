@@ -749,8 +749,9 @@ function createWebServer(discordClient) {
             max_participants, template_id
         } = req.body;
 
-        if (!name || !base_reward) {
-            return res.status(400).json({ success: false, message: 'El nombre y la paga base son requeridos.' });
+        const parsedTemplateId = parseInt(template_id, 10);
+        if (!name || !base_reward || !Number.isInteger(parsedTemplateId) || parsedTemplateId <= 0) {
+            return res.status(400).json({ success: false, message: 'El nombre, la paga base y una plantilla de registro son obligatorios.' });
         }
 
         const type = event_type || 'VOICE';
@@ -786,7 +787,7 @@ function createWebServer(discordClient) {
             min_attendance_percent: parseInt(min_attendance_percent, 10) || 80,
             max_participants: parseInt(max_participants, 10) || 0,
             phase: type === 'REGISTRATION' ? 'REGISTRATION' : 'ACTIVE',
-            report_template_id: template_id ? parseInt(template_id, 10) : null
+            report_template_id: parsedTemplateId
         });
 
         if (!result.success) {

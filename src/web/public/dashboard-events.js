@@ -634,8 +634,8 @@ function renderActiveEventSection(data) {
                         </div>
                         <div class="form-group">
                             <label class="form-label">PLANTILLA DE ACTA AL FINALIZAR:</label>
-                            <select id="ev-template-id" class="retro-select">
-                                <option value="">Acta general automática</option>
+                            <select id="ev-template-id" class="retro-select" required>
+                                <option value="">-- SELECCIONAR PLANTILLA OBLIGATORIA --</option>
                                 ${eventReportTemplates.map(template => `<option value="${template.id}">${escapeEventTemplateText(template.emoji || '📜')} ${escapeEventTemplateText(({ ALL: 'Universal', TRAINING: 'Entrenamiento', PATROL: 'Patrullaje', OPERATION: 'Operación' })[template.template_kind] || 'Universal')} · ${escapeEventTemplateText(template.name)} (#${template.id})</option>`).join('')}
                             </select>
                             <p class="form-help">La plantilla se copia al evento; cambios futuros no alterarán su acta.</p>
@@ -702,7 +702,7 @@ function renderActiveEventSection(data) {
                 max_participants: parseInt(document.getElementById('ev-max-participants').value, 10) || 0,
                 grace_period_minutes: parseInt(document.getElementById('ev-grace-minutes').value, 10),
                 min_attendance_percent: parseInt(document.getElementById('ev-min-percent').value, 10),
-                template_id: parseInt(document.getElementById('ev-template-id').value, 10) || null
+                template_id: parseInt(document.getElementById('ev-template-id').value, 10)
             };
 
             try {
