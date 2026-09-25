@@ -317,8 +317,17 @@ function getReportTemplate(event) {
     return {
         name: 'Registro general', title: 'REGISTRO OFICIAL DE OPERACIÓN', description: '',
         emoji: '🎖️', color: '#1a7f4b', report_channel_id: '', grouping_mode: 'STATUS',
-        group_roles: [], evidence_required: false, sticker_id: '', footer: 'USMC • Registro Operativo Oficial'
+        group_roles: [], evidence_required: false, sticker_id: '', footer: 'USMC • Registro Operativo Oficial',
+        template_kind: 'ALL', approved_label: 'APROBADOS / ASISTENTES', rejected_label: 'NO APROBADOS',
+        show_removed: true, show_payout: false
     };
+}
+
+function renderEventTemplateVariables(text, variables) {
+    return String(text || '').replace(/\{(evento|id|tipo|oficial|fecha|duracion|aprobados|no_aprobados|rol)\}/gi, (match, key) => {
+        const value = variables[String(key).toLowerCase()];
+        return value === undefined || value === null ? match : String(value);
+    });
 }
 
 function clampReportLines(lines, emptyText = '*Sin registros*', maxLength = 900) {
@@ -349,11 +358,25 @@ async function publishEventReport(interaction, event, summary, evidence, resultT
     const durationMinutes = Math.max(0, Math.floor((Date.now() - new Date(event.created_at).getTime()) / 60000));
     const color = parseInt(String(template.color || '#1a7f4b').replace('#', ''), 16) || 0x1a7f4b;
     const officerDisplay = interaction.reportOfficerLabel || `<@${interaction.user.id}>`;
+    const eventName = String(event.name || 'Evento').slice(0, 200);
+    const templateVariables = {
+        evento: eventName,
+        id: event.id,
+        tipo: event.event_type,
+        oficial: officerDisplay,
+        fecha: `<t:${Math.floor(Date.now() / 1000)}:D>`,
+        duracion: `${durationMinutes} min`,
+        aprobados: approved.length,
+        no_aprobados: removed.length,
+        rol: event.reward_role_id ? `<@&${event.reward_role_id}>` : 'No aplica'
+    };
+    const customDescription = renderEventTemplateVariables(template.description, templateVariables);
+    const reportDescription = `${customDescription ? `${customDescription}\n\n` : ''}> 🎖️ **Evento:** \`${eventName}\`\n> 📅 **Fecha:** ${templateVariables.fecha}\n> 👤 **Encargado:** ${officerDisplay}\n> ⏱️ **Duración:** \`${templateVariables.duracion}\`\n> 🆔 **Registro:** \`#${event.id}\``;
     const embed = new EmbedBuilder()
         .setColor(color)
-        .setTitle(`${template.emoji || '🎖️'} [${String(template.title || 'REGISTRO DE OPERACIÓN').toUpperCase()}]`)
-        .setDescription(`${template.description ? `${template.description}\n\n` : ''}> 🎖️ **Operación:** \`${event.name}\`\n> 📅 **Fecha:** <t:${Math.floor(Date.now() / 1000)}:D>\n> 👤 **Encargado:** ${officerDisplay}\n> ⏱️ **Duración:** \`${durationMinutes} min\`\n> 🆔 **Acta:** \`#${event.id}\``)
-        .setFooter({ text: String(template.footer || 'USMC • Registro Operativo Oficial').slice(0, 2048) })
+        .setTitle(`${template.emoji || '🎖️'} [${renderEventTemplateVariables(template.title || 'REGISTRO DE OPERACIÓN', templateVariables).toUpperCase()}]`.slice(0, 256))
+        .setDescription(reportDescription.slice(0, 4096))
+        .setFooter({ text: renderEventTemplateVariables(template.footer || 'USMC • Registro Operativo Oficial', templateVariables).slice(0, 2048) })
         .setTimestamp();
 
     const groupedIds = new Set();
@@ -374,13 +397,13 @@ async function publishEventReport(interaction, event, summary, evidence, resultT
     const ungrouped = approved.filter(item => !groupedIds.has(item.discord_id));
     if (ungrouped.length || template.grouping_mode !== 'ROLES') {
         embed.addFields({
-            name: `${event.event_type === 'TRAINING' ? '✅ APROBADOS' : '👥 ASISTENTES'} — ${approved.length}`,
-            value: clampReportLines((template.grouping_mode === 'ROLES' ? ungrouped : approved).map(item => `• <@${item.discord_id}>${item.claimed ? ` — 💵 ${item.payout_amount}` : ''}`), '*Sin registros*', 700),
+            name: `✅ ${String(template.approved_label || 'APROBADOS / ASISTENTES').toUpperCase()} — ${approved.length}`,
+            value: clampReportLines((template.grouping_mode === 'ROLES' ? ungrouped : approved).map(item => `• <@${item.discord_id}>${template.show_payout === true && item.claimed ? ` — 💵 ${item.payout_amount}` : ''}`), '*Sin registros*', 700),
             inline: false
         });
     }
-    if (removed.length) embed.addFields({ name: `❌ RETIRADOS / NO APTOS — ${removed.length}`, value: clampReportLines(removed.map(item => `• <@${item.discord_id}>`), '*Sin registros*', 400), inline: false });
-    if (event.event_type !== 'TRAINING') {
+    if (removed.length && template.show_removed !== false && template.show_removed !== 0) embed.addFields({ name: `❌ ${String(template.rejected_label || 'NO APROBADOS').toUpperCase()} — ${removed.length}`, value: clampReportLines(removed.map(item => `• <@${item.discord_id}>`), '*Sin registros*', 400), inline: false });
+    if (event.event_type !== 'TRAINING' && template.show_payout === true) {
         embed.addFields({ name: '💰 LIQUIDACIÓN', value: `Pagados: **${reportPaidCount}**\nTotal desembolsado: **${reportPaidTotal}**`, inline: true });
     }
     if (resultText) embed.addFields({ name: '🎯 RESULTADO', value: String(resultText).slice(0, 700), inline: false });
@@ -401,6 +424,46 @@ async function publishEventReport(interaction, event, summary, evidence, resultT
     }
     economyDb.saveEventReport(event.id, message.id, { template: template.name, evidence_url: evidence?.url || '', result: resultText || '', notes: notes || '', officer_id: interaction.user.id });
     return { message, channel };
+}
+
+async function publishEventCompletionNotice(interaction, event, details, settings) {
+    if (event.completion_message_id) return { sent: false, skipped: true };
+    const channel = interaction.channel;
+    if (!channel?.isSendable?.()) return { sent: false, error: 'El canal del comando no permite enviar mensajes.' };
+    const isTraining = event.event_type === 'TRAINING';
+    const sym = settings?.currency_symbol || '$';
+    const embed = new EmbedBuilder()
+        .setColor(0x38e54d)
+        .setTitle(isTraining
+            ? `✅ [ENTRENAMIENTO FINALIZADO // #${event.id}]`
+            : `✅ [OPERACIÓN PAGADA // #${event.id}]`)
+        .setDescription(isTraining
+            ? [
+                `> 🎓 **Entrenamiento:** \`${event.name}\``,
+                `> 🏅 **Rol entregado:** ${details.role}`,
+                `> ✅ **Nuevas asignaciones:** \`${details.awarded.length}\``,
+                `> 🛡️ **Ya tenían el rol:** \`${details.alreadyHadRole.length}\``,
+                `> 👥 **Aprobados en lista:** \`${details.rosterCount}\``,
+                details.failed.length ? `> ⚠️ **Asignaciones pendientes:** \`${details.failed.length}\`` : null,
+                `> 👤 **Oficial:** <@${interaction.user.id}>`
+            ].filter(Boolean).join('\n')
+            : [
+                `> 🎖️ **Operación:** \`${event.name}\``,
+                `> ✅ **Estado:** \`PAGO COMPLETADO\``,
+                `> 👥 **Combatientes pagados:** \`${details.paidCount}\``,
+                `> 💰 **Total desembolsado:** \`${sym}${details.totalDistributed.toLocaleString()}\``,
+                `> 👤 **Oficial pagador:** <@${interaction.user.id}>`
+            ].join('\n'))
+        .setFooter({ text: isTraining ? 'USMC • Roles de entrenamiento entregados' : 'Tesorería Militar USMC • Liquidación completada' })
+        .setTimestamp();
+
+    try {
+        const message = await channel.send({ embeds: [embed], allowedMentions: { parse: [] } });
+        economyDb.saveEventCompletionNotice(event.id, channel.id, message.id);
+        return { sent: true, message };
+    } catch (error) {
+        return { sent: false, error: error.message };
+    }
 }
 
 module.exports = {
@@ -738,7 +801,7 @@ ${previewAttendees}
                 if (!active || (active.guild_id !== guildId && active.guild_id !== 'GLOBAL')) {
                     return interaction.reply({ content: `⚠️ No existe el evento #${requestedId} en este servidor.`, flags: MessageFlags.Ephemeral });
                 }
-                if (active.status !== 'ACTIVE' && active.event_type !== 'TRAINING' && active.report_message_id) {
+                if (active.status !== 'ACTIVE' && active.event_type !== 'TRAINING' && active.report_message_id && active.completion_message_id) {
                     return interaction.reply({ content: `⚠️ El evento #${requestedId} ya está finalizado.`, flags: MessageFlags.Ephemeral });
                 }
             } else {
@@ -760,13 +823,14 @@ ${previewAttendees}
             try {
                 if (active.event_type === 'TRAINING') {
                     const summary = await awardTrainingRole(interaction, active);
+                    const completionNotice = await publishEventCompletionNotice(interaction, active, summary, settings);
                     const report = await publishEventReport(interaction, active, { paidCount: 0, totalDistributed: 0 }, evidence, resultText, notes);
                     const failedPreview = summary.failed.slice(0, 5).map(item => `<@${item.discordId}>`).join(', ');
                     const retryText = summary.failed.length > 0
                         ? `\n⚠️ No se pudo asignar a **${summary.failed.length}** miembro(s): ${failedPreview}${summary.failed.length > 5 ? '…' : ''}. Puedes corregir el problema y repetir \`/evento finalizar evento_id:${active.id}\`.`
                         : '';
                     return interaction.editReply({
-                        content: `✅ **Entrenamiento #${active.id} finalizado.** Rol ${summary.role} entregado a **${summary.awarded.length}** aprobado(s); **${summary.alreadyHadRole.length}** ya lo tenían. Total en la lista final: **${summary.rosterCount}**.${retryText}${report.channel ? `\n📜 Acta publicada en ${report.channel}.` : ''}`
+                        content: `✅ **Entrenamiento #${active.id} finalizado.** Rol ${summary.role} entregado a **${summary.awarded.length}** aprobado(s); **${summary.alreadyHadRole.length}** ya lo tenían. Total en la lista final: **${summary.rosterCount}**.${retryText}${report.channel ? `\n📜 Acta publicada en ${report.channel}.` : ''}${completionNotice.sent ? '\n📣 Aviso de cierre publicado en este canal.' : completionNotice.skipped ? '\n📣 El aviso de cierre ya estaba publicado.' : `\n⚠️ No pude publicar el aviso público: ${completionNotice.error}`}`
                     });
                 }
 
@@ -780,6 +844,7 @@ ${previewAttendees}
                     .join('\n');
                 if (!previewPaid) previewPaid = '*No hubo asistentes elegibles pendientes de pago.*';
                 if (summary.paidList.length > 10) previewPaid += `\n*...y ${summary.paidList.length - 10} soldados más.*`;
+                const completionNotice = await publishEventCompletionNotice(interaction, active, summary, settings);
                 const report = await publishEventReport(interaction, active, summary, evidence, resultText, notes);
 
                 const embed = new EmbedBuilder()
@@ -797,7 +862,10 @@ ${previewPaid}
                     .setFooter({ text: 'Tesorería Militar USMC • Cierre y liquidación automática' })
                     .setTimestamp();
 
-                return interaction.editReply({ embeds: [embed] });
+                return interaction.editReply({
+                    content: completionNotice.sent ? '📣 Aviso de pago publicado en este canal.' : completionNotice.skipped ? '📣 El aviso de pago ya estaba publicado.' : `⚠️ El pago se completó, pero no pude publicar el aviso público: ${completionNotice.error}`,
+                    embeds: [embed]
+                });
             } catch (err) {
                 return interaction.editReply({
                     content: `❌ Error al finalizar la operación: ${err.message}`

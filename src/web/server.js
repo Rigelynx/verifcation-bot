@@ -757,6 +757,21 @@ function createWebServer(discordClient) {
         const targetChan = target_channel_id || registration_channel_id || payout_channel_id || '';
         const payoutChan = payout_channel_id || targetChan;
 
+        if (discordClient && discordClient.isReady()) {
+            const guild = discordClient.guilds.cache.get(guildId) || discordClient.guilds.cache.first();
+            const targetChannel = guild?.channels?.cache?.get(targetChan);
+            if (!targetChannel) {
+                return res.status(400).json({ success: false, message: 'El canal seleccionado ya no existe o no está disponible para el bot.' });
+            }
+            const requiresVoice = type === 'VOICE' || type === 'HYBRID';
+            if (requiresVoice && !targetChannel.isVoiceBased()) {
+                return res.status(400).json({ success: false, message: 'Esta modalidad requiere seleccionar un canal de voz o escenario.' });
+            }
+            if (!requiresVoice && !targetChannel.isTextBased()) {
+                return res.status(400).json({ success: false, message: 'Esta modalidad requiere seleccionar un canal de texto.' });
+            }
+        }
+
         const result = economyDb.createEvent({
             guild_id: guildId,
             name,

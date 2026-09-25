@@ -146,7 +146,9 @@ function initEconomyTables() {
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             ended_at DATETIME DEFAULT NULL,
             claim_expires_at INTEGER DEFAULT 0,
-            discord_message_id TEXT DEFAULT NULL
+            discord_message_id TEXT DEFAULT NULL,
+            completion_channel_id TEXT DEFAULT NULL,
+            completion_message_id TEXT DEFAULT NULL
         );
     `);
 
@@ -184,6 +186,11 @@ function initEconomyTables() {
             evidence_required INTEGER DEFAULT 0,
             sticker_id TEXT DEFAULT '',
             footer TEXT DEFAULT 'USMC • Registro Operativo Oficial',
+            template_kind TEXT DEFAULT 'ALL',
+            approved_label TEXT DEFAULT 'APROBADOS / ASISTENTES',
+            rejected_label TEXT DEFAULT 'NO APROBADOS',
+            show_removed INTEGER DEFAULT 1,
+            show_payout INTEGER DEFAULT 0,
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -298,8 +305,39 @@ function initEconomyTables() {
         if (!pCols.includes('report_template_snapshot')) db.exec("ALTER TABLE event_payouts ADD COLUMN report_template_snapshot TEXT DEFAULT NULL");
         if (!pCols.includes('report_message_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN report_message_id TEXT DEFAULT NULL");
         if (!pCols.includes('report_data')) db.exec("ALTER TABLE event_payouts ADD COLUMN report_data TEXT DEFAULT NULL");
+        if (!pCols.includes('completion_channel_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN completion_channel_id TEXT DEFAULT NULL");
+        if (!pCols.includes('completion_message_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN completion_message_id TEXT DEFAULT NULL");
     } catch (e) {
         console.error('[Migration Error event_payouts]:', e.message);
+    }
+
+    try {
+        const tCols = db.prepare("PRAGMA table_info(event_report_templates)").all().map(c => c.name);
+        if (!tCols.includes('template_kind')) db.exec("ALTER TABLE event_report_templates ADD COLUMN template_kind TEXT DEFAULT 'ALL'");
+        if (!tCols.includes('approved_label')) db.exec("ALTER TABLE event_report_templates ADD COLUMN approved_label TEXT DEFAULT 'APROBADOS / ASISTENTES'");
+        if (!tCols.includes('rejected_label')) db.exec("ALTER TABLE event_report_templates ADD COLUMN rejected_label TEXT DEFAULT 'NO APROBADOS'");
+        if (!tCols.includes('show_removed')) db.exec("ALTER TABLE event_report_templates ADD COLUMN show_removed INTEGER DEFAULT 1");
+        if (!tCols.includes('show_payout')) db.exec("ALTER TABLE event_report_templates ADD COLUMN show_payout INTEGER DEFAULT 0");
+
+        const universalTemplates = [
+            ['Universal • Todo tipo de evento', 'ALL', 'REGISTRO OFICIAL DEL EVENTO', '📜', '#5865f2', '## Cierre oficial de {evento}\nSe deja constancia del registro realizado bajo la supervisión de {oficial}.', 'PARTICIPANTES APROBADOS', 'NO APROBADOS', 'Registro Oficial • Evento #{id}'],
+            ['Universal • Entrenamientos', 'TRAINING', 'REGISTRO FINAL DE ENTRENAMIENTO', '🎓', '#2b8a3e', '## Entrenamiento finalizado\nEl personal listado completó **{evento}**. Duración registrada: `{duracion}`.', 'PERSONAL APROBADO', 'PERSONAL NO APROBADO', 'Academia Militar • Entrenamiento #{id}'],
+            ['Universal • Patrullajes', 'PATROL', 'REGISTRO OFICIAL DE PATRULLAJE', '🧭', '#0b7285', '## Patrullaje completado\nLa unidad concluyó **{evento}** bajo el mando de {oficial}.', 'PERSONAL PARTICIPANTE', 'AUSENTES / RETIRADOS', 'Comando de Patrullaje • Registro #{id}'],
+            ['Universal • Operaciones', 'OPERATION', 'REGISTRO FINAL DE OPERACIÓN', '🎖️', '#9c6f19', '## Operación concluida\nQueda registrado el cierre de **{evento}** con `{aprobados}` participantes aprobados.', 'EFECTIVOS APROBADOS', 'NO APTOS / RETIRADOS', 'Estado Mayor • Operación #{id}']
+        ];
+        const findUniversalTemplate = db.prepare("SELECT id FROM event_report_templates WHERE guild_id='GLOBAL' AND name=? LIMIT 1");
+        const insertUniversalTemplate = db.prepare(`
+            INSERT INTO event_report_templates (
+                guild_id, name, title, description, emoji, color, report_channel_id,
+                grouping_mode, group_roles, evidence_required, sticker_id, footer,
+                template_kind, approved_label, rejected_label, show_removed, show_payout, is_active
+            ) VALUES ('GLOBAL', ?, ?, ?, ?, ?, '', 'STATUS', '[]', 0, '', ?, ?, ?, ?, 1, 0, 1)
+        `);
+        for (const [name, kind, title, emoji, color, description, approvedLabel, rejectedLabel, footer] of universalTemplates) {
+            if (!findUniversalTemplate.get(name)) insertUniversalTemplate.run(name, title, description, emoji, color, footer, kind, approvedLabel, rejectedLabel);
+        }
+    } catch (e) {
+        console.error('[Migration Error event_report_templates]:', e.message);
     }
 
     try {
@@ -1246,6 +1284,8 @@ function parseTemplateRow(row) {
         ...row,
         group_roles: Array.isArray(groupRoles) ? groupRoles : [],
         evidence_required: row.evidence_required === 1,
+        show_removed: row.show_removed !== 0,
+        show_payout: row.show_payout === 1,
         is_active: row.is_active === 1
     };
 }
@@ -1270,6 +1310,7 @@ function getEventReportTemplateById(id, guildId = 'GLOBAL') {
 function saveEventReportTemplate(guildId, data = {}) {
     const normalizeColor = /^#[0-9a-f]{6}$/i.test(String(data.color || '')) ? data.color : '#1a7f4b';
     const groupingMode = ['LIST', 'STATUS', 'ROLES'].includes(data.grouping_mode) ? data.grouping_mode : 'STATUS';
+    const templateKind = ['ALL', 'TRAINING', 'PATROL', 'OPERATION'].includes(data.template_kind) ? data.template_kind : 'ALL';
     const groupRoles = Array.isArray(data.group_roles) ? data.group_roles
         .filter(group => group && group.role_id)
         .slice(0, 6)
@@ -1277,7 +1318,7 @@ function saveEventReportTemplate(guildId, data = {}) {
     const values = {
         name: String(data.name || 'Plantilla operativa').trim().slice(0, 80),
         title: String(data.title || 'REGISTRO DE OPERACIÓN').trim().slice(0, 120),
-        description: String(data.description || '').trim().slice(0, 500),
+        description: String(data.description || '').trim().slice(0, 1000),
         emoji: String(data.emoji || '🎖️').trim().slice(0, 16),
         color: normalizeColor,
         report_channel_id: String(data.report_channel_id || '').trim(),
@@ -1286,16 +1327,21 @@ function saveEventReportTemplate(guildId, data = {}) {
         evidence_required: data.evidence_required ? 1 : 0,
         sticker_id: String(data.sticker_id || '').trim(),
         footer: String(data.footer || 'USMC • Registro Operativo Oficial').trim().slice(0, 200),
+        template_kind: templateKind,
+        approved_label: String(data.approved_label || 'APROBADOS / ASISTENTES').trim().slice(0, 80),
+        rejected_label: String(data.rejected_label || 'NO APROBADOS').trim().slice(0, 80),
+        show_removed: data.show_removed === false || data.show_removed === 0 ? 0 : 1,
+        show_payout: data.show_payout ? 1 : 0,
         is_active: data.is_active === false || data.is_active === 0 ? 0 : 1
     };
 
     if (data.id) {
-        db.prepare(`UPDATE event_report_templates SET name=?, title=?, description=?, emoji=?, color=?, report_channel_id=?, grouping_mode=?, group_roles=?, evidence_required=?, sticker_id=?, footer=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND (guild_id=? OR guild_id='GLOBAL')`)
-            .run(values.name, values.title, values.description, values.emoji, values.color, values.report_channel_id, values.grouping_mode, values.group_roles, values.evidence_required, values.sticker_id, values.footer, values.is_active, data.id, guildId);
+        db.prepare(`UPDATE event_report_templates SET name=?, title=?, description=?, emoji=?, color=?, report_channel_id=?, grouping_mode=?, group_roles=?, evidence_required=?, sticker_id=?, footer=?, template_kind=?, approved_label=?, rejected_label=?, show_removed=?, show_payout=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND (guild_id=? OR guild_id='GLOBAL')`)
+            .run(values.name, values.title, values.description, values.emoji, values.color, values.report_channel_id, values.grouping_mode, values.group_roles, values.evidence_required, values.sticker_id, values.footer, values.template_kind, values.approved_label, values.rejected_label, values.show_removed, values.show_payout, values.is_active, data.id, guildId);
         return getEventReportTemplateById(data.id, guildId);
     }
-    const info = db.prepare(`INSERT INTO event_report_templates (guild_id,name,title,description,emoji,color,report_channel_id,grouping_mode,group_roles,evidence_required,sticker_id,footer,is_active) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-        .run(guildId, values.name, values.title, values.description, values.emoji, values.color, values.report_channel_id, values.grouping_mode, values.group_roles, values.evidence_required, values.sticker_id, values.footer, values.is_active);
+    const info = db.prepare(`INSERT INTO event_report_templates (guild_id,name,title,description,emoji,color,report_channel_id,grouping_mode,group_roles,evidence_required,sticker_id,footer,template_kind,approved_label,rejected_label,show_removed,show_payout,is_active) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(guildId, values.name, values.title, values.description, values.emoji, values.color, values.report_channel_id, values.grouping_mode, values.group_roles, values.evidence_required, values.sticker_id, values.footer, values.template_kind, values.approved_label, values.rejected_label, values.show_removed, values.show_payout, values.is_active);
     return getEventReportTemplateById(info.lastInsertRowid, guildId);
 }
 
@@ -1307,6 +1353,12 @@ function archiveEventReportTemplate(id, guildId) {
 function saveEventReport(eventId, messageId, reportData) {
     db.prepare('UPDATE event_payouts SET report_message_id=?, report_data=? WHERE id=?')
         .run(messageId || null, JSON.stringify(reportData || {}), eventId);
+    return getEventById(eventId);
+}
+
+function saveEventCompletionNotice(eventId, channelId, messageId) {
+    db.prepare('UPDATE event_payouts SET completion_channel_id=?, completion_message_id=? WHERE id=?')
+        .run(channelId || null, messageId || null, eventId);
     return getEventById(eventId);
 }
 
@@ -2206,6 +2258,7 @@ module.exports = {
     saveEventReportTemplate,
     archiveEventReportTemplate,
     saveEventReport,
+    saveEventCompletionNotice,
     recordAttendanceHeartbeat,
     recordChatActivity,
     finalizeEvent,

@@ -529,7 +529,21 @@ body {
 }
 
 .event-template-form-grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.event-template-form-grid.compact { grid-template-columns: 0.55fr 0.55fr 1fr; }
+.event-template-form-grid.compact { grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); }
+.event-template-preset-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    margin-bottom: 15px;
+    padding: 11px 12px;
+    border: 1px solid rgba(88, 101, 242, 0.6);
+    background: rgba(88, 101, 242, 0.1);
+}
+.event-template-preset-bar div { display: grid; gap: 2px; }
+.event-template-preset-bar strong { color: #dfe2ff; font: 700 0.72rem var(--font-tech); }
+.event-template-preset-bar span { color: #9da3c7; font-size: 0.67rem; }
+.event-template-preset-bar .retro-select { width: min(100%, 290px); }
 .event-template-color { min-height: 42px; padding: 4px; }
 
 .event-role-grid {
@@ -601,6 +615,64 @@ body {
 .event-template-preview-author { color: #b5bac1; font-size: 0.67rem; font-weight: bold; }
 .event-template-preview h3 { margin: 7px 0; color: #fff; font-size: 0.95rem; }
 .event-template-preview > p { color: #c4c9ce; font-size: 0.73rem; line-height: 1.35; }
+.discord-format-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 7px;
+    border: 1px solid #3f444b;
+    border-bottom: 0;
+    background: #202225;
+}
+.discord-format-toolbar button {
+    min-height: 28px;
+    padding: 4px 8px;
+    border: 1px solid #4e5058;
+    border-radius: 3px;
+    background: #2b2d31;
+    color: #dbdee1;
+    font: 700 0.68rem var(--font-tech);
+    cursor: pointer;
+}
+.discord-format-toolbar button:hover,
+.discord-format-toolbar button:focus-visible { background: #404249; border-color: #7a7f89; color: #fff; }
+.discord-format-toolbar + .retro-textarea { border-top-color: #2b2d31; }
+.event-template-variablebar + .retro-textarea { border-top-color: #282a2e; }
+.event-template-variablebar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 7px;
+    border-inline: 1px solid #3f444b;
+    background: #282a2e;
+}
+.event-template-variablebar span { margin-right: 3px; color: #949ba4; font: 700 0.62rem var(--font-tech); }
+.event-template-variablebar button {
+    padding: 3px 6px;
+    border: 1px solid #4e5a78;
+    border-radius: 3px;
+    background: #34384a;
+    color: #cbd2ff;
+    font: 0.63rem Consolas, monospace;
+    cursor: pointer;
+}
+.event-template-variablebar button:hover { background: #454c6b; color: #fff; }
+.event-template-preview > p h4,
+.event-template-preview > p h5,
+.event-template-preview > p h6 { margin: 4px 0; color: #f2f3f5; }
+.event-template-preview > p h4 { font-size: 1rem; }
+.event-template-preview > p h5 { font-size: 0.88rem; }
+.event-template-preview > p h6 { font-size: 0.78rem; }
+.event-template-preview > p blockquote { margin: 3px 0; padding-left: 8px; border-left: 3px solid #4e5058; }
+.discord-inline-code, .discord-code-block { background: #1e1f22; color: #dbdee1; font-family: Consolas, monospace; }
+.discord-inline-code { padding: 1px 3px; border-radius: 3px; }
+.discord-code-block { display: block; margin: 5px 0; padding: 7px; white-space: pre-wrap; border: 1px solid #111214; border-radius: 4px; }
+.discord-spoiler { padding: 0 3px; border-radius: 3px; background: #1e1f22; color: transparent; cursor: pointer; user-select: none; }
+.discord-spoiler:hover, .discord-spoiler:focus { color: #dbdee1; background: #2b2d31; user-select: text; }
+.discord-subtext { color: #949ba4; }
+.discord-list-item { padding-left: 9px; }
+.event-template-preview > p a { color: #00a8fc; text-decoration: none; }
 .event-template-preview-data { margin: 11px 0; padding-left: 9px; border-left: 2px solid #4e5058; font-size: 0.71rem; line-height: 1.55; }
 
 .event-template-preview-field {
@@ -614,6 +686,7 @@ body {
 }
 
 .event-template-preview-field.muted { opacity: 0.68; }
+.event-template-preview-field[hidden] { display: none; }
 .event-template-preview-field b { color: #fff; }
 
 .event-template-preview-image {
@@ -663,6 +736,8 @@ body {
     .event-template-form-grid.compact,
     .event-role-grid { grid-template-columns: 1fr; }
     .event-template-manager-head .btn-retro { width: 100%; }
+    .event-template-preset-bar { align-items: stretch; flex-direction: column; }
+    .event-template-preset-bar .retro-select { width: 100%; }
 }
 
 /* Botones de Comando Retro (3D Relief) */

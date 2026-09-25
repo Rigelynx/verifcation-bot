@@ -13,6 +13,124 @@ function escapeEventTemplateText(value) {
     })[character]);
 }
 
+function renderDiscordMarkdown(value) {
+    const blocks = [];
+    const token = html => {
+        const id = `@@DISCORD_MARKDOWN_${blocks.length}@@`;
+        blocks.push({ id, html });
+        return id;
+    };
+    let source = String(value || '');
+
+    source = source.replace(/```(?:[^\n`]*)\n?([\s\S]*?)```/g, (_, code) => token(`<pre class="discord-code-block"><code>${escapeEventTemplateText(code.replace(/^\n|\n$/g, ''))}</code></pre>`));
+    source = source.replace(/`([^`\n]+)`/g, (_, code) => token(`<code class="discord-inline-code">${escapeEventTemplateText(code)}</code>`));
+    source = source.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) => token(`<a href="${escapeEventTemplateText(url)}" target="_blank" rel="noopener noreferrer">${escapeEventTemplateText(label)}</a>`));
+
+    let html = escapeEventTemplateText(source)
+        .replace(/\|\|(.+?)\|\|/g, '<span class="discord-spoiler" tabindex="0" title="Haz clic para revelar">$1</span>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/__(.+?)__/g, '<u>$1</u>')
+        .replace(/~~(.+?)~~/g, '<s>$1</s>')
+        .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+
+    html = html.split('\n').map(line => {
+        if (/^@@DISCORD_MARKDOWN_\d+@@$/.test(line)) return line;
+        if (/^###\s+/.test(line)) return `<h6>${line.replace(/^###\s+/, '')}</h6>`;
+        if (/^##\s+/.test(line)) return `<h5>${line.replace(/^##\s+/, '')}</h5>`;
+        if (/^#\s+/.test(line)) return `<h4>${line.replace(/^#\s+/, '')}</h4>`;
+        if (/^-#\s+/.test(line)) return `<small class="discord-subtext">${line.replace(/^-#\s+/, '')}</small>`;
+        if (/^&gt;\s?/.test(line)) return `<blockquote>${line.replace(/^&gt;\s?/, '')}</blockquote>`;
+        if (/^[-*]\s+/.test(line)) return `<div class="discord-list-item">• ${line.replace(/^[-*]\s+/, '')}</div>`;
+        if (/^\d+\.\s+/.test(line)) return `<div class="discord-list-item">${line}</div>`;
+        return line || '<br>';
+    }).join('\n');
+
+    blocks.forEach(block => { html = html.replace(block.id, block.html); });
+    return html;
+}
+
+function applyEventTemplateFormat(prefix, suffix = prefix, placeholder = 'texto') {
+    const textarea = document.getElementById('tpl-description');
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = textarea.value.slice(start, end) || placeholder;
+    const replacement = `${prefix}${selected}${suffix}`;
+    const nextLength = textarea.value.length - (end - start) + replacement.length;
+    if (nextLength > textarea.maxLength) {
+        showEventTemplateNotice(`El mensaje admite un máximo de ${textarea.maxLength} caracteres.`, 'warning');
+        return;
+    }
+    textarea.setRangeText(replacement, start, end, 'select');
+    textarea.focus();
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function applyEventTemplateLineFormat(prefix, placeholder = 'texto') {
+    const textarea = document.getElementById('tpl-description');
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selected = textarea.value.slice(start, end) || placeholder;
+    const replacement = selected.split('\n').map(line => `${prefix}${line}`).join('\n');
+    const nextLength = textarea.value.length - (end - start) + replacement.length;
+    if (nextLength > textarea.maxLength) {
+        showEventTemplateNotice(`El mensaje admite un máximo de ${textarea.maxLength} caracteres.`, 'warning');
+        return;
+    }
+    textarea.setRangeText(replacement, start, end, 'select');
+    textarea.focus();
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function applyEventTemplateCodeBlock() {
+    applyEventTemplateFormat('```\n', '\n```', 'código');
+}
+
+const EVENT_TEMPLATE_PRESETS = {
+    ALL: { name: 'Mi plantilla universal', title: 'REGISTRO OFICIAL DEL EVENTO', emoji: '📜', color: '#5865f2', description: '## Cierre oficial de {evento}\nSe deja constancia del registro realizado bajo la supervisión de {oficial}.', approved: 'PARTICIPANTES APROBADOS', rejected: 'NO APROBADOS', footer: 'Registro Oficial • Evento #{id}' },
+    TRAINING: { name: 'Mi plantilla de entrenamiento', title: 'REGISTRO FINAL DE ENTRENAMIENTO', emoji: '🎓', color: '#2b8a3e', description: '## Entrenamiento finalizado\nEl personal listado completó **{evento}**. Duración registrada: `{duracion}`.', approved: 'PERSONAL APROBADO', rejected: 'PERSONAL NO APROBADO', footer: 'Academia Militar • Entrenamiento #{id}' },
+    PATROL: { name: 'Mi plantilla de patrullaje', title: 'REGISTRO OFICIAL DE PATRULLAJE', emoji: '🧭', color: '#0b7285', description: '## Patrullaje completado\nLa unidad concluyó **{evento}** bajo el mando de {oficial}.', approved: 'PERSONAL PARTICIPANTE', rejected: 'AUSENTES / RETIRADOS', footer: 'Comando de Patrullaje • Registro #{id}' },
+    OPERATION: { name: 'Mi plantilla de operación', title: 'REGISTRO FINAL DE OPERACIÓN', emoji: '🎖️', color: '#9c6f19', description: '## Operación concluida\nQueda registrado el cierre de **{evento}** con `{aprobados}` participantes aprobados.', approved: 'EFECTIVOS APROBADOS', rejected: 'NO APTOS / RETIRADOS', footer: 'Estado Mayor • Operación #{id}' }
+};
+
+function insertEventTemplateVariable(variable) {
+    const textarea = document.getElementById('tpl-description');
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    if (textarea.value.length - (end - start) + variable.length > textarea.maxLength) return;
+    textarea.setRangeText(variable, start, end, 'end');
+    textarea.focus();
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function applyEventTemplatePreset(kind) {
+    const preset = EVENT_TEMPLATE_PRESETS[kind];
+    if (!preset) return;
+    const values = {
+        'tpl-kind': kind, 'tpl-name': preset.name, 'tpl-title': preset.title,
+        'tpl-emoji': preset.emoji, 'tpl-color': preset.color, 'tpl-description': preset.description,
+        'tpl-approved-label': preset.approved, 'tpl-rejected-label': preset.rejected, 'tpl-footer': preset.footer
+    };
+    Object.entries(values).forEach(([id, value]) => {
+        const element = document.getElementById(id);
+        if (element) element.value = value;
+    });
+    const selector = document.getElementById('tpl-preset');
+    if (selector) selector.value = '';
+    updateEventTemplatePreview();
+    showEventTemplateNotice('Diseño base aplicado. Puedes personalizarlo antes de guardar.');
+}
+
+function renderEventTemplatePreviewVariables(value) {
+    const examples = {
+        evento: 'Operación de ejemplo', id: '24', tipo: 'ENTRENAMIENTO', oficial: '@Oficial',
+        fecha: 'hoy', duracion: '45 min', aprobados: '3', no_aprobados: '1', rol: '@Rol otorgado'
+    };
+    return String(value || '').replace(/\{(evento|id|tipo|oficial|fecha|duracion|aprobados|no_aprobados|rol)\}/gi, (match, key) => examples[String(key).toLowerCase()] || match);
+}
+
 async function loadEventsData(historyPage = eventHistoryPage) {
     try {
         const resTemplates = await fetch('/api/admin/events/templates', { headers: { 'Authorization': `Bearer ${adminToken}` } });
@@ -77,12 +195,14 @@ function renderEventTemplateManager() {
     if (!eventReportTemplates.length && !eventTemplateEditorOpen) eventTemplateEditorOpen = true;
     const editing = eventTemplateEditingId ? eventReportTemplates.find(item => item.id === eventTemplateEditingId) : null;
     const roles = guildResources.roles || [];
-    const channels = guildResources.text_channels || guildResources.channels || [];
+    const allChannels = guildResources.channels || [];
+    const channels = guildResources.text_channels || allChannels.filter(channel => channel.type === 'text');
     const stickers = guildResources.stickers || [];
     const selectedRoles = new Set((editing?.group_roles || []).map(group => String(group.role_id)));
     const selectedStickerMissing = editing?.sticker_id && !stickers.some(sticker => String(sticker.id) === String(editing.sticker_id));
     const channelName = channelId => channels.find(channel => String(channel.id) === String(channelId))?.name || 'Canal al finalizar';
     const groupingLabels = { STATUS: 'Por asistencia', LIST: 'Lista única', ROLES: 'Por unidades' };
+    const kindLabels = { ALL: 'Universal', TRAINING: 'Entrenamiento', PATROL: 'Patrullaje', OPERATION: 'Operación' };
     const cards = eventReportTemplates.map(template => `
         <article class="event-template-card" style="--template-color:${template.color || '#1a7f4b'}">
             <div class="event-template-card-head">
@@ -91,6 +211,7 @@ function renderEventTemplateManager() {
             </div>
             <div class="event-template-card-title">${escapeEventTemplateText(template.title)}</div>
             <div class="event-template-tags">
+                <span>🗂️ ${escapeEventTemplateText(kindLabels[template.template_kind] || 'Universal')}</span>
                 <span>📌 ${escapeEventTemplateText(groupingLabels[template.grouping_mode] || template.grouping_mode)}</span>
                 <span>#️⃣ ${escapeEventTemplateText(channelName(template.report_channel_id))}</span>
                 <span>${template.evidence_required ? '📸 Evidencia obligatoria' : '📷 Evidencia opcional'}</span>
@@ -119,19 +240,56 @@ function renderEventTemplateManager() {
             <div class="event-template-editor-grid">
                 <form id="event-template-form" class="event-template-form">
                     <input type="hidden" id="tpl-id" value="${editing?.id || ''}">
+                    <div class="event-template-preset-bar">
+                        <div><strong>⚡ EMPEZAR CON UN DISEÑO BASE</strong><span>Rellena el editor y luego cambia lo que quieras.</span></div>
+                        <select id="tpl-preset" class="retro-select" onchange="if(this.value) applyEventTemplatePreset(this.value)">
+                            <option value="">Seleccionar diseño…</option>
+                            <option value="ALL">📜 Universal — cualquier evento</option>
+                            <option value="TRAINING">🎓 Entrenamiento</option>
+                            <option value="PATROL">🧭 Patrullaje</option>
+                            <option value="OPERATION">🎖️ Operación</option>
+                        </select>
+                    </div>
                     <div class="event-template-form-grid two">
                         <div class="form-group"><label class="form-label">1. NOMBRE PARA IDENTIFICARLA <span class="req-star">*</span></label><input id="tpl-name" class="retro-input" maxlength="80" required value="${escapeEventTemplateText(editing?.name || '')}" placeholder="Ej: Patrullaje oficial"><p class="form-help">Solo lo verán los administradores.</p></div>
                         <div class="form-group"><label class="form-label">2. TÍTULO QUE VERÁ DISCORD <span class="req-star">*</span></label><input id="tpl-title" class="retro-input" maxlength="120" required value="${escapeEventTemplateText(editing?.title || 'REGISTRO DE OPERACIÓN')}" placeholder="REGISTRO DE OPERACIÓN"></div>
                     </div>
                     <div class="event-template-form-grid compact">
+                        <div class="form-group"><label class="form-label">TIPO DE REGISTRO</label><select id="tpl-kind" class="retro-select"><option value="ALL" ${!editing || editing?.template_kind === 'ALL' ? 'selected' : ''}>📜 Cualquier evento</option><option value="TRAINING" ${editing?.template_kind === 'TRAINING' ? 'selected' : ''}>🎓 Entrenamiento</option><option value="PATROL" ${editing?.template_kind === 'PATROL' ? 'selected' : ''}>🧭 Patrullaje</option><option value="OPERATION" ${editing?.template_kind === 'OPERATION' ? 'selected' : ''}>🎖️ Operación</option></select></div>
                         <div class="form-group"><label class="form-label">EMOJI</label><input id="tpl-emoji" class="retro-input" maxlength="16" value="${escapeEventTemplateText(editing?.emoji || '🎖️')}" aria-label="Emoji del acta"></div>
                         <div class="form-group"><label class="form-label">COLOR</label><input id="tpl-color" type="color" class="retro-input event-template-color" value="${editing?.color || '#1a7f4b'}" aria-label="Color del acta"></div>
                         <div class="form-group"><label class="form-label">EVIDENCIA</label><select id="tpl-evidence" class="retro-select"><option value="0">Opcional</option><option value="1" ${editing?.evidence_required ? 'selected' : ''}>Obligatoria</option></select></div>
                     </div>
-                    <div class="form-group"><label class="form-label">3. MENSAJE DE INTRODUCCIÓN</label><textarea id="tpl-description" class="retro-textarea" maxlength="500" placeholder="Ej: El Estado Mayor deja constancia de la operación realizada.">${escapeEventTemplateText(editing?.description || '')}</textarea><p class="form-help"><span id="tpl-description-count">0</span>/500 caracteres</p></div>
+                    <div class="form-group">
+                        <label class="form-label">3. MENSAJE FINAL DEL REGISTRO</label>
+                        <div class="discord-format-toolbar" role="toolbar" aria-label="Formato de texto de Discord">
+                            <button type="button" title="Negrita" onclick="applyEventTemplateFormat('**')"><b>B</b></button>
+                            <button type="button" title="Cursiva" onclick="applyEventTemplateFormat('*')"><i>I</i></button>
+                            <button type="button" title="Subrayado" onclick="applyEventTemplateFormat('__')"><u>U</u></button>
+                            <button type="button" title="Tachado" onclick="applyEventTemplateFormat('~~')"><s>S</s></button>
+                            <button type="button" title="Spoiler" onclick="applyEventTemplateFormat('||')">👁️ SPOILER</button>
+                            <button type="button" title="Código" onclick="applyEventTemplateFormat('&#96;')">&lt;/&gt;</button>
+                            <button type="button" title="Bloque de código" onclick="applyEventTemplateCodeBlock()">▣ CÓDIGO</button>
+                            <button type="button" title="Cita" onclick="applyEventTemplateLineFormat('&gt; ')">❯ CITA</button>
+                            <button type="button" title="Encabezado" onclick="applyEventTemplateLineFormat('## ')">H</button>
+                            <button type="button" title="Subtexto" onclick="applyEventTemplateLineFormat('-# ')">−#</button>
+                            <button type="button" title="Lista" onclick="applyEventTemplateLineFormat('- ')">• LISTA</button>
+                            <button type="button" title="Lista numerada" onclick="applyEventTemplateLineFormat('1. ')">1. LISTA</button>
+                            <button type="button" title="Enlace" onclick="applyEventTemplateFormat('[', '](https://ejemplo.com)', 'enlace')">🔗</button>
+                        </div>
+                        <div class="event-template-variablebar"><span>INSERTAR DATO:</span>${['{evento}','{id}','{tipo}','{oficial}','{fecha}','{duracion}','{aprobados}','{no_aprobados}','{rol}'].map(variable => `<button type="button" onclick="insertEventTemplateVariable('${variable}')">${variable}</button>`).join('')}</div>
+                        <textarea id="tpl-description" class="retro-textarea" maxlength="1000" placeholder="Escribe el mensaje final o elige un diseño base.">${escapeEventTemplateText(editing?.description || '')}</textarea>
+                        <p class="form-help"><span id="tpl-description-count">0</span>/1000 caracteres · Puedes combinar variables, formato Discord y spoilers.</p>
+                    </div>
                     <div class="event-template-form-grid two">
                         <div class="form-group"><label class="form-label">4. CANAL DONDE SE PUBLICARÁ</label><select id="tpl-channel" class="retro-select"><option value="">Usar el canal donde se finalice</option>${channels.map(c => `<option value="${c.id}" ${String(editing?.report_channel_id || '') === String(c.id) ? 'selected' : ''}># ${escapeEventTemplateText(c.name)}</option>`).join('')}</select><p class="form-help">Puedes dejarlo automático.</p></div>
                         <div class="form-group"><label class="form-label">5. CÓMO ORDENAR ASISTENTES</label><select id="tpl-grouping" class="retro-select"><option value="STATUS" ${(!editing || editing?.grouping_mode === 'STATUS') ? 'selected' : ''}>Aprobados y retirados</option><option value="LIST" ${editing?.grouping_mode === 'LIST' ? 'selected' : ''}>Una sola lista</option><option value="ROLES" ${editing?.grouping_mode === 'ROLES' ? 'selected' : ''}>Agrupar por roles / unidades</option></select></div>
+                    </div>
+                    <div class="event-template-form-grid compact">
+                        <div class="form-group"><label class="form-label">TÍTULO DE APROBADOS</label><input id="tpl-approved-label" class="retro-input" maxlength="80" value="${escapeEventTemplateText(editing?.approved_label || 'APROBADOS / ASISTENTES')}"></div>
+                        <div class="form-group"><label class="form-label">TÍTULO DE NO APROBADOS</label><input id="tpl-rejected-label" class="retro-input" maxlength="80" value="${escapeEventTemplateText(editing?.rejected_label || 'NO APROBADOS')}"></div>
+                        <div class="form-group"><label class="form-label">MOSTRAR NO APROBADOS</label><select id="tpl-show-removed" class="retro-select"><option value="1" ${editing?.show_removed !== false ? 'selected' : ''}>Sí, mostrarlos</option><option value="0" ${editing?.show_removed === false ? 'selected' : ''}>No, ocultarlos</option></select></div>
+                        <div class="form-group"><label class="form-label">RESUMEN ECONÓMICO</label><select id="tpl-show-payout" class="retro-select"><option value="0" ${!editing?.show_payout ? 'selected' : ''}>Oculto — solo registro</option><option value="1" ${editing?.show_payout ? 'selected' : ''}>Mostrar si existe</option></select></div>
                     </div>
                     <div id="tpl-role-section" class="form-group">
                         <label class="form-label">UNIDADES QUE APARECERÁN EN EL ACTA</label>
@@ -155,8 +313,8 @@ function renderEventTemplateManager() {
                         <h3 id="tpl-preview-title">${escapeEventTemplateText(editing?.title || 'REGISTRO DE OPERACIÓN')}</h3>
                         <p id="tpl-preview-description">${escapeEventTemplateText(editing?.description || 'El texto de introducción aparecerá aquí.')}</p>
                         <div class="event-template-preview-data"><b>🎖️ Operación:</b> Operación de ejemplo<br><b>📅 Fecha:</b> hoy<br><b>👤 Encargado:</b> @Oficial<br><b>⏱️ Duración:</b> 45 min</div>
-                        <div id="tpl-preview-groups" class="event-template-preview-field"><b>👥 ASISTENTES — 3</b><span>@Alpha &nbsp; @Bravo &nbsp; @Charlie</span></div>
-                        <div class="event-template-preview-field muted"><b>❌ RETIRADOS / NO APTOS — 1</b><span>@Ausente</span></div>
+                        <div id="tpl-preview-groups" class="event-template-preview-field"><b>✅ APROBADOS / ASISTENTES — 3</b><span>@Alpha &nbsp; @Bravo &nbsp; @Charlie</span></div>
+                        <div id="tpl-preview-removed" class="event-template-preview-field muted"><b>❌ NO APROBADOS — 1</b><span>@Ausente</span></div>
                         <div id="tpl-preview-evidence" class="event-template-preview-image">📸 EVIDENCIA DE LA OPERACIÓN</div>
                         <footer id="tpl-preview-footer">${escapeEventTemplateText(editing?.footer || 'USMC • Registro Operativo Oficial')}</footer>
                     </div>
@@ -207,11 +365,11 @@ function updateEventTemplatePreview() {
     const preview = read('tpl-preview');
     if (preview) preview.style.setProperty('--preview-color', read('tpl-color')?.value || '#1a7f4b');
     if (read('tpl-preview-emoji')) read('tpl-preview-emoji').textContent = read('tpl-emoji')?.value.trim() || '🎖️';
-    if (read('tpl-preview-title')) read('tpl-preview-title').textContent = (read('tpl-title')?.value.trim() || 'REGISTRO DE OPERACIÓN').toUpperCase();
+    if (read('tpl-preview-title')) read('tpl-preview-title').textContent = renderEventTemplatePreviewVariables(read('tpl-title')?.value.trim() || 'REGISTRO DE OPERACIÓN').toUpperCase();
     const description = read('tpl-description')?.value.trim() || '';
-    if (read('tpl-preview-description')) read('tpl-preview-description').textContent = description || 'El texto de introducción aparecerá aquí.';
+    if (read('tpl-preview-description')) read('tpl-preview-description').innerHTML = renderDiscordMarkdown(renderEventTemplatePreviewVariables(description || 'El mensaje final aparecerá aquí.'));
     if (read('tpl-description-count')) read('tpl-description-count').textContent = description.length;
-    if (read('tpl-preview-footer')) read('tpl-preview-footer').textContent = read('tpl-footer')?.value.trim() || 'USMC • Registro Operativo Oficial';
+    if (read('tpl-preview-footer')) read('tpl-preview-footer').textContent = renderEventTemplatePreviewVariables(read('tpl-footer')?.value.trim() || 'USMC • Registro Operativo Oficial');
     const channelSelect = read('tpl-channel');
     if (read('tpl-preview-channel')) read('tpl-preview-channel').textContent = channelSelect?.value ? `# ${channelSelect.options[channelSelect.selectedIndex].textContent.replace(/^#\s*/, '')}` : '# Canal donde finalices';
     const stickerSelect = read('tpl-sticker');
@@ -222,11 +380,16 @@ function updateEventTemplatePreview() {
         read('tpl-preview-evidence').classList.toggle('required', required);
     }
     if (read('tpl-preview-groups')) {
+        const approvedLabel = escapeEventTemplateText((read('tpl-approved-label')?.value.trim() || 'APROBADOS / ASISTENTES').toUpperCase());
         if (grouping === 'ROLES' && checkedRoles.length) {
             read('tpl-preview-groups').innerHTML = checkedRoles.slice(0, 3).map(role => `<b>🛡️ ${escapeEventTemplateText(role.parentElement.textContent.trim())}</b><span>@Integrante</span>`).join('');
         } else {
-            read('tpl-preview-groups').innerHTML = `<b>${grouping === 'LIST' ? '📋 LISTA DE PARTICIPANTES' : '👥 ASISTENTES — 3'}</b><span>@Alpha &nbsp; @Bravo &nbsp; @Charlie</span>`;
+            read('tpl-preview-groups').innerHTML = `<b>${grouping === 'LIST' ? '📋' : '✅'} ${approvedLabel} — 3</b><span>@Alpha &nbsp; @Bravo &nbsp; @Charlie</span>`;
         }
+    }
+    if (read('tpl-preview-removed')) {
+        read('tpl-preview-removed').hidden = read('tpl-show-removed')?.value === '0';
+        read('tpl-preview-removed').querySelector('b').textContent = `❌ ${(read('tpl-rejected-label')?.value.trim() || 'NO APROBADOS').toUpperCase()} — 1`;
     }
 }
 
@@ -240,9 +403,14 @@ async function saveEventTemplate(event) {
         name: document.getElementById('tpl-name').value.trim(), title: document.getElementById('tpl-title').value.trim(),
         description: document.getElementById('tpl-description').value.trim(), emoji: document.getElementById('tpl-emoji').value.trim(),
         color: document.getElementById('tpl-color').value, report_channel_id: document.getElementById('tpl-channel').value,
+        template_kind: document.getElementById('tpl-kind').value,
         grouping_mode: document.getElementById('tpl-grouping').value, group_roles: groupRoles,
         evidence_required: document.getElementById('tpl-evidence').value === '1', sticker_id: document.getElementById('tpl-sticker').value.trim(),
-        footer: document.getElementById('tpl-footer').value.trim()
+        footer: document.getElementById('tpl-footer').value.trim(),
+        approved_label: document.getElementById('tpl-approved-label').value.trim(),
+        rejected_label: document.getElementById('tpl-rejected-label').value.trim(),
+        show_removed: document.getElementById('tpl-show-removed').value === '1',
+        show_payout: document.getElementById('tpl-show-payout').value === '1'
     };
     if (payload.grouping_mode === 'ROLES' && groupRoles.length === 0) {
         showEventTemplateNotice('Selecciona al menos una unidad o cambia la organización.', 'warning');
@@ -420,15 +588,16 @@ function renderActiveEventSection(data) {
         `;
     } else {
         currentActiveEvent = null;
-        const voiceChannels = (guildResources && guildResources.voice_channels) || [];
-        const textChannels = (guildResources && guildResources.text_channels) || (guildResources && guildResources.channels) || [];
+        const allChannels = (guildResources && guildResources.channels) || [];
+        const voiceChannels = (guildResources && guildResources.voice_channels) || allChannels.filter(channel => channel.type === 'voice');
+        const textChannels = (guildResources && guildResources.text_channels) || allChannels.filter(channel => channel.type === 'text');
 
         const targetChannelOptions = `
             <optgroup label="Canales de Texto (Convocatoria / Chat)">
-                ${textChannels.map(c => `<option value="${c.id}"># ${c.name} (Texto)</option>`).join('')}
+                ${textChannels.map(c => `<option value="${c.id}" data-channel-kind="text"># ${escapeEventTemplateText(c.name)} (Texto)</option>`).join('')}
             </optgroup>
             <optgroup label="Canales de Voz">
-                ${voiceChannels.map(c => `<option value="${c.id}">🔊 ${c.name} (Voz)</option>`).join('')}
+                ${voiceChannels.map(c => `<option value="${c.id}" data-channel-kind="voice">🔊 ${escapeEventTemplateText(c.name)} (Voz)</option>`).join('')}
             </optgroup>
         `;
 
@@ -467,7 +636,7 @@ function renderActiveEventSection(data) {
                             <label class="form-label">PLANTILLA DE ACTA AL FINALIZAR:</label>
                             <select id="ev-template-id" class="retro-select">
                                 <option value="">Acta general automática</option>
-                                ${eventReportTemplates.map(template => `<option value="${template.id}">${escapeEventTemplateText(template.emoji || '📜')} ${escapeEventTemplateText(template.name)} (#${template.id})</option>`).join('')}
+                                ${eventReportTemplates.map(template => `<option value="${template.id}">${escapeEventTemplateText(template.emoji || '📜')} ${escapeEventTemplateText(({ ALL: 'Universal', TRAINING: 'Entrenamiento', PATROL: 'Patrullaje', OPERATION: 'Operación' })[template.template_kind] || 'Universal')} · ${escapeEventTemplateText(template.name)} (#${template.id})</option>`).join('')}
                             </select>
                             <p class="form-help">La plantilla se copia al evento; cambios futuros no alterarán su acta.</p>
                         </div>
@@ -500,6 +669,26 @@ function renderActiveEventSection(data) {
                 </form>
             </div>
         `;
+
+        const syncEventChannelOptions = () => {
+            const eventType = document.getElementById('ev-type').value;
+            const channelSelect = document.getElementById('ev-target-channel');
+            const requiredKind = ['VOICE', 'HYBRID'].includes(eventType) ? 'voice' : 'text';
+            [...channelSelect.options].forEach(option => {
+                if (!option.dataset.channelKind) return;
+                const isAvailable = option.dataset.channelKind === requiredKind;
+                option.hidden = !isAvailable;
+                option.disabled = !isAvailable;
+            });
+            const selected = channelSelect.options[channelSelect.selectedIndex];
+            if (selected?.dataset.channelKind && selected.dataset.channelKind !== requiredKind) channelSelect.value = '';
+            const help = channelSelect.closest('.form-group')?.querySelector('.form-help');
+            if (help) help.textContent = requiredKind === 'voice'
+                ? 'Se muestran todos los canales de voz y escenarios sincronizados con Discord.'
+                : 'Se muestran todos los canales de texto disponibles para registro o actividad.';
+        };
+        document.getElementById('ev-type').addEventListener('change', syncEventChannelOptions);
+        syncEventChannelOptions();
 
         document.getElementById('launch-event-form').addEventListener('submit', async (e) => {
             e.preventDefault();
