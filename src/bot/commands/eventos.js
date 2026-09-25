@@ -310,6 +310,99 @@ async function awardTrainingRole(interaction, event) {
     return { role, rosterCount: roster.length, awarded, alreadyHadRole, failed };
 }
 
+function getReportTemplate(event) {
+    try {
+        if (event.report_template_snapshot) return JSON.parse(event.report_template_snapshot);
+    } catch {}
+    return {
+        name: 'Registro general', title: 'REGISTRO OFICIAL DE OPERACIÓN', description: '',
+        emoji: '🎖️', color: '#1a7f4b', report_channel_id: '', grouping_mode: 'STATUS',
+        group_roles: [], evidence_required: false, sticker_id: '', footer: 'USMC • Registro Operativo Oficial'
+    };
+}
+
+function clampReportLines(lines, emptyText = '*Sin registros*', maxLength = 900) {
+    if (!lines.length) return emptyText;
+    let value = '';
+    for (const line of lines) {
+        if ((value + line + '\n').length > maxLength) {
+            value += `\n*...y ${lines.length - value.split('\n').filter(Boolean).length} más.*`;
+            break;
+        }
+        value += `${line}\n`;
+    }
+    return value.trim();
+}
+
+async function publishEventReport(interaction, event, summary, evidence, resultText, notes) {
+    if (event.report_message_id) return { skipped: true, channel: null };
+    const template = getReportTemplate(event);
+    const roster = economyDb.getEventRegistrations(event.id, true);
+    const isAlwaysRosterBased = event.event_type === 'REGISTRATION' || event.event_type === 'TRAINING';
+    const approved = roster.filter(item => !['EXPELLED', 'CANCELLED'].includes(item.status) && (isAlwaysRosterBased || item.is_eligible === 1));
+    const removed = roster.filter(item => ['EXPELLED', 'CANCELLED'].includes(item.status) || (!isAlwaysRosterBased && item.is_eligible !== 1));
+    const paidRoster = approved.filter(item => item.claimed === 1);
+    const reportPaidCount = paidRoster.length || summary.paidCount || 0;
+    const reportPaidTotal = paidRoster.length
+        ? paidRoster.reduce((total, item) => total + (Number(item.payout_amount) || 0), 0)
+        : (summary.totalDistributed || 0);
+    const durationMinutes = Math.max(0, Math.floor((Date.now() - new Date(event.created_at).getTime()) / 60000));
+    const color = parseInt(String(template.color || '#1a7f4b').replace('#', ''), 16) || 0x1a7f4b;
+    const officerDisplay = interaction.reportOfficerLabel || `<@${interaction.user.id}>`;
+    const embed = new EmbedBuilder()
+        .setColor(color)
+        .setTitle(`${template.emoji || '🎖️'} [${String(template.title || 'REGISTRO DE OPERACIÓN').toUpperCase()}]`)
+        .setDescription(`${template.description ? `${template.description}\n\n` : ''}> 🎖️ **Operación:** \`${event.name}\`\n> 📅 **Fecha:** <t:${Math.floor(Date.now() / 1000)}:D>\n> 👤 **Encargado:** ${officerDisplay}\n> ⏱️ **Duración:** \`${durationMinutes} min\`\n> 🆔 **Acta:** \`#${event.id}\``)
+        .setFooter({ text: String(template.footer || 'USMC • Registro Operativo Oficial').slice(0, 2048) })
+        .setTimestamp();
+
+    const groupedIds = new Set();
+    if (template.grouping_mode === 'ROLES' && Array.isArray(template.group_roles)) {
+        for (const group of template.group_roles.slice(0, 6)) {
+            const members = [];
+            for (const attendee of approved) {
+                if (groupedIds.has(attendee.discord_id)) continue;
+                const member = interaction.guild.members.cache.get(attendee.discord_id) || await interaction.guild.members.fetch(attendee.discord_id).catch(() => null);
+                if (member?.roles?.cache?.has(group.role_id)) {
+                    members.push(`• <@${attendee.discord_id}>`);
+                    groupedIds.add(attendee.discord_id);
+                }
+            }
+            if (members.length) embed.addFields({ name: `${group.emoji || '🛡️'} ${group.label || 'Unidad'} — ${members.length}`, value: clampReportLines(members, '*Sin registros*', 350), inline: false });
+        }
+    }
+    const ungrouped = approved.filter(item => !groupedIds.has(item.discord_id));
+    if (ungrouped.length || template.grouping_mode !== 'ROLES') {
+        embed.addFields({
+            name: `${event.event_type === 'TRAINING' ? '✅ APROBADOS' : '👥 ASISTENTES'} — ${approved.length}`,
+            value: clampReportLines((template.grouping_mode === 'ROLES' ? ungrouped : approved).map(item => `• <@${item.discord_id}>${item.claimed ? ` — 💵 ${item.payout_amount}` : ''}`), '*Sin registros*', 700),
+            inline: false
+        });
+    }
+    if (removed.length) embed.addFields({ name: `❌ RETIRADOS / NO APTOS — ${removed.length}`, value: clampReportLines(removed.map(item => `• <@${item.discord_id}>`), '*Sin registros*', 400), inline: false });
+    if (event.event_type !== 'TRAINING') {
+        embed.addFields({ name: '💰 LIQUIDACIÓN', value: `Pagados: **${reportPaidCount}**\nTotal desembolsado: **${reportPaidTotal}**`, inline: true });
+    }
+    if (resultText) embed.addFields({ name: '🎯 RESULTADO', value: String(resultText).slice(0, 700), inline: false });
+    if (notes) embed.addFields({ name: '📝 OBSERVACIONES', value: String(notes).slice(0, 700), inline: false });
+    if (evidence?.url && evidence.contentType?.startsWith('image/')) embed.setImage(evidence.url);
+
+    const channel = (template.report_channel_id && interaction.guild.channels.cache.get(template.report_channel_id)) || interaction.channel;
+    if (!channel?.isTextBased()) throw new Error('El canal configurado para actas no existe o no es de texto.');
+    const payload = { embeds: [embed], allowedMentions: { parse: [] } };
+    if (template.sticker_id) payload.stickers = [template.sticker_id];
+    let message;
+    try {
+        message = await channel.send(payload);
+    } catch (error) {
+        if (!payload.stickers) throw error;
+        delete payload.stickers;
+        message = await channel.send(payload);
+    }
+    economyDb.saveEventReport(event.id, message.id, { template: template.name, evidence_url: evidence?.url || '', result: resultText || '', notes: notes || '', officer_id: interaction.user.id });
+    return { message, channel };
+}
+
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('evento')
@@ -321,6 +414,7 @@ module.exports = {
                 .addIntegerOption(opt => opt.setName('paga_base').setDescription('Recompensa base en créditos').setMinValue(1).setRequired(true))
                 .addChannelOption(opt => opt.setName('canal_registro').setDescription('Canal donde publicar el panel de inscripción').addChannelTypes(ChannelType.GuildText).setRequired(false))
                 .addIntegerOption(opt => opt.setName('cupo_maximo').setDescription('Límite de soldados (opcional, por defecto sin límite)').setMinValue(1).setRequired(false))
+                .addIntegerOption(opt => opt.setName('plantilla_id').setDescription('ID de plantilla de acta configurada en el dashboard').setMinValue(1).setRequired(false))
         )
         .addSubcommand(sub =>
             sub.setName('entrenamiento')
@@ -329,6 +423,7 @@ module.exports = {
                 .addRoleOption(opt => opt.setName('rol').setDescription('Rol que recibirán los aprobados').setRequired(true))
                 .addChannelOption(opt => opt.setName('canal_registro').setDescription('Canal donde publicar el panel de inscripción').addChannelTypes(ChannelType.GuildText).setRequired(false))
                 .addIntegerOption(opt => opt.setName('cupo_maximo').setDescription('Límite de participantes (opcional)').setMinValue(1).setRequired(false))
+                .addIntegerOption(opt => opt.setName('plantilla_id').setDescription('ID de plantilla de acta configurada en el dashboard').setMinValue(1).setRequired(false))
         )
         .addSubcommand(sub =>
             sub.setName('lista')
@@ -348,11 +443,15 @@ module.exports = {
                 .addIntegerOption(opt => opt.setName('paga_base').setDescription('Recompensa base en créditos').setMinValue(1).setRequired(true))
                 .addIntegerOption(opt => opt.setName('gracia_minutos').setDescription('Tolerancia en minutos si sufren desconexión (default: 5 min)').setMinValue(0).setRequired(false))
                 .addIntegerOption(opt => opt.setName('asistencia_minima').setDescription('Porcentaje mínimo de permanencia requerido (default: 80%)').setMinValue(10).setMaxValue(100).setRequired(false))
+                .addIntegerOption(opt => opt.setName('plantilla_id').setDescription('ID de plantilla de acta configurada en el dashboard').setMinValue(1).setRequired(false))
         )
         .addSubcommand(sub =>
             sub.setName('finalizar')
                 .setDescription('Concluye la operación y paga de inmediato a los asistentes aprobados')
                 .addIntegerOption(opt => opt.setName('evento_id').setDescription('ID del evento; necesario cuando hay varios activos').setMinValue(1).setRequired(false))
+                .addAttachmentOption(opt => opt.setName('evidencia').setDescription('Captura o fotografía para el acta oficial').setRequired(false))
+                .addStringOption(opt => opt.setName('resultado').setDescription('Resultado breve de la operación').setMaxLength(900).setRequired(false))
+                .addStringOption(opt => opt.setName('notas').setDescription('Observaciones adicionales para el registro').setMaxLength(900).setRequired(false))
         )
         .addSubcommand(sub =>
             sub.setName('estado')
@@ -365,6 +464,7 @@ module.exports = {
     buildPayoutPanel,
     buildEventRosterPanel,
     buildEventPicker,
+    publishEventReport,
 
     async execute(interaction) {
         if (!hasOfficerPermission(interaction)) {
@@ -387,6 +487,7 @@ module.exports = {
             const baseReward = interaction.options.getInteger('paga_base');
             const regChannel = interaction.options.getChannel('canal_registro') || interaction.channel;
             const maxParticipants = interaction.options.getInteger('cupo_maximo') || 0;
+            const templateId = interaction.options.getInteger('plantilla_id');
 
             if (!regChannel.isTextBased()) {
                 return interaction.reply({
@@ -405,7 +506,8 @@ module.exports = {
                 confirmation_channel_id: regChannel.id,
                 base_reward: baseReward,
                 max_participants: maxParticipants,
-                phase: 'REGISTRATION'
+                phase: 'REGISTRATION',
+                report_template_id: templateId
             });
 
             if (!result.success) {
@@ -441,6 +543,7 @@ module.exports = {
             const rewardRole = interaction.options.getRole('rol');
             const regChannel = interaction.options.getChannel('canal_registro') || interaction.channel;
             const maxParticipants = interaction.options.getInteger('cupo_maximo') || 0;
+            const templateId = interaction.options.getInteger('plantilla_id');
 
             if (!regChannel.isTextBased()) {
                 return interaction.reply({ content: '❌ El canal de registro debe ser un canal de texto.', flags: MessageFlags.Ephemeral });
@@ -463,8 +566,13 @@ module.exports = {
                 base_reward: 0,
                 max_participants: maxParticipants,
                 phase: 'REGISTRATION',
-                reward_role_id: rewardRole.id
+                reward_role_id: rewardRole.id,
+                report_template_id: templateId
             });
+
+            if (!result.success) {
+                return interaction.reply({ content: `⚠️ ${result.message}`, flags: MessageFlags.Ephemeral });
+            }
 
             const panelData = buildRegistrationPanel(result.event, settings);
             try {
@@ -516,6 +624,7 @@ module.exports = {
             const baseReward = interaction.options.getInteger('paga_base');
             const graceMinutes = interaction.options.getInteger('gracia_minutos') !== null ? interaction.options.getInteger('gracia_minutos') : 5;
             const minPercent = interaction.options.getInteger('asistencia_minima') || 80;
+            const templateId = interaction.options.getInteger('plantilla_id');
 
             if (eventType === 'VOICE' && !targetChannel.isVoiceBased()) {
                 return interaction.reply({
@@ -538,7 +647,8 @@ module.exports = {
                 payout_channel_id: targetChannel.id,
                 base_reward: baseReward,
                 grace_period_minutes: graceMinutes,
-                min_attendance_percent: minPercent
+                min_attendance_percent: minPercent,
+                report_template_id: templateId
             });
 
             if (!result.success) {
@@ -619,13 +729,16 @@ ${previewAttendees}
         // ==========================================
         if (sub === 'finalizar') {
             const requestedId = interaction.options.getInteger('evento_id');
+            const evidence = interaction.options.getAttachment('evidencia');
+            const resultText = interaction.options.getString('resultado');
+            const notes = interaction.options.getString('notas');
             let active;
             if (requestedId) {
                 active = economyDb.getEventById(requestedId);
                 if (!active || (active.guild_id !== guildId && active.guild_id !== 'GLOBAL')) {
                     return interaction.reply({ content: `⚠️ No existe el evento #${requestedId} en este servidor.`, flags: MessageFlags.Ephemeral });
                 }
-                if (active.status !== 'ACTIVE' && active.event_type !== 'TRAINING') {
+                if (active.status !== 'ACTIVE' && active.event_type !== 'TRAINING' && active.report_message_id) {
                     return interaction.reply({ content: `⚠️ El evento #${requestedId} ya está finalizado.`, flags: MessageFlags.Ephemeral });
                 }
             } else {
@@ -634,17 +747,26 @@ ${previewAttendees}
                 active = resolved.event;
             }
 
+            const reportTemplate = getReportTemplate(active);
+            if (reportTemplate.evidence_required && !evidence) {
+                return interaction.reply({ content: `📸 La plantilla **${reportTemplate.name}** exige una evidencia. Adjunta una imagen en la opción \`evidencia\`.`, flags: MessageFlags.Ephemeral });
+            }
+            if (evidence && !evidence.contentType?.startsWith('image/')) {
+                return interaction.reply({ content: '❌ La evidencia debe ser una imagen válida.', flags: MessageFlags.Ephemeral });
+            }
+
             await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
             try {
                 if (active.event_type === 'TRAINING') {
                     const summary = await awardTrainingRole(interaction, active);
+                    const report = await publishEventReport(interaction, active, { paidCount: 0, totalDistributed: 0 }, evidence, resultText, notes);
                     const failedPreview = summary.failed.slice(0, 5).map(item => `<@${item.discordId}>`).join(', ');
                     const retryText = summary.failed.length > 0
                         ? `\n⚠️ No se pudo asignar a **${summary.failed.length}** miembro(s): ${failedPreview}${summary.failed.length > 5 ? '…' : ''}. Puedes corregir el problema y repetir \`/evento finalizar evento_id:${active.id}\`.`
                         : '';
                     return interaction.editReply({
-                        content: `✅ **Entrenamiento #${active.id} finalizado.** Rol ${summary.role} entregado a **${summary.awarded.length}** aprobado(s); **${summary.alreadyHadRole.length}** ya lo tenían. Total en la lista final: **${summary.rosterCount}**.${retryText}`
+                        content: `✅ **Entrenamiento #${active.id} finalizado.** Rol ${summary.role} entregado a **${summary.awarded.length}** aprobado(s); **${summary.alreadyHadRole.length}** ya lo tenían. Total en la lista final: **${summary.rosterCount}**.${retryText}${report.channel ? `\n📜 Acta publicada en ${report.channel}.` : ''}`
                     });
                 }
 
@@ -658,6 +780,7 @@ ${previewAttendees}
                     .join('\n');
                 if (!previewPaid) previewPaid = '*No hubo asistentes elegibles pendientes de pago.*';
                 if (summary.paidList.length > 10) previewPaid += `\n*...y ${summary.paidList.length - 10} soldados más.*`;
+                const report = await publishEventReport(interaction, active, summary, evidence, resultText, notes);
 
                 const embed = new EmbedBuilder()
                     .setColor(0x38e54d)
@@ -667,6 +790,7 @@ ${previewAttendees}
 > 👥 **Combatientes pagados:** \`${summary.paidCount}\`
 > 💰 **Total desembolsado:** \`${sym}${summary.totalDistributed.toLocaleString()}\`
 > 🛡️ **Oficial pagador:** <@${interaction.user.id}>
+${report.channel ? `> 📜 **Acta oficial:** ${report.channel}` : ''}
 
 ${previewPaid}
                     `)

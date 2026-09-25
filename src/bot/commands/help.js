@@ -68,7 +68,7 @@ function buildHelpPanel(page = 1, guildId = 'GLOBAL') {
                     { name: '📢 `/evento convocar <nombre> <paga_base> [...]`', value: '*(Oficiales)* Crea una operación con paga, cupo, plazo y canales configurables.', inline: false },
                     { name: '🎓 `/evento entrenamiento <nombre> <rol> [...]`', value: '*(Oficiales)* Registra participantes y entrega el rol a quienes permanezcan aprobados al finalizar.', inline: false },
                     { name: '📋 `/evento lista [evento_id]` · `/evento estado [evento_id]`', value: '*(Oficiales)* Revisa el roster y retira ausentes o reprobados antes del cierre.', inline: false },
-                    { name: '📡 `/evento iniciar` · `/evento finalizar`', value: '*(Oficiales)* Registra actividad y, al finalizar, paga automáticamente a todos los asistentes aprobados.', inline: false }
+                    { name: '📡 `/evento iniciar` · `/evento finalizar`', value: '*(Oficiales)* Registra actividad y, al finalizar, paga automáticamente y publica el acta decorada con evidencia, resultado y notas.', inline: false }
                 );
             break;
         case 5:

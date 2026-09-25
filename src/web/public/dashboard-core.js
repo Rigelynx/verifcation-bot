@@ -513,7 +513,7 @@ async function deleteQuestion(id) {
 }
 
 // Recursos del Servidor Discord (Roles y Canales)
-let guildResources = { connected: false, roles: [], channels: [] };
+let guildResources = { connected: false, roles: [], channels: [], stickers: [] };
 
 async function fetchGuildResources() {
     try {

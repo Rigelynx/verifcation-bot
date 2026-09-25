@@ -35,23 +35,6 @@ function initEconomyTables() {
             db.exec("ALTER TABLE economy_accounts ADD COLUMN last_bonus INTEGER DEFAULT 0");
         }
 
-        const sCols = db.prepare("PRAGMA table_info(economy_settings)").all();
-        const sColNames = sCols.map(c => c.name);
-        if (!sColNames.includes('bonus_daily_enabled')) {
-            db.exec("ALTER TABLE economy_settings ADD COLUMN bonus_daily_enabled INTEGER DEFAULT 1");
-        }
-        if (!sColNames.includes('bonus_daily_amount')) {
-            db.exec("ALTER TABLE economy_settings ADD COLUMN bonus_daily_amount INTEGER DEFAULT 250");
-        }
-        if (!sColNames.includes('bonus_daily_cooldown')) {
-            db.exec("ALTER TABLE economy_settings ADD COLUMN bonus_daily_cooldown INTEGER DEFAULT 86400");
-        }
-        if (!sColNames.includes('bonus_max_give')) {
-            db.exec("ALTER TABLE economy_settings ADD COLUMN bonus_max_give INTEGER DEFAULT 50000");
-        }
-        if (!sColNames.includes('log_channel_id')) {
-            db.exec("ALTER TABLE economy_settings ADD COLUMN log_channel_id TEXT DEFAULT NULL");
-        }
     } catch (e) {
         console.error('[DB Column Migration Error]:', e.message);
     }
@@ -86,6 +69,20 @@ function initEconomyTables() {
             log_channel_id TEXT DEFAULT NULL
         );
     `);
+
+    // Estas migraciones deben ejecutarse después de crear economy_settings para
+    // que una instalación completamente nueva también arranque sin errores.
+    try {
+        const sCols = db.prepare("PRAGMA table_info(economy_settings)").all();
+        const sColNames = sCols.map(c => c.name);
+        if (!sColNames.includes('bonus_daily_enabled')) db.exec("ALTER TABLE economy_settings ADD COLUMN bonus_daily_enabled INTEGER DEFAULT 1");
+        if (!sColNames.includes('bonus_daily_amount')) db.exec("ALTER TABLE economy_settings ADD COLUMN bonus_daily_amount INTEGER DEFAULT 250");
+        if (!sColNames.includes('bonus_daily_cooldown')) db.exec("ALTER TABLE economy_settings ADD COLUMN bonus_daily_cooldown INTEGER DEFAULT 86400");
+        if (!sColNames.includes('bonus_max_give')) db.exec("ALTER TABLE economy_settings ADD COLUMN bonus_max_give INTEGER DEFAULT 50000");
+        if (!sColNames.includes('log_channel_id')) db.exec("ALTER TABLE economy_settings ADD COLUMN log_channel_id TEXT DEFAULT NULL");
+    } catch (e) {
+        console.error('[Economy Settings Migration Error]:', e.message);
+    }
 
     // 3. Catálogo de la Tienda militar (Shop) estilo UnbelievaBoat
     db.exec(`
@@ -169,6 +166,27 @@ function initEconomyTables() {
             claimed_at DATETIME DEFAULT NULL,
             payout_amount INTEGER DEFAULT 0,
             FOREIGN KEY(event_id) REFERENCES event_payouts(id)
+        );
+    `);
+
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS event_report_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            title TEXT DEFAULT 'REGISTRO DE OPERACIÓN',
+            description TEXT DEFAULT '',
+            emoji TEXT DEFAULT '🎖️',
+            color TEXT DEFAULT '#1a7f4b',
+            report_channel_id TEXT DEFAULT '',
+            grouping_mode TEXT DEFAULT 'STATUS',
+            group_roles TEXT DEFAULT '[]',
+            evidence_required INTEGER DEFAULT 0,
+            sticker_id TEXT DEFAULT '',
+            footer TEXT DEFAULT 'USMC • Registro Operativo Oficial',
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
     `);
 
@@ -276,6 +294,10 @@ function initEconomyTables() {
         if (!pCols.includes('phase')) db.exec("ALTER TABLE event_payouts ADD COLUMN phase TEXT DEFAULT 'ACTIVE'");
         if (!pCols.includes('max_participants')) db.exec("ALTER TABLE event_payouts ADD COLUMN max_participants INTEGER DEFAULT 0");
         if (!pCols.includes('reward_role_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN reward_role_id TEXT DEFAULT NULL");
+        if (!pCols.includes('report_template_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN report_template_id INTEGER DEFAULT NULL");
+        if (!pCols.includes('report_template_snapshot')) db.exec("ALTER TABLE event_payouts ADD COLUMN report_template_snapshot TEXT DEFAULT NULL");
+        if (!pCols.includes('report_message_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN report_message_id TEXT DEFAULT NULL");
+        if (!pCols.includes('report_data')) db.exec("ALTER TABLE event_payouts ADD COLUMN report_data TEXT DEFAULT NULL");
     } catch (e) {
         console.error('[Migration Error event_payouts]:', e.message);
     }
@@ -1174,18 +1196,24 @@ function createEvent({
     min_attendance_percent = 80,
     max_participants = 0,
     phase = null,
-    reward_role_id = null
+    reward_role_id = null,
+    report_template_id = null
 }) {
     const initialPhase = phase || (event_type === 'REGISTRATION' ? 'REGISTRATION' : 'ACTIVE');
+    const template = report_template_id ? getEventReportTemplateById(report_template_id, guild_id) : null;
+    if (report_template_id && !template) {
+        return { success: false, message: `La plantilla de acta #${report_template_id} no existe o no pertenece a este servidor.` };
+    }
+    const templateSnapshot = template ? JSON.stringify(template) : null;
 
     const stmt = db.prepare(`
         INSERT INTO event_payouts (
             guild_id, name, event_type, target_channel_id, payout_channel_id,
             registration_channel_id, confirmation_channel_id,
             base_reward, claim_deadline_hours, grace_period_minutes, min_attendance_percent,
-            max_participants, phase, reward_role_id, status
+            max_participants, phase, reward_role_id, report_template_id, report_template_snapshot, status
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
     `);
 
     const info = stmt.run(
@@ -1202,10 +1230,84 @@ function createEvent({
         min_attendance_percent,
         max_participants || 0,
         initialPhase,
-        reward_role_id
+        reward_role_id,
+        template ? template.id : null,
+        templateSnapshot
     );
 
     return { success: true, event: getEventById(info.lastInsertRowid) };
+}
+
+function parseTemplateRow(row) {
+    if (!row) return null;
+    let groupRoles = [];
+    try { groupRoles = JSON.parse(row.group_roles || '[]'); } catch { groupRoles = []; }
+    return {
+        ...row,
+        group_roles: Array.isArray(groupRoles) ? groupRoles : [],
+        evidence_required: row.evidence_required === 1,
+        is_active: row.is_active === 1
+    };
+}
+
+function getEventReportTemplates(guildId = 'GLOBAL', includeInactive = false) {
+    const rows = db.prepare(`
+        SELECT * FROM event_report_templates
+        WHERE (guild_id = ? OR guild_id = 'GLOBAL') ${includeInactive ? '' : 'AND is_active = 1'}
+        ORDER BY is_active DESC, name COLLATE NOCASE ASC, id DESC
+    `).all(guildId);
+    return rows.map(parseTemplateRow);
+}
+
+function getEventReportTemplateById(id, guildId = 'GLOBAL') {
+    const row = db.prepare(`
+        SELECT * FROM event_report_templates
+        WHERE id = ? AND (guild_id = ? OR guild_id = 'GLOBAL')
+    `).get(id, guildId);
+    return parseTemplateRow(row);
+}
+
+function saveEventReportTemplate(guildId, data = {}) {
+    const normalizeColor = /^#[0-9a-f]{6}$/i.test(String(data.color || '')) ? data.color : '#1a7f4b';
+    const groupingMode = ['LIST', 'STATUS', 'ROLES'].includes(data.grouping_mode) ? data.grouping_mode : 'STATUS';
+    const groupRoles = Array.isArray(data.group_roles) ? data.group_roles
+        .filter(group => group && group.role_id)
+        .slice(0, 6)
+        .map(group => ({ role_id: String(group.role_id), label: String(group.label || 'Unidad').slice(0, 60), emoji: String(group.emoji || '🛡️').slice(0, 16) })) : [];
+    const values = {
+        name: String(data.name || 'Plantilla operativa').trim().slice(0, 80),
+        title: String(data.title || 'REGISTRO DE OPERACIÓN').trim().slice(0, 120),
+        description: String(data.description || '').trim().slice(0, 500),
+        emoji: String(data.emoji || '🎖️').trim().slice(0, 16),
+        color: normalizeColor,
+        report_channel_id: String(data.report_channel_id || '').trim(),
+        grouping_mode: groupingMode,
+        group_roles: JSON.stringify(groupRoles),
+        evidence_required: data.evidence_required ? 1 : 0,
+        sticker_id: String(data.sticker_id || '').trim(),
+        footer: String(data.footer || 'USMC • Registro Operativo Oficial').trim().slice(0, 200),
+        is_active: data.is_active === false || data.is_active === 0 ? 0 : 1
+    };
+
+    if (data.id) {
+        db.prepare(`UPDATE event_report_templates SET name=?, title=?, description=?, emoji=?, color=?, report_channel_id=?, grouping_mode=?, group_roles=?, evidence_required=?, sticker_id=?, footer=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND (guild_id=? OR guild_id='GLOBAL')`)
+            .run(values.name, values.title, values.description, values.emoji, values.color, values.report_channel_id, values.grouping_mode, values.group_roles, values.evidence_required, values.sticker_id, values.footer, values.is_active, data.id, guildId);
+        return getEventReportTemplateById(data.id, guildId);
+    }
+    const info = db.prepare(`INSERT INTO event_report_templates (guild_id,name,title,description,emoji,color,report_channel_id,grouping_mode,group_roles,evidence_required,sticker_id,footer,is_active) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(guildId, values.name, values.title, values.description, values.emoji, values.color, values.report_channel_id, values.grouping_mode, values.group_roles, values.evidence_required, values.sticker_id, values.footer, values.is_active);
+    return getEventReportTemplateById(info.lastInsertRowid, guildId);
+}
+
+function archiveEventReportTemplate(id, guildId) {
+    const info = db.prepare("UPDATE event_report_templates SET is_active=0, updated_at=CURRENT_TIMESTAMP WHERE id=? AND (guild_id=? OR guild_id='GLOBAL')").run(id, guildId);
+    return info.changes > 0;
+}
+
+function saveEventReport(eventId, messageId, reportData) {
+    db.prepare('UPDATE event_payouts SET report_message_id=?, report_data=? WHERE id=?')
+        .run(messageId || null, JSON.stringify(reportData || {}), eventId);
+    return getEventById(eventId);
 }
 
 function getActiveEvent(guildId) {
@@ -2099,6 +2201,11 @@ module.exports = {
     getActiveEvents,
     getRecentEvents,
     getEventById,
+    getEventReportTemplates,
+    getEventReportTemplateById,
+    saveEventReportTemplate,
+    archiveEventReportTemplate,
+    saveEventReport,
     recordAttendanceHeartbeat,
     recordChatActivity,
     finalizeEvent,

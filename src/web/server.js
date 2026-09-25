@@ -5,7 +5,7 @@ const db = require('../database/db');
 const economyDb = require('../database/economyDb');
 const { hasAnyRole } = require('../bot/utils/roleUtils');
 const { buildBonusPanelMessage } = require('../bot/commands/bono');
-const { buildRegistrationPanel } = require('../bot/commands/eventos');
+const { buildRegistrationPanel, publishEventReport } = require('../bot/commands/eventos');
 
 function createWebServer(discordClient) {
     const app = express();
@@ -155,17 +155,18 @@ function createWebServer(discordClient) {
     app.get('/api/admin/guild-resources', requireAdmin, async (req, res) => {
         const guildId = process.env.GUILD_ID;
         if (!discordClient || !discordClient.isReady()) {
-            return res.json({ success: true, connected: false, roles: [], channels: [] });
+            return res.json({ success: true, connected: false, roles: [], channels: [], stickers: [] });
         }
 
         try {
             const guild = (guildId ? discordClient.guilds.cache.get(guildId) : null) || discordClient.guilds.cache.first();
             if (!guild) {
-                return res.json({ success: true, connected: false, roles: [], channels: [] });
+                return res.json({ success: true, connected: false, roles: [], channels: [], stickers: [] });
             }
 
             await guild.roles.fetch().catch(() => {});
             await guild.channels.fetch().catch(() => {});
+            await guild.stickers.fetch().catch(() => {});
 
             const roles = guild.roles.cache
                 .filter(r => r.id !== guild.id) // excluir @everyone
@@ -188,6 +189,11 @@ function createWebServer(discordClient) {
 
             const textChannels = channels.filter(c => c.type === 'text');
             const voiceChannels = channels.filter(c => c.type === 'voice');
+            const stickers = guild.stickers.cache.map(sticker => ({
+                id: sticker.id,
+                name: sticker.name,
+                tags: sticker.tags || ''
+            }));
 
             res.json({
                 success: true,
@@ -197,11 +203,12 @@ function createWebServer(discordClient) {
                 roles,
                 channels,
                 text_channels: textChannels,
-                voice_channels: voiceChannels
+                voice_channels: voiceChannels,
+                stickers
             });
         } catch (err) {
             console.error('[Guild Resources Error]:', err);
-            res.json({ success: true, connected: false, roles: [], channels: [], text_channels: [], voice_channels: [] });
+            res.json({ success: true, connected: false, roles: [], channels: [], text_channels: [], voice_channels: [], stickers: [] });
         }
     });
 
@@ -686,6 +693,34 @@ function createWebServer(discordClient) {
     // ENDPOINTS DE EVENTOS Y PAGOS AUTOMÁTICOS (VOZ, CHAT Y CONVOCATORIA)
     // =========================================================================
 
+    app.get('/api/admin/events/templates', requireAdmin, (req, res) => {
+        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        res.json({ success: true, templates: economyDb.getEventReportTemplates(guildId, req.query.all === '1') });
+    });
+
+    app.post('/api/admin/events/templates', requireAdmin, (req, res) => {
+        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        if (!String(req.body.name || '').trim()) {
+            return res.status(400).json({ success: false, message: 'El nombre de la plantilla es obligatorio.' });
+        }
+        const template = economyDb.saveEventReportTemplate(guildId, req.body);
+        if (!template) {
+            return res.status(404).json({ success: false, message: 'La plantilla que intentas editar ya no existe.' });
+        }
+        db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', req.body.id ? 'EDITAR_PLANTILLA_ACTA' : 'CREAR_PLANTILLA_ACTA', String(template.id), template.name);
+        return res.json({ success: true, template, templates: economyDb.getEventReportTemplates(guildId) });
+    });
+
+    app.delete('/api/admin/events/templates/:id', requireAdmin, (req, res) => {
+        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const templateId = parseInt(req.params.id, 10);
+        if (!Number.isInteger(templateId) || templateId <= 0) {
+            return res.status(400).json({ success: false, message: 'ID de plantilla inválido.' });
+        }
+        const success = economyDb.archiveEventReportTemplate(templateId, guildId);
+        return res.status(success ? 200 : 404).json({ success, message: success ? 'Plantilla archivada.' : 'Plantilla no encontrada.' });
+    });
+
     // Obtener evento activo y participantes en tiempo real con datos enriquecidos
     app.get('/api/admin/events/active', requireAdmin, (req, res) => {
         const guildId = process.env.GUILD_ID || 'GLOBAL';
@@ -711,7 +746,7 @@ function createWebServer(discordClient) {
             name, event_type, target_channel_id, payout_channel_id,
             registration_channel_id, confirmation_channel_id,
             base_reward, claim_deadline_hours, grace_period_minutes, min_attendance_percent,
-            max_participants
+            max_participants, template_id
         } = req.body;
 
         if (!name || !base_reward) {
@@ -735,7 +770,8 @@ function createWebServer(discordClient) {
             grace_period_minutes: parseInt(grace_period_minutes, 10) !== undefined ? parseInt(grace_period_minutes, 10) : 5,
             min_attendance_percent: parseInt(min_attendance_percent, 10) || 80,
             max_participants: parseInt(max_participants, 10) || 0,
-            phase: type === 'REGISTRATION' ? 'REGISTRATION' : 'ACTIVE'
+            phase: type === 'REGISTRATION' ? 'REGISTRATION' : 'ACTIVE',
+            report_template_id: template_id ? parseInt(template_id, 10) : null
         });
 
         if (!result.success) {
@@ -823,11 +859,43 @@ function createWebServer(discordClient) {
         }
 
         try {
+            let reportTemplate = {};
+            try { reportTemplate = JSON.parse(active.report_template_snapshot || '{}'); } catch {}
+            if (reportTemplate.evidence_required) {
+                return res.status(400).json({
+                    success: false,
+                    message: `La plantilla "${reportTemplate.name || 'seleccionada'}" exige una imagen. Finaliza desde Discord con /evento finalizar y adjunta la evidencia.`
+                });
+            }
+
             const summary = economyDb.massPayoutEvent(active.id, discordClient, 'COMANDO_WEB');
             if (!summary.success) {
                 return res.status(400).json(summary);
             }
-            res.json({ success: true, summary });
+
+            let reportChannel = null;
+            let reportWarning = null;
+            try {
+                const guild = discordClient?.guilds?.cache?.get(active.guild_id) || discordClient?.guilds?.cache?.first();
+                const fallbackChannel = guild?.channels?.cache?.get(active.registration_channel_id)
+                    || guild?.channels?.cache?.get(active.payout_channel_id)
+                    || guild?.channels?.cache?.get(active.target_channel_id)
+                    || guild?.systemChannel;
+                if (!guild || !fallbackChannel?.isTextBased()) throw new Error('No hay un canal de texto disponible para publicar el acta.');
+                const report = await publishEventReport({
+                    guild,
+                    channel: fallbackChannel,
+                    client: discordClient,
+                    user: { id: discordClient.user.id },
+                    reportOfficerLabel: `**Comando Web (${String(process.env.ADMIN_NAME || 'ADMIN').slice(0, 60)})**`
+                }, active, summary, null, req.body.result || '', req.body.notes || '');
+                reportChannel = report.channel?.id || null;
+            } catch (reportError) {
+                console.error('[Event Report Error]:', reportError);
+                reportWarning = `El pago se completó, pero el acta no pudo publicarse: ${reportError.message}. Puedes reintentar con /evento finalizar evento_id:${active.id}.`;
+            }
+
+            res.json({ success: true, summary, reportChannel, reportWarning });
         } catch (err) {
             console.error('[Finish Event Error]:', err);
             res.status(500).json({ success: false, message: `Error al concluir evento: ${err.message}` });
