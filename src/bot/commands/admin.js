@@ -4,11 +4,12 @@ const economyDb = require('../../database/economyDb');
 const { applyVerifiedRole } = require('../handlers/verificationHandler');
 const { hasOfficerPermission, hasAdminPermission } = require('../handlers/permissionHandler');
 const { parseRoleIds, formatRoleMentions } = require('../utils/roleUtils');
+const { oauthConfig } = require('../../web/discordAuth');
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('admin')
-        .setDescription('Comandos de administración del sistema militar de verificación')
+        .setDescription('Comandos de administración del sistema comunitario de verificación')
         .setDefaultMemberPermissions(null)
         .addSubcommand(sub =>
             sub.setName('verificar-manual')
@@ -18,7 +19,7 @@ module.exports = {
         )
         .addSubcommand(sub =>
             sub.setName('desverificar')
-                .setDescription('Revoca la verificación militar a un usuario')
+                .setDescription('Revoca la verificación comunitario a un usuario')
                 .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a desverificar').setRequired(true))
                 .addStringOption(opt => opt.setName('motivo').setDescription('Motivo de la revocación').setRequired(false))
         )
@@ -28,19 +29,19 @@ module.exports = {
         )
         .addSubcommand(sub =>
             sub.setName('configurar')
-                .setDescription('Ajusta parámetros, roles asignados al verificarse y permisos de oficiales')
+                .setDescription('Ajusta parámetros, roles asignados al verificarse y permisos de responsables')
                 .addRoleOption(opt => opt.setName('rol_verificado').setDescription('Rol otorgado al verificarse').setRequired(false))
                 .addRoleOption(opt => opt.setName('rol_no_verificado').setDescription('Rol temporal previo a verificación').setRequired(false))
-                .addRoleOption(opt => opt.setName('rol_oficial').setDescription('Rol de oficiales para comandos y moderación').setRequired(false))
-                .addRoleOption(opt => opt.setName('rol_admin').setDescription('Rol de administradores militares').setRequired(false))
-                .addChannelOption(opt => opt.setName('canal_revision').setDescription('Canal de oficiales para revisar solicitudes').setRequired(false))
+                .addRoleOption(opt => opt.setName('rol_oficial').setDescription('Rol de responsables para comandos y moderación').setRequired(false))
+                .addRoleOption(opt => opt.setName('rol_admin').setDescription('Rol de administradores comunitarios').setRequired(false))
+                .addChannelOption(opt => opt.setName('canal_revision').setDescription('Canal de responsables para revisar solicitudes').setRequired(false))
                 .addChannelOption(opt => opt.setName('canal_logs').setDescription('Canal de auditoría / logs').setRequired(false))
                 .addChannelOption(opt => opt.setName('canal_logs_economia').setDescription('Canal de Discord para auditoría y transacciones financieras').setRequired(false))
                 .addStringOption(opt => 
                     opt.setName('modo')
                         .setDescription('Modo de verificación')
                         .addChoices(
-                            { name: 'Manual (Oficiales aprueban vía Discord o Web)', value: 'manual' },
+                            { name: 'Manual (Responsables aprueban vía Discord o Web)', value: 'manual' },
                             { name: 'Automático (Rol inmediato al enviar formulario)', value: 'auto' }
                         )
                         .setRequired(false)
@@ -55,7 +56,7 @@ module.exports = {
         if (['verificar-manual', 'desverificar'].includes(subcommand)) {
             if (!hasOfficerPermission(interaction)) {
                 return interaction.reply({
-                    content: '❌ **Acceso denegado:** Solo oficiales autorizados en el panel web o administradores pueden usar este comando.',
+                    content: '❌ **Acceso denegado:** Solo responsables autorizados en el panel web o administradores pueden usar este comando.',
                     flags: MessageFlags.Ephemeral
                 });
             }
@@ -78,7 +79,7 @@ module.exports = {
                 targetUser.id,
                 targetUser.tag,
                 targetUser.displayAvatarURL(),
-                { 'Acreditación': 'Verificación manual directa por Estado Mayor' },
+                { 'Acreditación': 'Verificación manual directa por Administración' },
                 'APROBADO'
             );
             db.updateVerificationStatus(targetUser.id, 'APROBADO', interaction.user.id, reason, interaction.user.tag);
@@ -93,7 +94,7 @@ module.exports = {
             );
 
             // DM al usuario
-            targetUser.send(`🎖️ **[COMUNICADO USMC]** Has sido verificado manualmente por el oficial <@${interaction.user.id}>.`).catch(() => {});
+            targetUser.send(`🎖️ **[COMUNICADO DE LA COMUNIDAD]** Has sido verificado manualmente por el oficial <@${interaction.user.id}>.`).catch(() => {});
 
             return interaction.reply({
                 content: `✅ **El usuario <@${targetUser.id}> ha sido verificado manualmente con éxito.**`,
@@ -122,7 +123,7 @@ module.exports = {
                 }
             }
 
-            targetUser.send(`⚠️ **[COMUNICADO USMC]** Tu acreditación militar ha sido revocada por <@${interaction.user.id}>. Motivo: *${reason}*.`).catch(() => {});
+            targetUser.send(`⚠️ **[COMUNICADO DE LA COMUNIDAD]** Tu acreditación comunitario ha sido revocada por <@${interaction.user.id}>. Motivo: *${reason}*.`).catch(() => {});
 
             return interaction.reply({
                 content: `⚠️ **Verificación revocada para <@${targetUser.id}>.** Se ha retirado el rol correspondiente y actualizado el expediente.`,
@@ -132,18 +133,28 @@ module.exports = {
 
         if (subcommand === 'panel-web') {
             const webUrl = process.env.WEB_URL || `http://localhost:${process.env.PORT || 3000}`;
+            if (oauthConfig().enabled) {
+                return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xb8cba6)
+                    .setTitle('🛡️ CENTRO DE MANDO · DISCORD')
+                    .setDescription(`[Entrar con tu cuenta de Discord](${webUrl.replace(/\/$/, '')}/auth/discord?next=${encodeURIComponent(`/admin?guild=${interaction.guildId}`)})\nTu rol de Administración se comprueba al acceder. Las acciones se registran bajo tu identidad.`)], flags: MessageFlags.Ephemeral });
+            }
+            if (interaction.guildId !== process.env.GUILD_ID) return interaction.reply({ content: 'Configura el inicio con Discord en el host para abrir el panel de esta comunidad.', flags: MessageFlags.Ephemeral });
             const adminKey = process.env.ADMIN_KEY || 'USMC-COMMAND-2026';
+            const operatorName = interaction.member?.displayName || interaction.user.globalName || interaction.user.username;
+            const session = db.createAdminSession(operatorName, interaction.user.id, 'ALTO MANDO DISCORD', 'Discord-Command');
+            const directSessionUrl = `${webUrl}/admin?session=${encodeURIComponent(session.token)}&op_name=${encodeURIComponent(operatorName)}&op_id=${encodeURIComponent(interaction.user.id)}`;
 
             const embed = new EmbedBuilder()
                 .setColor(0xe5b338)
-                .setTitle('🛡️ [ACCESO AL CENTRO DE MANDO WEB]')
-                .setDescription('Utiliza el siguiente enlace para ingresar a la terminal administrativa táctica:')
+                .setTitle('🛡️ [ACCESO NOMINAL AL CENTRO DE MANDO WEB]')
+                .setDescription('Se ha generado tu credencial individual de Administración. Todas las modificaciones que realices en la web quedarán registradas bajo tu identidad para máxima seguridad:')
                 .addFields(
-                    { name: '🌐 Enlace de Acceso', value: `[Abrir Dashboard Táctico](${webUrl}/admin)`, inline: false },
-                    { name: '🔑 Clave Maestra de Oficial (ADMIN_KEY)', value: `\`${adminKey}\``, inline: false },
-                    { name: '💾 Almacenamiento Local', value: 'Base de Datos SQLite activa en tu hosting (50GB)', inline: true }
+                    { name: '🔐 Acceso Directo Identificado (Recomendado)', value: `[Ingresar como ${operatorName}](${directSessionUrl})`, inline: false },
+                    { name: '🌐 Enlace Estándar del Panel', value: `[Abrir Dashboard Táctico](${webUrl}/admin)`, inline: true },
+                    { name: '👤 Operador Autorizado', value: `<@${interaction.user.id}> (\`${operatorName}\`)`, inline: true },
+                    { name: '🔑 Tu Token Personal / Clave Maestra', value: `Token: \`${session.token}\`\nADMIN_KEY: \`${adminKey}\``, inline: false }
                 )
-                .setFooter({ text: 'No compartas la clave con reclutas o personal no autorizado.', iconURL: interaction.guild.iconURL() });
+                .setFooter({ text: 'Trazabilidad activa: Cualquier cambio en la web registrará tu nombre de usuario.', iconURL: interaction.guild.iconURL() });
 
             return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         }
@@ -182,9 +193,9 @@ module.exports = {
                     { name: '🔹 Modo de Verificación', value: `\`${currentCfg.verification_mode.toUpperCase()}\``, inline: true },
                     { name: '🔹 Roles Asignados al Verificar', value: formatRoleMentions(currentCfg.verified_role_id), inline: true },
                     { name: '🔹 Rol No Verificado (a retirar)', value: formatRoleMentions(currentCfg.unverified_role_id), inline: true },
-                    { name: '🎖️ Rol de Oficiales (Comandos/Revisión)', value: formatRoleMentions(currentCfg.officer_role_id, '*Moderadores nativos*'), inline: true },
+                    { name: '🎖️ Rol de Responsables (Comandos/Revisión)', value: formatRoleMentions(currentCfg.officer_role_id, '*Moderadores nativos*'), inline: true },
                     { name: '🛡️ Rol de Administradores', value: formatRoleMentions(currentCfg.admin_role_id, '*Administradores nativos*'), inline: true },
-                    { name: '🔹 Canal de Oficiales (Revisión)', value: currentCfg.review_channel_id ? `<#${currentCfg.review_channel_id}>` : '*Sin asignar*', inline: true },
+                    { name: '🔹 Canal de Responsables (Revisión)', value: currentCfg.review_channel_id ? `<#${currentCfg.review_channel_id}>` : '*Sin asignar*', inline: true },
                     { name: '🔹 Canal Logs Verificación / Mod', value: currentCfg.log_channel_id ? `<#${currentCfg.log_channel_id}>` : '*Sin asignar*', inline: true },
                     { name: '💰 Canal Logs de Economía', value: currentEco.log_channel_id ? `<#${currentEco.log_channel_id}>` : '*Sin asignar (Solo web)*', inline: true }
                 )

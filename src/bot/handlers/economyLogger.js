@@ -1,4 +1,5 @@
 const { EmbedBuilder } = require('discord.js');
+const db = require('../../database/db');
 const economyDb = require('../../database/economyDb');
 
 let discordClient = null;
@@ -8,6 +9,46 @@ function initEconomyLogger(client) {
     if (typeof economyDb.setOnTransactionLogged === 'function') {
         economyDb.setOnTransactionLogged(sendEconomyLog);
     }
+    if (typeof db.setOnAdminAuditLogged === 'function') {
+        db.setOnAdminAuditLogged(sendAdminSecurityLog);
+    }
+}
+
+async function sendAdminSecurityLog(logEntry) {
+    if (!discordClient || !discordClient.isReady() || !logEntry) return;
+    try {
+        const targetGuildId = logEntry.guild_id;
+        if (!targetGuildId) return;
+        const cfg = db.getConfig(targetGuildId);
+        const ecoSettings = economyDb.getEconomySettings(targetGuildId);
+        const logChannelId = cfg.log_channel_id || ecoSettings.log_channel_id;
+        if (!logChannelId) return;
+
+        const channel = discordClient.guilds.cache.get(targetGuildId)?.channels.cache.get(logChannelId)
+            || await discordClient.guilds.cache.get(targetGuildId)?.channels.fetch(logChannelId).catch(() => null);
+        if (!channel || !channel.isTextBased()) return;
+
+        const actorDisplay = logEntry.operator_id
+            ? `**${logEntry.actor}** (<@${logEntry.operator_id}> • \`${logEntry.operator_id}\`)`
+            : `**${logEntry.actor}**`;
+
+        const embed = new EmbedBuilder()
+            .setColor(0xe5b338)
+            .setTitle(`🛡️ [TRAZABILIDAD DE MANDO // ${logEntry.action}]`)
+            .addFields(
+                { name: '👤 Operador Responsable', value: actorDisplay, inline: true },
+                { name: '🎖️ Rango /Origen', value: `\`${logEntry.operator_rank || 'ALTO MANDO'}\``, inline: true },
+                { name: '🎯 Objetivo Afectado', value: logEntry.target_id ? `\`${logEntry.target_id}\`` : '`Sistema General`', inline: true }
+            )
+            .setFooter({ text: `Auditoría Anti-Sabotaje USMC${logEntry.ip_address ? ` • IP: ${logEntry.ip_address}` : ''}` })
+            .setTimestamp();
+
+        if (logEntry.details) {
+            embed.addFields({ name: '📋 Detalle de la Modificación', value: String(logEntry.details).slice(0, 1024), inline: false });
+        }
+
+        await channel.send({ embeds: [embed] }).catch(() => {});
+    } catch (e) {}
 }
 
 const ACTION_INFO = {
@@ -77,12 +118,13 @@ async function sendEconomyLog({ discordId, type, amount, details = '', guildId =
     if (!discordClient || !discordClient.isReady()) return;
 
     try {
-        const targetGuildId = guildId || process.env.GUILD_ID || 'GLOBAL';
+        const targetGuildId = guildId;
+        if (!targetGuildId) return;
         const settings = economyDb.getEconomySettings(targetGuildId);
         if (!settings || !settings.log_channel_id) return;
 
-        const channel = discordClient.channels.cache.get(settings.log_channel_id) 
-            || await discordClient.channels.fetch(settings.log_channel_id).catch(() => null);
+        const channel = discordClient.guilds.cache.get(targetGuildId)?.channels.cache.get(settings.log_channel_id)
+            || await discordClient.guilds.cache.get(targetGuildId)?.channels.fetch(settings.log_channel_id).catch(() => null);
 
         if (!channel || !channel.isTextBased()) return;
 

@@ -1,3 +1,4 @@
+const { currentGuild, withGuild } = require('../database/guildContext');
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
@@ -6,35 +7,98 @@ const economyDb = require('../database/economyDb');
 const { hasAnyRole } = require('../bot/utils/roleUtils');
 const { buildBonusPanelMessage } = require('../bot/commands/bono');
 const { buildRegistrationPanel, publishEventReport } = require('../bot/commands/eventos');
+const { refreshPublicServerBoard } = require('../bot/commands/servidor');
+const { installDiscordAuth } = require('./discordAuth');
+const { installPatrolRoutes } = require('./patrolRoutes');
+const { installAssistantRoutes } = require('./assistantRoutes');
+const { installPortalRoutes } = require('./portalRoutes');
 
-function createWebServer(discordClient) {
+function createWebServer(discordClient, options = {}) {
     const app = express();
+    if (!options.disableBackups) require('../../scripts/backup').scheduleBackups(db.db, db.dbPath);
+
+    app.use((req, res, next) => {
+        res.set({ 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'DENY' });
+        next();
+    });
 
     app.use(cors());
+    app.use('/api/admin/branding/image', express.json({ limit: '3mb' }));
     app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
 
     // Servir estáticos (CSS, scripts de efectos, imágenes)
     app.use(express.static(path.join(__dirname, 'public')));
+    const discordAuth = installDiscordAuth(app, discordClient, options);
+    installPortalRoutes(app, discordClient, discordAuth);
+    require('./communityRoutes').installCommunityRoutes(app, discordAuth);
+    installPatrolRoutes(app, discordClient, discordAuth);
+    installAssistantRoutes(app, discordClient, discordAuth, options);
 
-    // Middleware de autenticación de admin con ADMIN_KEY
+    for (const route of ['/api/verify-data/:token', '/api/verify/:token']) app.use(route, (req, _res, next) => {
+        const token = db.getVerificationToken(req.params.token);
+        if (!token) return next();
+        req.guildId = token.guild_id;
+        withGuild(token.guild_id, next);
+    });
+
+    // Middleware de autenticación de admin con ADMIN_KEY o Token de Sesión Nominal
     function requireAdmin(req, res, next) {
+        res.set('Cache-Control', 'no-store');
+        req.guildId = process.env.GUILD_ID || 'GLOBAL';
+        if (!discordAuth.hasCookie(req) && req.headers['x-guild-id'] && req.headers['x-guild-id'] !== req.guildId) return res.status(403).json({ success: false, message: 'El acceso anterior solo funciona en la comunidad original. Usa Discord.' });
+        if (discordAuth.hasCookie(req)) return discordAuth.requireAccess('admin')(req, res, next);
+        if (!discordAuth.config().legacyAllowed) return res.status(401).json({ success: false, message: 'Inicia sesión con Discord.', login_url: discordAuth.loginUrl('/admin') });
         const authHeader = req.headers['authorization'];
         const token = authHeader && authHeader.split(' ')[1];
         const masterKey = process.env.ADMIN_KEY || 'USMC-COMMAND-2026';
+        const headerOpName = req.headers['x-operator-name'] ? decodeURIComponent(req.headers['x-operator-name']) : '';
+        const headerOpId = req.headers['x-operator-id'] ? decodeURIComponent(req.headers['x-operator-id']) : '';
 
-        if (token && token === masterKey) {
-            return next();
+        if (token) {
+            const session = db.getAdminSession(token);
+            if (session) {
+                req.adminOperator = {
+                    operator_name: session.operator_name || 'Alto Mando',
+                    discord_id: session.discord_id || null,
+                    operator_rank: session.operator_rank || 'ALTO MANDO',
+                    ip_address: req.ip
+                };
+                return next();
+            }
+            if (token === masterKey) {
+                req.adminOperator = {
+                    operator_name: headerOpName || 'ADMIN_WEB',
+                    discord_id: headerOpId || null,
+                    operator_rank: 'ALTO MANDO WEB',
+                    ip_address: req.ip
+                };
+                return next();
+            }
         }
         return res.status(401).json({ success: false, message: 'No autorizado / Clave incorrecta' });
     }
 
-    // Ruta principal: Redirige a Admin o bienvenida
-    app.get('/', (req, res) => {
-        res.redirect('/admin');
-    });
+    function resolveRequestedActiveEvent(guildId, rawEventId) {
+        if (rawEventId === undefined || rawEventId === null || rawEventId === '') return economyDb.getActiveEvent(guildId);
+        const eventId = parseInt(rawEventId, 10);
+        if (!Number.isInteger(eventId) || eventId <= 0) return null;
+        const event = economyDb.getEventById(eventId);
+        if (!event || (event.guild_id !== guildId && event.guild_id !== 'GLOBAL') || event.status !== 'ACTIVE') return null;
+        return event;
+    }
 
     // Vista de verificación por token
+    app.get('/verify', async (req, res) => {
+        if (!discordAuth.config().enabled) return res.status(503).send('El inicio con Discord aún no está configurado. Abre tu enlace personal desde Discord.');
+        try {
+            const user = await discordAuth.identity(req);
+            if (!user) return res.redirect(discordAuth.loginUrl('/verify'));
+            require('../database/communityDb').ensureCommunity(user.guildId, user.guild.name);
+            const token = db.createVerificationToken(user.id, user.username, user.avatar, user.guildId);
+            res.redirect(`/verify/${token}`);
+        } catch (error) { res.status(error.status || 503).send(error.message); }
+    });
     app.get('/verify/:token', (req, res) => {
         const { token } = req.params;
         const tokenData = db.getVerificationToken(token);
@@ -45,6 +109,18 @@ function createWebServer(discordClient) {
     });
 
     // API para cargar preguntas y datos del usuario para el formulario
+    async function recruitAccess(req, res, tokenData) {
+        res.set('Cache-Control', 'no-store');
+        if (!discordAuth.config().enabled) return true;
+        try {
+            const user = await discordAuth.identity(req, tokenData.guild_id);
+            if (!user) { res.status(401).json({ success: false, message: 'Confirma tu identidad con Discord para completar el formulario.', login_url: discordAuth.loginUrl(`/verify/${req.params.token}`) }); return false; }
+            if (user.id !== tokenData.discord_id || user.guildId !== tokenData.guild_id) { res.status(403).json({ success: false, message: 'Este formulario pertenece a otra cuenta. Entra con la cuenta correcta o abre /verify para crear tu expediente.' }); return false; }
+            if (req.method !== 'GET' && !discordAuth.csrf(req, user)) { res.status(403).json({ success: false, message: 'Recarga el formulario para renovar la sesión antes de enviarlo.' }); return false; }
+            req.discordIdentity = user;
+            return true;
+        } catch (error) { res.status(error.status || 503).json({ success: false, message: error.message }); return false; }
+    }
     app.get('/api/verify-data/:token', async (req, res) => {
         const { token } = req.params;
         const tokenData = db.getVerificationToken(token);
@@ -52,6 +128,8 @@ function createWebServer(discordClient) {
         if (!tokenData) {
             return res.status(404).json({ success: false, message: 'Token militar inválido o caducado.' });
         }
+
+        if (!await recruitAccess(req, res, tokenData)) return;
 
         const config = db.getConfig(tokenData.guild_id);
         const questions = db.getQuestions();
@@ -64,7 +142,7 @@ function createWebServer(discordClient) {
         // Verificar también si ya tiene el rol en Discord
         if (!alreadyVerified && config.verified_role_id && discordClient && discordClient.isReady()) {
             try {
-                const guild = discordClient.guilds.cache.get(tokenData.guild_id) || discordClient.guilds.cache.first();
+                const guild = discordClient.guilds.cache.get(tokenData.guild_id);
                 if (guild) {
                     const member = await guild.members.fetch(tokenData.discord_id).catch(() => null);
                     if (hasAnyRole(member, config.verified_role_id)) {
@@ -76,13 +154,15 @@ function createWebServer(discordClient) {
 
         res.json({
             success: true,
+            profile: require('../database/communityDb').publicProfile(require('../database/communityDb').ensureCommunity(tokenData.guild_id)),
+            csrf_token: req.discordIdentity?.csrf || null,
             already_verified: alreadyVerified,
             pending_review: pendingReview,
             verification_status: alreadyVerified ? 'APROBADO' : (pendingReview ? 'PENDIENTE' : 'NUEVO'),
             user: {
                 discord_id: tokenData.discord_id,
-                username: tokenData.username,
-                avatar: tokenData.avatar,
+                username: req.discordIdentity?.username || tokenData.username,
+                avatar: req.discordIdentity?.avatar || tokenData.avatar,
                 reviewed_at: existing ? existing.updated_at : null
             },
             config,
@@ -99,17 +179,31 @@ function createWebServer(discordClient) {
         if (!tokenData) {
             return res.status(400).json({ success: false, message: 'El enlace de verificación ya no es válido.' });
         }
+        if (!await recruitAccess(req, res, tokenData)) return;
 
         const config = db.getConfig(tokenData.guild_id);
         const mode = config.verification_mode || 'manual';
         const initialStatus = (mode === 'auto') ? 'APROBADO' : 'PENDIENTE';
+        const existing = db.getVerificationByDiscordId(tokenData.discord_id);
+        if (existing && ['APROBADO', 'PENDIENTE'].includes(existing.status)) return res.status(409).json({ success: false, message: existing.status === 'APROBADO' ? 'Tu expediente ya está aprobado.' : 'Tu expediente ya está en revisión.' });
+        if (!answers || typeof answers !== 'object' || Array.isArray(answers)) return res.status(400).json({ success: false, message: 'Completa las respuestas del formulario.' });
+        const safeAnswers = Object.create(null);
+        for (const question of db.getQuestions()) {
+            const answer = answers[question.label];
+            if (answer !== undefined && !['string', 'number', 'boolean'].includes(typeof answer)) return res.status(400).json({ success: false, message: 'Una respuesta tiene un formato inválido.' });
+            const value = String(answer ?? '').trim();
+            if (value.length > 4000) return res.status(400).json({ success: false, message: 'Una respuesta supera el límite de longitud.' });
+            if (question.required && (!value || ['No proporcionado', 'No seleccionado', 'No marcado'].includes(value))) return res.status(400).json({ success: false, message: `Completa el apartado: ${question.label}` });
+            if (value && question.field_type === 'number' && !Number.isFinite(Number(value))) return res.status(400).json({ success: false, message: `Introduce un número válido en: ${question.label}` });
+            safeAnswers[question.label] = value;
+        }
 
         // 1. Guardar expediente en SQLite local (aprovechando los 50GB)
         const record = db.submitVerification(
             tokenData.discord_id,
-            tokenData.username,
-            tokenData.avatar,
-            answers,
+            req.discordIdentity?.username || tokenData.username,
+            req.discordIdentity?.avatar || tokenData.avatar,
+            safeAnswers,
             initialStatus
         );
 
@@ -136,30 +230,67 @@ function createWebServer(discordClient) {
         res.sendFile(path.join(__dirname, 'views/dashboard.html'));
     });
 
+    // API Admin: Inicio de sesión nominal individual del Alto Mando
+    app.post('/api/admin/login', (req, res) => {
+        if (!discordAuth.config().legacyAllowed) return res.status(403).json({ success: false, message: 'Este panel utiliza inicio de sesión con Discord.' });
+        const { key, operator_name, operator_id } = req.body || {};
+        const masterKey = process.env.ADMIN_KEY || 'USMC-COMMAND-2026';
+        const trimmedKey = String(key || '').trim();
+        const opName = String(operator_name || '').trim();
+        const opId = String(operator_id || '').replace(/[<@!>]/g, '').trim();
+
+        if (!opName) {
+            return res.status(400).json({ success: false, message: 'Debes ingresar tu Nombre o Indicativo de Oficial para trazabilidad.' });
+        }
+
+        const existingSession = db.getAdminSession(trimmedKey);
+        if (trimmedKey !== masterKey && !existingSession) {
+            return res.status(401).json({ success: false, message: 'Clave maestra o credencial militar inválida.' });
+        }
+
+        const session = db.createAdminSession(opName, opId || existingSession?.discord_id || null, 'ALTO MANDO WEB', req.ip);
+        db.addAdminAuditLog(
+            { operator_name: session.operator_name, discord_id: session.discord_id, operator_rank: session.operator_rank, ip_address: req.ip },
+            'INICIO_SESION_WEB',
+            session.discord_id || session.operator_name,
+            `Acceso autorizado al Centro de Mando Web por ${session.operator_name}`
+        );
+
+        return res.json({
+            success: true,
+            session,
+            session_token: session.token,
+            operator_name: session.operator_name
+        });
+    });
+
     // API Admin: Obtener datos completos
     app.get('/api/admin/data', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'default';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'default';
         const config = db.getConfig(guildId);
         const questions = db.getQuestions();
         const verifications = db.getAllVerifications();
+        const privateServers = db.getPrivateServers(guildId);
 
         res.json({
             success: true,
+            operator: req.adminOperator,
             config,
             questions,
-            verifications
+            verifications,
+            private_servers: privateServers
         });
     });
 
     // API Admin: Obtener roles y canales del servidor de Discord en tiempo real
     app.get('/api/admin/guild-resources', requireAdmin, async (req, res) => {
-        const guildId = process.env.GUILD_ID;
+        const guildId = (req.guildId || process.env.GUILD_ID);
         if (!discordClient || !discordClient.isReady()) {
             return res.json({ success: true, connected: false, roles: [], channels: [], stickers: [] });
         }
 
         try {
-            const guild = (guildId ? discordClient.guilds.cache.get(guildId) : null) || discordClient.guilds.cache.first();
+            const guild = discordClient.guilds.cache.get(guildId);
             if (!guild) {
                 return res.json({ success: true, connected: false, roles: [], channels: [], stickers: [] });
             }
@@ -214,8 +345,9 @@ function createWebServer(discordClient) {
 
     // API Admin: Actualizar configuración
     app.post('/api/admin/config', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'default';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'default';
         const updated = db.updateConfig(guildId, req.body);
+        db.addAdminAuditLog(req.adminOperator, 'ACTUALIZAR_CONFIG_SISTEMA', guildId, 'Parámetros de configuración actualizados desde el panel web.');
         res.json({ success: true, config: updated });
     });
 
@@ -225,6 +357,7 @@ function createWebServer(discordClient) {
         if (!label) return res.status(400).json({ success: false, message: 'El enunciado es requerido.' });
 
         const id = db.addQuestion({ label, description, field_type, options, required });
+        db.addAdminAuditLog(req.adminOperator, 'CREAR_PREGUNTA_CUESTIONARIO', `Q#${id}`, `Nueva pregunta: ${label}`);
         res.json({ success: true, id });
     });
 
@@ -233,6 +366,7 @@ function createWebServer(discordClient) {
         const id = parseInt(req.params.id);
         const { label, description, field_type, options, required, sort_order } = req.body;
         db.updateQuestion(id, { label, description, field_type, options, required, sort_order });
+        db.addAdminAuditLog(req.adminOperator, 'EDITAR_PREGUNTA_CUESTIONARIO', `Q#${id}`, `Pregunta editada: ${label}`);
         res.json({ success: true });
     });
 
@@ -240,6 +374,7 @@ function createWebServer(discordClient) {
     app.delete('/api/admin/questions/:id', requireAdmin, (req, res) => {
         const id = parseInt(req.params.id);
         db.deleteQuestion(id);
+        db.addAdminAuditLog(req.adminOperator, 'ELIMINAR_PREGUNTA_CUESTIONARIO', `Q#${id}`, 'Pregunta eliminada del cuestionario.');
         res.json({ success: true });
     });
 
@@ -251,25 +386,63 @@ function createWebServer(discordClient) {
             return res.status(400).json({ success: false, message: 'Acción de verificación inválida.' });
         }
 
-        const reviewer = process.env.ADMIN_NAME || 'ADMIN_WEB';
-        const updated = db.updateVerificationStatus(discordId, action, reviewer, reason);
-        db.addAdminAuditLog(reviewer, `VERIFICACION_${action}`, discordId, reason || 'Sin motivo adicional');
+        const reviewerName = req.adminOperator?.operator_name || 'ADMIN_WEB';
+        const reviewerId = req.adminOperator?.discord_id || reviewerName;
+        const updated = db.updateVerificationStatus(discordId, action, reviewerId, reason, reviewerName);
+        db.addAdminAuditLog(req.adminOperator, `VERIFICACION_${action}`, discordId, `Dictamen por ${reviewerName}: ${reason || 'Sin motivo adicional'}`);
 
         // Notificar en Discord y asignar/remover roles
         if (discordClient && discordClient.isReady()) {
             const verificationHandler = require('../bot/handlers/verificationHandler');
-            const guildId = process.env.GUILD_ID || 'default';
-            await verificationHandler.handleStatusChange(discordClient, guildId, updated, action, reason);
+            const guildId = (req.guildId || process.env.GUILD_ID) || 'default';
+            await verificationHandler.handleStatusChange(discordClient, guildId, updated, action, reason, reviewerName);
         }
 
         res.json({ success: true, record: updated });
+    });
+
+    // API Admin: Editar nombre de usuario y datos del expediente desde la Web (Con trazabilidad)
+    app.put('/api/admin/verifications/:discordId', requireAdmin, (req, res) => {
+        const { discordId } = req.params;
+        const { username, answers, reason } = req.body || {};
+
+        const result = db.updateVerificationRecord(discordId, {
+            username,
+            answers,
+            reason,
+            reviewerName: req.adminOperator?.operator_name,
+            reviewerId: req.adminOperator?.discord_id
+        });
+
+        if (!result) {
+            return res.status(404).json({ success: false, message: 'Expediente no encontrado.' });
+        }
+
+        const changes = [];
+        if (result.before.username !== result.after.username) {
+            changes.push(`Nombre modificado: "${result.before.username}" ➔ "${result.after.username}"`);
+        }
+        if (JSON.stringify(result.before.answers) !== JSON.stringify(result.after.answers)) {
+            changes.push('Respuestas del expediente actualizadas');
+        }
+        const detailText = changes.length > 0
+            ? `${changes.join(' | ')} (Por: ${req.adminOperator?.operator_name || 'ADMIN_WEB'})`
+            : `Edición de expediente por ${req.adminOperator?.operator_name || 'ADMIN_WEB'}`;
+
+        db.addAdminAuditLog(req.adminOperator, 'MODIFICACION_NOMBRE_USUARIO', discordId, detailText);
+
+        return res.json({
+            success: true,
+            record: result.after,
+            audit_details: detailText
+        });
     });
 
     // API Admin: Eliminar expediente
     app.delete('/api/admin/verifications/:discordId', requireAdmin, (req, res) => {
         const { discordId } = req.params;
         db.removeVerification(discordId);
-        db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', 'ELIMINAR_EXPEDIENTE', discordId);
+        db.addAdminAuditLog(req.adminOperator, 'ELIMINAR_EXPEDIENTE', discordId, `Expediente eliminado por ${req.adminOperator?.operator_name || 'ADMIN_WEB'}`);
         res.json({ success: true });
     });
 
@@ -279,14 +452,14 @@ function createWebServer(discordClient) {
 
     // Obtener configuración de economía
     app.get('/api/admin/economy/settings', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
         const settings = economyDb.getEconomySettings(guildId);
         res.json({ success: true, settings });
     });
 
     // Actualizar configuración de economía
     app.post('/api/admin/economy/settings', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
         const updated = economyDb.updateEconomySettings(guildId, req.body);
         res.json({ success: true, settings: updated });
     });
@@ -311,7 +484,7 @@ function createWebServer(discordClient) {
                             if (user) {
                                 acc.username = user.tag || user.username;
                                 acc.avatar = user.displayAvatarURL({ extension: 'png', size: 128 });
-                                economyDb.syncAccountUser(acc.discord_id, acc.username, acc.avatar, process.env.GUILD_ID || 'GLOBAL');
+                                economyDb.syncAccountUser(acc.discord_id, acc.username, acc.avatar, (req.guildId || process.env.GUILD_ID) || 'GLOBAL');
                             }
                         } catch (e) {}
                     }
@@ -339,13 +512,13 @@ function createWebServer(discordClient) {
                         user = await discordClient.users.fetch(discordId).catch(() => null);
                     }
                     if (user) {
-                        economyDb.syncAccountUser(discordId, user.tag || user.username, user.displayAvatarURL({ extension: 'png', size: 128 }), process.env.GUILD_ID || 'GLOBAL');
+                        economyDb.syncAccountUser(discordId, user.tag || user.username, user.displayAvatarURL({ extension: 'png', size: 128 }), (req.guildId || process.env.GUILD_ID) || 'GLOBAL');
                     }
                 } catch (e) {}
             }
 
             const acc = economyDb.adminAdjustBalance(discordId, action, parseInt(amount, 10), target || 'wallet');
-            db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', `AJUSTE_CUENTA_${action.toUpperCase()}`, discordId, `${amount} en ${target || 'wallet'}`);
+            db.addAdminAuditLog(req.adminOperator, `AJUSTE_CUENTA_${action.toUpperCase()}`, discordId, `${amount} en ${target || 'wallet'}`);
             res.json({ success: true, account: acc });
         } catch (e) {
             res.status(500).json({ success: false, message: e.message });
@@ -360,14 +533,14 @@ function createWebServer(discordClient) {
             return res.status(400).json({ success: false, message: 'Parámetros de ajuste inválidos.' });
         }
         const acc = economyDb.adminAdjustBalance(discordId, action, parseInt(amount, 10), target || 'wallet');
-        db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', `AJUSTE_CUENTA_${action.toUpperCase()}`, discordId, `${amount} en ${target || 'wallet'}`);
+        db.addAdminAuditLog(req.adminOperator, `AJUSTE_CUENTA_${action.toUpperCase()}`, discordId, `${amount} en ${target || 'wallet'}`);
         res.json({ success: true, account: acc });
     });
 
     app.delete('/api/admin/economy/accounts/:discordId', requireAdmin, (req, res) => {
         const { discordId } = req.params;
         const deleted = economyDb.deleteEconomyAccount(discordId);
-        if (deleted) db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', 'ELIMINAR_CUENTA', discordId, 'Cuenta e inventario eliminados; historial contable conservado.');
+        if (deleted) db.addAdminAuditLog(req.adminOperator, 'ELIMINAR_CUENTA', discordId, 'Cuenta e inventario eliminados; historial contable conservado.');
         res.json({ success: deleted, message: deleted ? 'Cuenta eliminada. El historial contable fue conservado.' : 'No se encontró la cuenta.' });
     });
 
@@ -404,7 +577,7 @@ function createWebServer(discordClient) {
             }
             const commands = economyDb.bulkUpdateCommandPermissions(updates);
             if (db.addAdminAuditLog) {
-                db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', 'CONFIGURACION_COMANDOS_LOTE', 'COMANDOS', `Actualizados ${updates.length} comandos en lote.`);
+                db.addAdminAuditLog(req.adminOperator, 'CONFIGURACION_COMANDOS_LOTE', 'COMANDOS', `Actualizados ${updates.length} comandos en lote.`);
             }
             res.json({ success: true, commands });
         } catch (e) {
@@ -419,7 +592,7 @@ function createWebServer(discordClient) {
     // Obtener estadísticas y configuración del panel de bonos
     app.get('/api/admin/economy/bonus', requireAdmin, (req, res) => {
         try {
-            const guildId = process.env.GUILD_ID || 'GLOBAL';
+            const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
             const panelId = req.query.panelId ? parseInt(req.query.panelId, 10) : null;
             const stats = economyDb.getBonusStats(guildId, panelId);
             const panels = economyDb.getAllBonusPanels(guildId);
@@ -432,7 +605,7 @@ function createWebServer(discordClient) {
     // Crear nuevo bono militar
     app.post('/api/admin/economy/bonus/create', requireAdmin, (req, res) => {
         try {
-            const guildId = process.env.GUILD_ID || 'GLOBAL';
+            const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
             const created = economyDb.createBonusPanel(guildId, req.body);
             res.json({ success: true, panel: created, message: 'Nuevo bono militar creado con éxito.' });
         } catch (e) {
@@ -443,7 +616,7 @@ function createWebServer(discordClient) {
     // Guardar/Actualizar configuración del panel de bonos
     app.post('/api/admin/economy/bonus/config', requireAdmin, (req, res) => {
         try {
-            const guildId = process.env.GUILD_ID || 'GLOBAL';
+            const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
             const updated = economyDb.saveBonusPanel(guildId, req.body);
             res.json({ success: true, panel: updated });
         } catch (e) {
@@ -476,7 +649,7 @@ function createWebServer(discordClient) {
     // Desplegar panel táctico de bonos en Discord
     app.post('/api/admin/economy/bonus/deploy-panel', requireAdmin, async (req, res) => {
         try {
-            const guildId = process.env.GUILD_ID || 'GLOBAL';
+            const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
             const { channelId, panelId } = req.body;
             const targetChannelId = channelId || req.body.channel_id;
 
@@ -488,7 +661,7 @@ function createWebServer(discordClient) {
                 return res.status(503).json({ success: false, message: 'El cliente de Discord no está conectado.' });
             }
 
-            const channel = await discordClient.channels.fetch(targetChannelId).catch(() => null);
+            const channel = await discordClient.guilds.cache.get(guildId)?.channels.fetch(targetChannelId).catch(() => null);
             if (!channel || !channel.isTextBased()) {
                 return res.status(400).json({ success: false, message: 'Canal de Discord no encontrado o no es de texto.' });
             }
@@ -544,7 +717,7 @@ function createWebServer(discordClient) {
                         let user = discordClient.users.cache.get(target);
                         if (!user) user = await discordClient.users.fetch(target).catch(() => null);
                         if (user) {
-                            economyDb.syncAccountUser(target, user.tag || user.username, user.displayAvatarURL({ extension: 'png', size: 128 }), process.env.GUILD_ID || 'GLOBAL');
+                            economyDb.syncAccountUser(target, user.tag || user.username, user.displayAvatarURL({ extension: 'png', size: 128 }), (req.guildId || process.env.GUILD_ID) || 'GLOBAL');
                         }
                     } catch (e) {}
                 }
@@ -567,14 +740,14 @@ function createWebServer(discordClient) {
 
     // Listar todos los ítems de la armería
     app.get('/api/admin/shop/items', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
         const items = economyDb.getShopItems(guildId, false);
         res.json({ success: true, items });
     });
 
     // Crear ítem de armería
     app.post('/api/admin/shop/items', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
         const {
             name, description, price, roles_to_give, roles_to_remove,
             required_roles, blocked_roles, stock, max_per_user, custom_reply, icon, is_active
@@ -658,14 +831,14 @@ function createWebServer(discordClient) {
 
     // Listar bonificaciones por rol
     app.get('/api/admin/economy/roles', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
         const rewards = economyDb.getRoleRewards(guildId);
         res.json({ success: true, rewards });
     });
 
     // Crear o actualizar bonificación por rol
     app.post('/api/admin/economy/roles', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
         const { role_id, role_name, multiplier, flat_bonus } = req.body;
         if (!role_id || !role_name) {
             return res.status(400).json({ success: false, message: 'ID y Nombre de rol requeridos.' });
@@ -694,12 +867,12 @@ function createWebServer(discordClient) {
     // =========================================================================
 
     app.get('/api/admin/events/templates', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
         res.json({ success: true, templates: economyDb.getEventReportTemplates(guildId, req.query.all === '1') });
     });
 
     app.post('/api/admin/events/templates', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
         if (!String(req.body.name || '').trim()) {
             return res.status(400).json({ success: false, message: 'El nombre de la plantilla es obligatorio.' });
         }
@@ -707,12 +880,12 @@ function createWebServer(discordClient) {
         if (!template) {
             return res.status(404).json({ success: false, message: 'La plantilla que intentas editar ya no existe.' });
         }
-        db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', req.body.id ? 'EDITAR_PLANTILLA_ACTA' : 'CREAR_PLANTILLA_ACTA', String(template.id), template.name);
+        db.addAdminAuditLog(req.adminOperator, req.body.id ? 'EDITAR_PLANTILLA_ACTA' : 'CREAR_PLANTILLA_ACTA', String(template.id), template.name);
         return res.json({ success: true, template, templates: economyDb.getEventReportTemplates(guildId) });
     });
 
     app.delete('/api/admin/events/templates/:id', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
         const templateId = parseInt(req.params.id, 10);
         if (!Number.isInteger(templateId) || templateId <= 0) {
             return res.status(400).json({ success: false, message: 'ID de plantilla inválido.' });
@@ -721,27 +894,38 @@ function createWebServer(discordClient) {
         return res.status(success ? 200 : 404).json({ success, message: success ? 'Plantilla archivada.' : 'Plantilla no encontrada.' });
     });
 
-    // Obtener evento activo y participantes en tiempo real con datos enriquecidos
+    // Obtener todos los eventos activos y sus participantes en tiempo real.
     app.get('/api/admin/events/active', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
-        const active = economyDb.getActiveEvent(guildId);
-        if (!active) {
-            return res.json({ success: true, has_active: false, event: null, attendees: [], stats: {} });
-        }
-        const attendees = economyDb.getEventRegistrations(active.id);
-        const stats = {
-            total: attendees.length,
-            registered: attendees.filter(a => a.status === 'REGISTERED').length,
-            confirmed: attendees.filter(a => a.attendance_confirmed === 1 || a.is_eligible === 1).length,
-            claimed: attendees.filter(a => a.claimed === 1).length,
-            totalPaid: attendees.reduce((acc, a) => acc + (a.payout_amount || 0), 0)
-        };
-        res.json({ success: true, has_active: true, event: active, attendees, stats });
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
+        const events = economyDb.getActiveEvents(guildId).map(event => {
+            const attendees = economyDb.getEventRegistrations(event.id);
+            return {
+                event,
+                attendees,
+                stats: {
+                    total: attendees.length,
+                    registered: attendees.filter(a => a.status === 'REGISTERED').length,
+                    confirmed: attendees.filter(a => a.attendance_confirmed === 1 || a.is_eligible === 1).length,
+                    claimed: attendees.filter(a => a.claimed === 1).length,
+                    totalPaid: attendees.reduce((acc, a) => acc + (a.payout_amount || 0), 0)
+                }
+            };
+        });
+        const selected = events[0] || null;
+        res.json({
+            success: true,
+            has_active: events.length > 0,
+            events,
+            // Compatibilidad con clientes anteriores.
+            event: selected?.event || null,
+            attendees: selected?.attendees || [],
+            stats: selected?.stats || {}
+        });
     });
 
     // Iniciar evento o convocatoria desde la web
     app.post('/api/admin/events/start', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || (discordClient && discordClient.guilds.cache.first() ? discordClient.guilds.cache.first().id : 'GLOBAL');
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
         const {
             name, event_type, target_channel_id, payout_channel_id,
             registration_channel_id, confirmation_channel_id,
@@ -759,7 +943,7 @@ function createWebServer(discordClient) {
         const payoutChan = payout_channel_id || targetChan;
 
         if (discordClient && discordClient.isReady()) {
-            const guild = discordClient.guilds.cache.get(guildId) || discordClient.guilds.cache.first();
+            const guild = discordClient.guilds.cache.get(guildId);
             const targetChannel = guild?.channels?.cache?.get(targetChan);
             if (!targetChannel) {
                 return res.status(400).json({ success: false, message: 'El canal seleccionado ya no existe o no está disponible para el bot.' });
@@ -787,7 +971,9 @@ function createWebServer(discordClient) {
             min_attendance_percent: parseInt(min_attendance_percent, 10) || 80,
             max_participants: parseInt(max_participants, 10) || 0,
             phase: type === 'REGISTRATION' ? 'REGISTRATION' : 'ACTIVE',
-            report_template_id: parsedTemplateId
+            report_template_id: parsedTemplateId,
+            created_by_id: 'WEB_ADMIN',
+            created_by_name: String(process.env.ADMIN_NAME || 'Comando Web').slice(0, 100)
         });
 
         if (!result.success) {
@@ -796,7 +982,7 @@ function createWebServer(discordClient) {
 
         // Snapshot inicial de miembros en voz si aplica
         if ((type === 'VOICE' || type === 'HYBRID') && discordClient && discordClient.isReady()) {
-            const guild = discordClient.guilds.cache.get(guildId) || discordClient.guilds.cache.first();
+            const guild = discordClient.guilds.cache.get(guildId);
             if (guild && targetChan) {
                 const channel = guild.channels.cache.get(targetChan);
                 if (channel && channel.isVoiceBased()) {
@@ -814,8 +1000,8 @@ function createWebServer(discordClient) {
 
     // Desplegar Panel de Registro / Convocatoria a Discord
     app.post('/api/admin/events/deploy-registration', requireAdmin, async (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
-        const active = economyDb.getActiveEvent(guildId);
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
+        const active = resolveRequestedActiveEvent(guildId, req.body.event_id);
         if (!active) {
             return res.status(404).json({ success: false, message: 'No hay operación militar activa.' });
         }
@@ -825,7 +1011,7 @@ function createWebServer(discordClient) {
             return res.status(500).json({ success: false, message: 'Bot de Discord no conectado.' });
         }
 
-        const guild = discordClient.guilds.cache.get(active.guild_id) || discordClient.guilds.cache.first();
+        const guild = discordClient.guilds.cache.get(active.guild_id);
         const channel = guild ? guild.channels.cache.get(channelId) : null;
         if (!channel || !channel.isTextBased()) {
             return res.status(400).json({ success: false, message: 'Canal de texto no encontrado en el servidor de Discord.' });
@@ -850,8 +1036,8 @@ function createWebServer(discordClient) {
 
     // Retirar un ausente del roster antes de la liquidación automática
     app.delete('/api/admin/events/attendance/:discordId', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
-        const active = economyDb.getActiveEvent(guildId);
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
+        const active = resolveRequestedActiveEvent(guildId, req.query.event_id);
         if (!active) {
             return res.status(404).json({ success: false, message: 'No hay operación militar activa.' });
         }
@@ -861,14 +1047,14 @@ function createWebServer(discordClient) {
             return res.status(400).json({ success: false, message: 'Discord ID requerido.' });
         }
 
-        const result = economyDb.expelUserFromEvent(active.id, discordId, process.env.ADMIN_NAME || 'ADMIN_WEB');
+        const result = economyDb.expelUserFromEvent(active.id, discordId, req.adminOperator);
         return res.status(result.success ? 200 : 400).json(result);
     });
 
     // Finalizar evento activo y liquidar inmediatamente a los asistentes aprobados
     app.post('/api/admin/events/end', requireAdmin, async (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
-        const active = economyDb.getActiveEvent(guildId);
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
+        const active = resolveRequestedActiveEvent(guildId, req.body.event_id);
 
         if (!active) {
             return res.status(404).json({ success: false, message: 'No hay ninguna operación militar activa para concluir.' });
@@ -892,7 +1078,7 @@ function createWebServer(discordClient) {
             let reportChannel = null;
             let reportWarning = null;
             try {
-                const guild = discordClient?.guilds?.cache?.get(active.guild_id) || discordClient?.guilds?.cache?.first();
+                const guild = discordClient?.guilds?.cache?.get(active.guild_id);
                 const fallbackChannel = guild?.channels?.cache?.get(active.registration_channel_id)
                     || guild?.channels?.cache?.get(active.payout_channel_id)
                     || guild?.channels?.cache?.get(active.target_channel_id)
@@ -920,7 +1106,7 @@ function createWebServer(discordClient) {
 
     // Historial de eventos concluidos
     app.get('/api/admin/events/history', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
         const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 50);
         const total = economyDb.countEventHistory(guildId);
         const totalPages = Math.max(1, Math.ceil(total / limit));
@@ -936,7 +1122,7 @@ function createWebServer(discordClient) {
             return res.status(400).json({ success: false, message: 'ID de evento inválido.' });
         }
 
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
         const event = economyDb.getEventById(eventId);
         if (!event || (event.guild_id !== guildId && event.guild_id !== 'GLOBAL')) {
             return res.status(404).json({ success: false, message: 'Evento no encontrado en este servidor.' });
@@ -955,14 +1141,14 @@ function createWebServer(discordClient) {
             return res.status(400).json({ success: false, message: 'ID de evento inválido.' });
         }
 
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
         const result = economyDb.deleteEventRecord(eventId, guildId);
         if (!result.success) {
             return res.status(result.event?.status === 'ACTIVE' ? 409 : 404).json(result);
         }
 
         db.addAdminAuditLog(
-            process.env.ADMIN_NAME || 'ADMIN_WEB',
+            req.adminOperator,
             'ELIMINAR_EVENTO',
             String(eventId),
             `${result.event.name} | ${result.attendanceCount} registros de asistencia`
@@ -997,7 +1183,7 @@ function createWebServer(discordClient) {
             return res.status(400).json({ success: false, message: 'ID numérico inválido.' });
         }
         const success = economyDb.deleteTransaction(id);
-        if (success) db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', 'ELIMINAR_TRANSACCION', String(id));
+        if (success) db.addAdminAuditLog(req.adminOperator, 'ELIMINAR_TRANSACCION', String(id));
         res.json({ success, message: success ? 'Registro contable eliminado exitosamente.' : 'No se encontró el registro.' });
     });
 
@@ -1008,20 +1194,20 @@ function createWebServer(discordClient) {
             return res.status(400).json({ success: false, message: 'No se enviaron identificadores válidos para eliminar.' });
         }
         const count = economyDb.deleteTransactions(ids);
-        if (count) db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', 'ELIMINAR_TRANSACCIONES_LOTE', null, `${count} registros`);
+        if (count) db.addAdminAuditLog(req.adminOperator, 'ELIMINAR_TRANSACCIONES_LOTE', null, `${count} registros`);
         res.json({ success: true, count, message: `Se eliminaron ${count} registro(s) contable(s).` });
     });
 
     // Vaciar / Eliminar todos los registros contables del libro
     app.delete('/api/admin/economy/transactions', requireAdmin, (req, res) => {
         const count = economyDb.clearAllTransactions();
-        if (count) db.addAdminAuditLog(process.env.ADMIN_NAME || 'ADMIN_WEB', 'VACIAR_LIBRO_CONTABLE', null, `${count} registros`);
+        if (count) db.addAdminAuditLog(req.adminOperator, 'VACIAR_LIBRO_CONTABLE', null, `${count} registros`);
         res.json({ success: true, count, message: `Se han purgado todos los registros contables (${count} eliminados).` });
     });
 
     // Estadísticas globales de tesorería militar
     app.get('/api/admin/economy/treasury/stats', requireAdmin, (req, res) => {
-        const guildId = process.env.GUILD_ID || 'GLOBAL';
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
         const stats = economyDb.getTreasuryStats(guildId);
         res.json({ success: true, stats });
     });
@@ -1037,6 +1223,61 @@ function createWebServer(discordClient) {
         const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 25, 1), 100);
         const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
         res.json({ success: true, logs: db.getAdminAuditLogs(limit, offset), limit, offset });
+    });
+
+    // =========================================================================
+    // ENDPOINTS DE SERVIDORES PRIVADOS (VIP SERVERS BRM 5)
+    // =========================================================================
+    app.get('/api/admin/servers', requireAdmin, (req, res) => {
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL';
+        res.json({ success: true, servers: db.getPrivateServers(guildId) });
+    });
+
+    function serverFields(body = {}) {
+        return { server_name: String(body.server_name || '').trim().slice(0, 80),
+            server_code: String(body.server_code || '').trim().slice(0, 150),
+            sector_map: String(body.sector_map || 'Ronograd Island').trim().slice(0, 120),
+            notes: String(body.notes || '').trim().slice(0, 500) };
+    }
+    app.post('/api/admin/servers', requireAdmin, async (req, res) => {
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL', fields = serverFields(req.body);
+        if (!fields.server_name || !fields.server_code) return res.status(400).json({ success: false, message: 'Indica el nombre y el código VIP real.' });
+        const created = db.createPrivateServer({ guild_id: guildId, ...fields });
+        db.addAdminAuditLog(req.adminOperator, 'CREAR_SERVIDOR_PRIVADO', `SRV #${created.id}`, created.server_name);
+        await refreshPublicServerBoard(discordClient, guildId);
+        res.json({ success: true, server: created });
+    });
+    app.put('/api/admin/servers/:id', requireAdmin, async (req, res) => {
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL', id = Number(req.params.id);
+        const existing = db.getPrivateServerById(id, guildId), fields = serverFields(req.body);
+        if (!existing) return res.status(404).json({ success: false, message: 'Servidor no encontrado.' });
+        if (!fields.server_name || !fields.server_code) return res.status(400).json({ success: false, message: 'Indica nombre y código VIP.' });
+        const server = db.updatePrivateServer(id, fields);
+        db.addAdminAuditLog(req.adminOperator, 'EDITAR_SERVIDOR_PRIVADO', `SRV #${id}`, JSON.stringify({ antes: serverFields(existing), despues: fields }));
+        await refreshPublicServerBoard(discordClient, guildId);
+        res.json({ success: true, server });
+    });
+    app.post('/api/admin/servers/:id/toggle', requireAdmin, async (req, res) => {
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL', id = Number(req.params.id);
+        const srv = db.getPrivateServerById(id, guildId);
+        if (!srv) return res.status(404).json({ success: false, message: 'Servidor no encontrado.' });
+        if (req.body?.expected_status !== srv.status) return res.status(409).json({ success: false, message: 'El estado cambió. Sincroniza la pizarra antes de confirmar.' });
+        const result = srv.status === 'EN_USO' ? db.releasePrivateServer(id, guildId)
+            : db.occupyPrivateServer(id, req.adminOperator.discord_id, req.adminOperator.operator_name,
+                String(req.body?.mission || 'Reserva de Alto Mando').slice(0, 180), null, guildId);
+        if (!result.success) return res.status(409).json(result);
+        db.addAdminAuditLog(req.adminOperator, srv.status === 'EN_USO' ? 'LIBERAR_SERVIDOR_PRIVADO' : 'OCUPAR_SERVIDOR_PRIVADO', `SRV #${id}`, srv.server_name);
+        await refreshPublicServerBoard(discordClient, guildId);
+        res.json({ success: true, server: result.server });
+    });
+    app.delete('/api/admin/servers/:id', requireAdmin, async (req, res) => {
+        const guildId = (req.guildId || process.env.GUILD_ID) || 'GLOBAL', id = Number(req.params.id);
+        const srv = db.getPrivateServerById(id, guildId);
+        if (!srv) return res.status(404).json({ success: false, message: 'Servidor no encontrado.' });
+        if (!db.deletePrivateServer(id, guildId)) return res.status(409).json({ success: false, message: 'Libera el servidor antes de eliminarlo.' });
+        db.addAdminAuditLog(req.adminOperator, 'ELIMINAR_SERVIDOR_PRIVADO', `SRV #${id}`, srv.server_name);
+        await refreshPublicServerBoard(discordClient, guildId);
+        res.json({ success: true });
     });
 
     return app;

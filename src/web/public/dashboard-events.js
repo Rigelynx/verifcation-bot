@@ -2,6 +2,8 @@
 // MÓDULO JAVASCRIPT: OPERACIONES Y PAGOS AUTOMÁTICOS (VOZ & CHAT)
 // =========================================================================
 let currentActiveEvent = null;
+let activeEventsPayload = null;
+let selectedActiveEventId = null;
 let eventHistoryPage = 1;
 let eventReportTemplates = [];
 let eventTemplateEditorOpen = false;
@@ -453,6 +455,17 @@ function renderActiveEventSection(data) {
     const container = document.getElementById('event-active-container');
     const sym = globalEcoSettings.currency_symbol || '$';
 
+    activeEventsPayload = data;
+    const activeEntries = Array.isArray(data.events) && data.events.length
+        ? data.events
+        : (data.event ? [{ event: data.event, attendees: data.attendees || [], stats: data.stats || {} }] : []);
+    if (activeEntries.length) {
+        let selectedEntry = activeEntries.find(entry => Number(entry.event.id) === Number(selectedActiveEventId));
+        if (!selectedEntry) selectedEntry = activeEntries[0];
+        selectedActiveEventId = selectedEntry.event.id;
+        data = { ...data, ...selectedEntry, has_active: true };
+    }
+
     if (data.has_active && data.event) {
         currentActiveEvent = data.event;
         const attendees = data.attendees || [];
@@ -476,21 +489,22 @@ function renderActiveEventSection(data) {
                 statusBadge = '<span class="status-badge aprobado">✅ ASISTENCIA CONFIRMADA</span>';
             }
 
-            const avatarSrc = a.avatar ? a.avatar : 'https://cdn.discordapp.com/embed/avatars/0.png';
+            const avatarSrc = escapeEventTemplateText(a.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png');
+            const discordId = escapeEventTemplateText(a.discord_id);
             return `
                 <tr>
                     <td style="color: var(--usmc-gold); font-family: var(--font-mono);">
                         <div style="display: flex; align-items: center; gap: 8px;">
                             <img src="${avatarSrc}" style="width: 28px; height: 28px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.2);" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
-                            <span>${a.discord_id}</span>
+                            <span>${discordId}</span>
                         </div>
                     </td>
-                    <td style="font-weight: bold; color: #fff;">${a.username}</td>
+                    <td style="font-weight: bold; color: #fff;">${escapeEventTemplateText(a.username)}</td>
                     <td>${statusBadge}</td>
                     <td style="color: var(--usmc-green);">${Math.floor(a.total_seconds_present / 60)} min / ${a.message_count} msgs</td>
                     <td style="font-size: 0.8rem; color: #8fa892;">${a.attendance_confirmed_at ? new Date(a.attendance_confirmed_at).toLocaleTimeString() : (a.registered_at ? new Date(a.registered_at).toLocaleTimeString() : '--')}</td>
                     <td style="text-align: right;">
-                        <button class="btn-retro danger" style="font-size: 0.75rem; padding: 4px 8px;" onclick="expelEventAttendee('${a.discord_id}')">
+                        <button class="btn-retro danger" style="font-size: 0.75rem; padding: 4px 8px;" onclick="expelEventAttendee('${discordId}')">
                             🗑️ Retirar
                         </button>
                     </td>
@@ -502,14 +516,38 @@ function renderActiveEventSection(data) {
             attendeesRows = `<tr><td colspan="6" style="text-align: center; color: #728c75;">Ningún combatiente registrado aún en esta operación militar.</td></tr>`;
         }
 
+        const activeEventCards = `
+            <div class="active-events-overview">
+                <div class="active-events-overview-head">
+                    <div>
+                        <span class="active-events-eyebrow">CENTRO DE OPERACIONES</span>
+                        <h4>EVENTOS ACTIVOS (${activeEntries.length})</h4>
+                    </div>
+                    <span class="status-badge aprobado">● EN VIVO</span>
+                </div>
+                <div class="active-events-grid">
+                    ${activeEntries.map(entry => {
+                        const event = entry.event;
+                        const isSelected = Number(event.id) === Number(selectedActiveEventId);
+                        return `<button type="button" class="active-event-card ${isSelected ? 'selected' : ''}" onclick="selectActiveEvent(${Number(event.id)})">
+                            <span class="active-event-card-id">#${Number(event.id)}</span>
+                            <strong>${escapeEventTemplateText(event.name)}</strong>
+                            <small>${escapeEventTemplateText(event.event_type)} · ${escapeEventTemplateText(event.phase || 'ACTIVE')}</small>
+                            <span>${entry.attendees?.length || 0} integrante(s)</span>
+                        </button>`;
+                    }).join('')}
+                </div>
+            </div>`;
+
         container.innerHTML = `
+            ${activeEventCards}
             <div class="retro-window" style="border-color: var(--usmc-gold); padding: 20px; margin-bottom: 25px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 18px;">
                     <div>
                         <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 4px;">
                             <span class="led-indicator led-green" style="animation: blink 1s infinite;"></span>
                             <h3 style="color: #fff; font-family: var(--font-tech); font-size: 1.3rem; margin: 0;">
-                                ${data.event.name.toUpperCase()} [#${data.event.id}]
+                                ${escapeEventTemplateText(data.event.name).toUpperCase()} [#${data.event.id}]
                             </h3>
                         </div>
                         <span class="status-badge" style="font-size: 0.8rem; padding: 4px 10px;">${phaseText}</span>
@@ -588,6 +626,7 @@ function renderActiveEventSection(data) {
         `;
     } else {
         currentActiveEvent = null;
+        selectedActiveEventId = null;
         const allChannels = (guildResources && guildResources.channels) || [];
         const voiceChannels = (guildResources && guildResources.voice_channels) || allChannels.filter(channel => channel.type === 'voice');
         const textChannels = (guildResources && guildResources.text_channels) || allChannels.filter(channel => channel.type === 'text');
@@ -729,13 +768,18 @@ function renderActiveEventSection(data) {
     }
 }
 
+function selectActiveEvent(eventId) {
+    selectedActiveEventId = Number(eventId);
+    if (activeEventsPayload) renderActiveEventSection(activeEventsPayload);
+}
+
 async function deployRegistrationToDiscord() {
     if (!currentActiveEvent) return;
     try {
         const res = await fetch('/api/admin/events/deploy-registration', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
-            body: JSON.stringify({ channel_id: currentActiveEvent.target_channel_id })
+            body: JSON.stringify({ event_id: currentActiveEvent.id, channel_id: currentActiveEvent.target_channel_id })
         });
         const data = await res.json();
         if (res.ok) {
@@ -752,7 +796,7 @@ async function expelEventAttendee(discordId) {
     if (!currentActiveEvent) return;
     if (!confirm(`¿RETIRAR A ${discordId} DEL ROSTER? No recibirá la paga al finalizar.`)) return;
     try {
-        const res = await fetch(`/api/admin/events/attendance/${encodeURIComponent(discordId)}`, {
+        const res = await fetch(`/api/admin/events/attendance/${encodeURIComponent(discordId)}?event_id=${encodeURIComponent(currentActiveEvent.id)}`, {
             method: 'DELETE',
             headers: { 'Authorization': `Bearer ${adminToken}` }
         });
@@ -773,6 +817,7 @@ async function finishActiveEvent() {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
             body: JSON.stringify({
+                event_id: currentActiveEvent.id,
                 result: document.getElementById('ev-report-result')?.value.trim() || '',
                 notes: document.getElementById('ev-report-notes')?.value.trim() || ''
             })

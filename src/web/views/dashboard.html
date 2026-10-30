@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="es">
-<head>
+<head><script src="/guild-session.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>USMC // CENTRO DE MANDO Y ADMINISTRACIÓN</title>
@@ -67,34 +67,51 @@
             word-break: break-word;
         }
     </style>
-</head>
-<body>
+    <link rel="stylesheet" href="/command-center.css">
+    <link rel="stylesheet" href="/field-journal.css">
+    <link rel="stylesheet" href="/field-motion.css">
+    <link rel="stylesheet" href="/mission-art.css">
+    <link rel="preload" as="image" href="/media/coastal-command.png">
+<link rel="stylesheet" href="/community-branding.css"><script src="/community-branding.js" defer></script></head>
+<body class="command-center field-journal">
     <div class="crt-overlay"></div>
     <div class="crt-vignette"></div>
 
     <!-- MODAL DE ACCESO / LOGIN MILITAR -->
     <div id="login-modal" class="login-overlay">
-        <div class="login-box retro-window">
+        <div class="login-box retro-window" style="max-width: 460px;">
+            <div class="login-visual"><img src="/media/coastal-command.png" alt="Base costera de operaciones"><span>USMC / COMMAND ACCESS</span></div>
             <div class="window-titlebar">
                 <div class="titlebar-left">
                     <span class="led-indicator led-amber"></span>
-                    <span>AUTORIZACIÓN DE OFICIAL // CENTRO DE MANDO</span>
+                    <span>ACCESO DE ALTO MANDO</span>
                 </div>
             </div>
             <div style="padding: 25px;">
-                <div style="text-align: center; margin-bottom: 20px;">
-                    <div class="military-insignia" style="margin: 0 auto 10px auto;">🎖️</div>
-                    <h3 style="color: #fff; font-family: var(--font-tech);">INGRESO DE CLAVE MAESTRA</h3>
-                    <p style="color: #728c75; font-size: 0.8rem;">Solo personal con rango de oficial de comando.</p>
+                <div style="text-align: center; margin-bottom: 18px;">
+                    <img class="login-crest" src="/media/unit-crest.svg" alt="Insignia USMC" width="55" height="65">
+                    <h3 style="color: #fff; font-family: var(--font-tech);">Bienvenido al mando.</h3>
+                    <p style="color: #728c75; font-size: 0.78rem;">Identifícate para continuar. Las acciones de la sesión quedan registradas con tu indicativo.</p>
                 </div>
+                <p id="discord-admin-info" class="ops-muted" role="status"></p>
+                <a id="discord-admin-login" class="hero-button discord-login-button" href="/auth/discord?next=%2Fadmin" hidden>Continuar con Discord →</a>
+                <p class="ops-muted"><a href="/patrullas">Portal de operaciones ↗</a></p>
                 <form id="login-form">
+                    <div class="form-group" style="border-left-color: var(--usmc-gold);">
+                        <label class="form-label">Tu nombre o indicativo</label>
+                        <input type="text" id="admin-operator-name" class="retro-input" placeholder="Ej: General_Vargas / Coronel_Rios" required>
+                    </div>
+                    <div class="form-group" style="border-left-color: var(--usmc-green);">
+                        <label class="form-label">ID de Discord · opcional</label>
+                        <input type="text" id="admin-operator-id" class="retro-input" placeholder="Ej: 123456789012345678">
+                    </div>
                     <div class="form-group" style="border-left-color: var(--usmc-amber);">
-                        <label class="form-label">CLAVE DE ACCESO MILITAR (ADMIN_KEY):</label>
+                        <label class="form-label">Credencial de acceso</label>
                         <input type="password" id="admin-pass" class="retro-input" placeholder="••••••••••••••••" required>
                     </div>
                     <div style="margin-top: 15px;">
                         <button type="submit" class="btn-retro amber" style="width: 100%; justify-content: center;">
-                            DESBLOQUEAR TERMINAL
+                            Acceder al centro de mando →
                         </button>
                     </div>
                 </form>
@@ -104,53 +121,44 @@
 
     <!-- CONTENEDOR PRINCIPAL DEL DASHBOARD -->
     <div class="terminal-wrapper" id="main-content" style="display: none;">
-        <div class="retro-window">
-            <!-- BARRA DE TÍTULO -->
-            <div class="window-titlebar">
-                <div class="titlebar-left">
-                    <span class="led-indicator led-green"></span>
-                    <span>CENTRO DE MANDO TÁCTICO &bull; USMC DEFENSE DASHBOARD v2.4</span>
+        <div class="retro-window dashboard-shell">
+            <header class="window-titlebar journal-topbar">
+                <div class="journal-wordmark"><img src="/media/unit-crest.svg" alt="Insignia de la unidad USMC" width="28" height="34"><strong>USMC<span>COMMAND</span></strong><span class="wordmark-separator">/</span><span id="journal-breadcrumb">Personal</span></div>
+                <div class="window-controls"><a href="/asistente" class="workspace-link">Asistente ↗</a><a href="/patrullas" class="workspace-link">Operaciones ↗</a><span id="active-operator-badge">Operador</span>
+                    <button class="win-btn" onclick="TerminalFX.toggleAudio()" title="Activar o silenciar audio" aria-label="Activar o silenciar audio">♫</button>
+                    <button class="win-btn" onclick="logoutAdmin()" title="Cerrar sesión" aria-label="Cerrar sesión"><svg class="ui-icon"><use href="/media/interface-icons.svg#exit"/></svg></button>
+                    <button id="menu-toggle" class="win-btn nav-toggle" aria-controls="journal-navigation" aria-expanded="false" aria-label="Abrir navegación"><svg class="ui-icon"><use href="/media/interface-icons.svg#menu"/></svg></button>
                 </div>
-                <div class="window-controls">
-                    <button class="win-btn" onclick="TerminalFX.toggleAudio()" title="Audio">🔊</button>
-                    <button class="win-btn" onclick="TerminalFX.toggleScanlines()" title="CRT">📺</button>
-                    <button class="win-btn" onclick="logoutAdmin()" title="Desconectar">✕</button>
+            </header>
+            <section class="military-header command-hero" aria-label="Centro de mando">
+                <img class="hero-scene" src="/media/coastal-command.png" alt="" fetchpriority="high" width="1672" height="941">
+                <div class="hero-copy"><div class="hero-edition"><span class="edition-dot"></span> OPERATIONS COMMAND <span id="journal-chapter">FIELDNOTES / 01</span></div>
+                    <h1 id="journal-hero-title">El control.
+En tus manos.</h1>
+                    <p id="journal-hero-description">Cada operador cuenta. Coordina el personal, el despliegue y los recursos de tu unidad desde un mismo lugar.</p>
+                    <div class="hero-actions"><button onclick="switchTab('servidores')" class="hero-button">Ir al despliegue <span>↗</span></button><button onclick="switchTab('tienda')" class="hero-link">Explorar intendencia <span>→</span></button></div>
                 </div>
-            </div>
-
-            <!-- ENCABEZADO -->
-            <div class="military-header">
-                <div class="header-meta">
-                    <div>ESTACIÓN DE CONTROL: <strong>BASE CENTRAL &bull; SECTOR ALPHA</strong></div>
-                    <div>ESTADO DE RED: <span style="color: var(--usmc-green);">EN LÍNEA / CIFRADO ACTIVO</span></div>
-                    <div id="utc-clock">RELOJ ZULU: --:--:-- UTC</div>
-                </div>
-
-                <div class="base-branding">
-                    <div class="military-insignia">🛡️</div>
-                    <div class="branding-text">
-                        <h1>SISTEMA CENTRAL DE CONTROL Y EXPEDIENTES</h1>
-                        <p>GESTIÓN DE RECLUTAS, PREGUNTAS DINÁMICAS Y POLÍTICAS DE ACCESO</p>
-                    </div>
-                </div>
-            </div>
+                <div class="hero-seal"><img src="/media/unit-crest.svg" alt="" width="72" height="84"><span data-community-label>COMUNIDAD<br>CENTRO DE OPERACIONES</span></div>
+                <div class="hero-caption"><span>COMUNIDAD / OPERACIONES</span><span id="utc-clock">RELOJ ZULU</span></div>
+            </section>
 
             <!-- NAVEGACIÓN POR PESTAÑAS RETRO -->
-            <div class="admin-nav" style="display: flex; flex-wrap: wrap; gap: 4px;">
-                <button class="nav-tab active" onclick="switchTab('expedientes')">📋 EXPEDIENTES (<span id="count-total">0</span>)</button>
-                <button class="nav-tab" onclick="switchTab('cuestionario')">⚙️ CUESTIONARIO</button>
-                <button class="nav-tab" onclick="switchTab('bot-config')">🎛️ BOT & PERMISOS</button>
-                <button class="nav-tab" onclick="switchTab('economia')">💰 ECONOMÍA</button>
-                <button class="nav-tab" onclick="switchTab('tienda')">🛒 ARMERÍA (SHOP)</button>
-                <button class="nav-tab" onclick="switchTab('roles')">🎖️ RANGOS & MULTIPLICADORES</button>
-                <button class="nav-tab" onclick="switchTab('eventos')">📡 PAGOS DE EVENTOS (VOZ/CHAT)</button>
-                <button class="nav-tab" onclick="switchTab('comandos')">🛡️ PERMISOS DE COMANDOS</button>
-                <button class="nav-tab" onclick="switchTab('auditoria')">📜 AUDITORÍA & REGISTRO CONTABLE</button>
-            </div>
+            <nav id="journal-navigation" class="admin-nav" aria-label="Secciones del centro de mando">
+                <button class="nav-tab active" data-section="expedientes" onclick="switchTab('expedientes')"><svg class="ui-icon"><use href="/media/interface-icons.svg#users"/></svg><span>Personal</span><span id="count-total" class="nav-count">0</span></button>
+                <button class="nav-tab" data-section="cuestionario" onclick="switchTab('cuestionario')"><svg class="ui-icon"><use href="/media/interface-icons.svg#sliders"/></svg><span>Admisión</span></button>
+                <button class="nav-tab" data-section="bot-config" onclick="switchTab('bot-config')"><svg class="ui-icon"><use href="/media/interface-icons.svg#settings"/></svg><span>Configuración</span></button>
+                <button class="nav-tab" data-section="economia" onclick="switchTab('economia')"><svg class="ui-icon"><use href="/media/interface-icons.svg#wallet"/></svg><span>Tesorería</span></button>
+                <button class="nav-tab" data-section="tienda" onclick="switchTab('tienda')"><svg class="ui-icon"><use href="/media/interface-icons.svg#package"/></svg><span>Intendencia</span></button>
+                <button class="nav-tab" data-section="roles" onclick="switchTab('roles')"><svg class="ui-icon"><use href="/media/interface-icons.svg#medal"/></svg><span>Rangos</span></button>
+                <button class="nav-tab" data-section="eventos" onclick="switchTab('eventos')"><svg class="ui-icon"><use href="/media/interface-icons.svg#radar"/></svg><span>Operaciones</span></button>
+                <button class="nav-tab" data-section="comandos" onclick="switchTab('comandos')"><svg class="ui-icon"><use href="/media/interface-icons.svg#lock"/></svg><span>Protocolos</span></button>
+                <button class="nav-tab" data-section="auditoria" onclick="switchTab('auditoria')"><svg class="ui-icon"><use href="/media/interface-icons.svg#history"/></svg><span>Auditoría</span></button>
+                <button class="nav-tab" data-section="servidores" onclick="switchTab('servidores')"><svg class="ui-icon"><use href="/media/interface-icons.svg#server"/></svg><span>Servidores privados</span></button>
+            </nav>
 
             <div class="dossier-body">
                 <!-- TELEMETRÍA SUPERIOR -->
-                <div class="telemetry-grid">
+                <div class="telemetry-grid" id="personnel-telemetry">
                     <div class="telemetry-card">
                         <div class="telemetry-label">TOTAL EXPEDIENTES</div>
                         <div class="telemetry-value" id="stat-total">0</div>
@@ -170,7 +178,20 @@
                 </div>
 
                 <!-- TAB 1: EXPEDIENTES -->
-                <div id="tab-expedientes" class="tab-pane">
+                <div id="tab-servidores" class="tab-pane" style="display: none;">
+                    <div class="ops-heading"><div><p class="ops-eyebrow">COMUNIDAD / DESPLIEGUE</p><h2>Servidores privados</h2><p class="ops-muted">Coordina disponibilidad, mando y misión desde una misma pizarra.</p></div>
+                        <button class="btn-retro primary" onclick="openServerEditor()">＋ Registrar servidor</button></div>
+                    <div class="telemetry-grid">
+                        <div class="telemetry-card"><div class="telemetry-label">Disponibles</div><div id="servers-free" class="telemetry-value green">—</div></div>
+                        <div class="telemetry-card"><div class="telemetry-label">En uso</div><div id="servers-used" class="telemetry-value amber">—</div></div>
+                        <div class="telemetry-card"><div class="telemetry-label">Registrados</div><div id="servers-total" class="telemetry-value">—</div></div>
+                    </div>
+                    <div class="ops-toolbar"><input id="servers-search" class="retro-input" type="search" placeholder="Buscar servidor, sector o misión…" aria-label="Buscar servidores" oninput="renderOperationServers()">
+                        <select id="servers-status" class="retro-select" aria-label="Estado del servidor" onchange="renderOperationServers()"><option value="">Todos los estados</option><option value="LIBRE">Disponibles</option><option value="EN_USO">En uso</option></select>
+                        <button class="btn-retro" onclick="loadOperationServers()">↻ Sincronizar</button><span id="servers-sync" class="ops-muted"></span></div>
+                    <p id="servers-feedback" class="ops-feedback" role="status"></p><div id="servers-grid" class="ops-grid"></div>
+                </div>
+                <div id="tab-expedientes" class="tab-pane"><div class="journal-intro"><div><span class="journal-eyebrow">01 / PERSONAL</span><h2>El equipo hace la diferencia.</h2><p>Consulta expedientes y acompaña a los nuevos operadores de tu unidad.</p></div><img src="/media/unit-crest.svg" alt="" width="48" height="56"></div>
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
                         <div style="display: flex; gap: 8px;">
                             <button class="btn-retro" style="padding: 6px 12px; font-size: 0.85rem;" onclick="filterVerifications('TODOS')">TODOS</button>
@@ -744,18 +765,8 @@
                 <!-- TAB 5: ARMERÍA Y TIENDA (SHOP)                                           -->
                 <!-- ========================================================================= -->
                 <div id="tab-tienda" class="tab-pane" style="display: none;">
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
-                        <div style="border-left: 3px solid var(--usmc-green); padding-left: 15px;">
-                            <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.1rem; margin-bottom: 4px;">
-                                🛒 CATÁLOGO DE ARMERÍA Y TIENDA MILITAR (SHOP)
-                            </h4>
-                            <p style="color: #728c75; font-size: 0.85rem;">Configura ítems que otorgan roles, retiran roles previos o exigen rangos para ser comprados.</p>
-                        </div>
-                        <div>
-                            <button class="btn-retro primary" onclick="openShopModal()">➕ NUEVO SUMINISTRO / RANGO EN TIENDA</button>
-                        </div>
-                    </div>
-
+                    <div class="journal-intro"><div><span class="journal-eyebrow">05 / QUARTERMASTER</span><h2>El equipamiento del equipo.</h2><p>Administra suministros, acreditaciones y rangos de tu catálogo.</p></div><button class="btn-retro primary" onclick="openShopModal()">＋ Nuevo artículo</button></div>
+                    <div class="ops-toolbar"><input class="retro-input" id="shop-search" type="search" placeholder="Buscar artículo…" aria-label="Buscar artículo" oninput="renderShopItems()"><select class="retro-select" id="shop-category-filter" aria-label="Categoría de artículo" onchange="renderShopItems()"><option value="all">Todo el catálogo</option><option value="ranks">Rangos y acreditaciones</option><option value="supplies">Suministros</option><option value="empty">Sin stock</option></select></div>
                     <div id="shop-items-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px;">
                         <!-- Renderizado dinámico de tarjetas de ítems -->
                     </div>
@@ -1123,7 +1134,7 @@
 
             <!-- PIE DE PÁGINA -->
             <div class="military-footer">
-                ESTACIÓN DE ADMINISTRACIÓN MILITAR RETRO &bull; BASE DE DATOS SQLITE LOCAL &bull; ALTA VELOCIDAD
+                COMUNIDAD &nbsp; / &nbsp; OPERACIONES &nbsp; · &nbsp; COORDINACIÓN DE UNIDAD
             </div>
         </div>
     </div>
@@ -1505,10 +1516,23 @@
         </div>
     </div>
 
+    <dialog id="server-editor" class="ops-dialog"><form id="server-editor-form"><h2 id="server-editor-title">Registrar servidor</h2>
+        <input name="id" type="hidden"><label for="srv-name">Nombre del servidor</label><input id="srv-name" name="server_name" class="retro-input" required maxlength="80" placeholder="Servidor Alpha">
+        <label for="srv-code">Código VIP</label><input id="srv-code" name="server_code" class="retro-input" required maxlength="150" placeholder="Código o enlace del servidor">
+        <label for="srv-map">Mapa / sector (AO)</label><input id="srv-map" name="sector_map" class="retro-input" maxlength="120" placeholder="Ronograd Island">
+        <label for="srv-notes">Notas de despliegue</label><textarea id="srv-notes" name="notes" class="retro-textarea" maxlength="500"></textarea>
+        <p id="server-editor-feedback" class="ops-feedback" role="status"></p><div class="btn-command-group"><button class="btn-retro" type="button" onclick="document.getElementById('server-editor').close()">Cancelar</button><button class="btn-retro primary" type="submit">Guardar servidor</button></div></form></dialog>
+    <dialog id="server-action" class="ops-dialog"><form id="server-action-form"><h2 id="server-action-title">Gestionar servidor</h2><p id="server-action-description" class="ops-muted"></p>
+        <input name="id" type="hidden"><input name="expected_status" type="hidden"><div id="server-mission-group"><label for="srv-mission">Misión / patrullaje</label><input id="srv-mission" name="mission" class="retro-input" maxlength="180" placeholder="Patrullaje de reconocimiento"></div>
+        <p id="server-action-feedback" class="ops-feedback" role="status"></p><div class="btn-command-group"><button type="button" class="btn-retro" onclick="document.getElementById('server-action').close()">Cancelar</button><button type="submit" class="btn-retro primary">Confirmar</button></div></form></dialog>
+    <script src="/dashboard-operations.js" defer></script>
+    <script src="/discord-session.js" defer></script>
     <script src="/dashboard-core.js" defer></script>
     <script src="/dashboard-economy.js" defer></script>
     <script src="/dashboard-events.js" defer></script>
     <script src="/dashboard-audit.js" defer></script>
     <script src="/dashboard-commands.js" defer></script>
+    <script src="/editorial-ui.js" defer></script>
+    <script src="/field-motion.js" defer></script>
 </body>
 </html>

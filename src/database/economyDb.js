@@ -1,9 +1,17 @@
-const { db } = require('./db');
+const { currentGuild, bindExports } = require('./guildContext');
+const { migrateGuildTables } = require('./guildMigration');
+const serverDb = require('./db');
+const { db } = serverDb;
 
 // =========================================================================
 // INICIALIZACIÓN DE TABLAS DE ECONOMÍA, TIENDA Y EVENTOS
 // =========================================================================
 function initEconomyTables() {
+    db.exec(`CREATE TABLE IF NOT EXISTS shop_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, discord_id TEXT NOT NULL, item_id INTEGER NOT NULL,
+        price INTEGER NOT NULL, finite_stock INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'PENDING',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
     // 1. Cuentas financieras de los reclutas
     db.exec(`
         CREATE TABLE IF NOT EXISTS economy_accounts (
@@ -39,22 +47,11 @@ function initEconomyTables() {
         console.error('[DB Column Migration Error]:', e.message);
     }
 
-    // Purga automática de cuentas y datos temporales de prueba
-    try {
-        db.exec(`
-            DELETE FROM economy_accounts WHERE discord_id LIKE 'TEST_%';
-            DELETE FROM economy_inventory WHERE discord_id LIKE 'TEST_%';
-            DELETE FROM economy_transactions WHERE discord_id LIKE 'TEST_%';
-            DELETE FROM event_attendance WHERE discord_id LIKE 'TEST_%';
-            DELETE FROM economy_shop_items WHERE roles_to_give LIKE '%ROLE_SARGENTO_ID%';
-        `);
-    } catch (e) {}
-
     // 2. Parámetros de configuración económica global
     db.exec(`
         CREATE TABLE IF NOT EXISTS economy_settings (
             guild_id TEXT PRIMARY KEY,
-            currency_name TEXT DEFAULT 'Créditos USMC',
+            currency_name TEXT DEFAULT 'Créditos',
             currency_symbol TEXT DEFAULT '$',
             work_min INTEGER DEFAULT 50,
             work_max INTEGER DEFAULT 250,
@@ -148,7 +145,10 @@ function initEconomyTables() {
             claim_expires_at INTEGER DEFAULT 0,
             discord_message_id TEXT DEFAULT NULL,
             completion_channel_id TEXT DEFAULT NULL,
-            completion_message_id TEXT DEFAULT NULL
+            completion_message_id TEXT DEFAULT NULL,
+            created_by_id TEXT DEFAULT NULL,
+            created_by_name TEXT DEFAULT NULL,
+            finalization_draft TEXT DEFAULT NULL
         );
     `);
 
@@ -185,7 +185,7 @@ function initEconomyTables() {
             group_roles TEXT DEFAULT '[]',
             evidence_required INTEGER DEFAULT 0,
             sticker_id TEXT DEFAULT '',
-            footer TEXT DEFAULT 'USMC • Registro Operativo Oficial',
+            footer TEXT DEFAULT 'Registro Oficial de la Comunidad',
             template_kind TEXT DEFAULT 'ALL',
             approved_label TEXT DEFAULT 'APROBADOS / ASISTENTES',
             rejected_label TEXT DEFAULT 'NO APROBADOS',
@@ -251,45 +251,11 @@ function initEconomyTables() {
     `);
 
     // Sembrar todos los protocolos configurables del bot
-    const defaultCmds = [
-        'admin:verificar-manual', 'admin:desverificar', 'admin:panel-web', 'admin:configurar',
-        'bono:panel', 'bono:crear', 'bono:eliminar', 'bono:reset_reclamos', 'bono:lista', 'bono:reclamar', 'bono:dar', 'bono:masivo', 'bono:estado',
-        'datos-usuario',
-        'economia:balance', 'economia:depositar', 'economia:retirar', 'economia:pagar', 'economia:trabajar', 'economia:crimen', 'economia:robar', 'economia:ranking',
-        'economia:admin:dar', 'economia:admin:quitar', 'economia:admin:fijar',
-        'evento:convocar', 'evento:entrenamiento', 'evento:lista', 'evento:iniciar', 'evento:finalizar', 'evento:estado',
-        'help',
-        'mod:ban', 'mod:kick', 'mod:timeout', 'mod:purge',
-        'panel-verificacion',
-        'tienda:panel', 'tienda:comprar', 'tienda:inventario'
-    ];
+    const defaultCmds = require('./commandCatalog');
     const insertCmd = db.prepare('INSERT OR IGNORE INTO economy_command_permissions (command_name, is_enabled, allowed_roles) VALUES (?, 1, ?)');
     for (const c of defaultCmds) {
         insertCmd.run(c, '[]');
     }
-
-    // Migrar la primera versión de la matriz (que guardaba subcomandos de
-    // economía sin prefijo) a sus rutas completas, sin perder restricciones.
-    const legacyCommandMap = {
-        balance: 'economia:balance', trabajar: 'economia:trabajar', crimen: 'economia:crimen',
-        robar: 'economia:robar', pagar: 'economia:pagar', depositar: 'economia:depositar',
-        retirar: 'economia:retirar', ranking: 'economia:ranking'
-    };
-    const findCmd = db.prepare('SELECT is_enabled, allowed_roles FROM economy_command_permissions WHERE command_name = ?');
-    const moveCmd = db.prepare('UPDATE economy_command_permissions SET is_enabled = ?, allowed_roles = ? WHERE command_name = ?');
-    const removeCmd = db.prepare('DELETE FROM economy_command_permissions WHERE command_name = ?');
-    for (const [legacyName, canonicalName] of Object.entries(legacyCommandMap)) {
-        const legacy = findCmd.get(legacyName);
-        const canonical = findCmd.get(canonicalName);
-        if (legacy && canonical) {
-            moveCmd.run(legacy.is_enabled, legacy.allowed_roles, canonicalName);
-        }
-        if (legacy) removeCmd.run(legacyName);
-    }
-
-    // Depurar comandos raíz obsoletos/innecesarios que no son ejecutables por sí mismos en Discord
-    db.prepare("DELETE FROM economy_command_permissions WHERE command_name IN ('admin', 'bono', 'economia', 'mod', 'tienda', 'evento')").run();
-    db.prepare("DELETE FROM economy_command_permissions WHERE command_name IN ('evento:confirmar', 'evento:panel_pago', 'evento:pagar_todos')").run();
 
     // Migraciones seguras para columnas avanzadas de eventos y pases de lista
     try {
@@ -303,10 +269,15 @@ function initEconomyTables() {
         if (!pCols.includes('reward_role_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN reward_role_id TEXT DEFAULT NULL");
         if (!pCols.includes('report_template_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN report_template_id INTEGER DEFAULT NULL");
         if (!pCols.includes('report_template_snapshot')) db.exec("ALTER TABLE event_payouts ADD COLUMN report_template_snapshot TEXT DEFAULT NULL");
+        if (!pCols.includes('report_channel_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN report_channel_id TEXT DEFAULT NULL");
         if (!pCols.includes('report_message_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN report_message_id TEXT DEFAULT NULL");
         if (!pCols.includes('report_data')) db.exec("ALTER TABLE event_payouts ADD COLUMN report_data TEXT DEFAULT NULL");
         if (!pCols.includes('completion_channel_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN completion_channel_id TEXT DEFAULT NULL");
         if (!pCols.includes('completion_message_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN completion_message_id TEXT DEFAULT NULL");
+        if (!pCols.includes('created_by_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN created_by_id TEXT DEFAULT NULL");
+        if (!pCols.includes('created_by_name')) db.exec("ALTER TABLE event_payouts ADD COLUMN created_by_name TEXT DEFAULT NULL");
+        if (!pCols.includes('finalization_draft')) db.exec("ALTER TABLE event_payouts ADD COLUMN finalization_draft TEXT DEFAULT NULL");
+        if (!pCols.includes('private_server_id')) db.exec("ALTER TABLE event_payouts ADD COLUMN private_server_id INTEGER DEFAULT NULL");
     } catch (e) {
         console.error('[Migration Error event_payouts]:', e.message);
     }
@@ -325,13 +296,13 @@ function initEconomyTables() {
             ['Universal • Patrullajes', 'PATROL', 'REGISTRO OFICIAL DE PATRULLAJE', '🧭', '#0b7285', '## Patrullaje completado\nLa unidad concluyó **{evento}** bajo el mando de {oficial}.', 'PERSONAL PARTICIPANTE', 'AUSENTES / RETIRADOS', 'Comando de Patrullaje • Registro #{id}'],
             ['Universal • Operaciones', 'OPERATION', 'REGISTRO FINAL DE OPERACIÓN', '🎖️', '#9c6f19', '## Operación concluida\nQueda registrado el cierre de **{evento}** con `{aprobados}` participantes aprobados.', 'EFECTIVOS APROBADOS', 'NO APTOS / RETIRADOS', 'Estado Mayor • Operación #{id}']
         ];
-        const findUniversalTemplate = db.prepare("SELECT id FROM event_report_templates WHERE guild_id='GLOBAL' AND name=? LIMIT 1");
+        const findUniversalTemplate = db.prepare("SELECT id FROM event_report_templates WHERE guild_id=current_guild_id() AND name=? LIMIT 1");
         const insertUniversalTemplate = db.prepare(`
             INSERT INTO event_report_templates (
                 guild_id, name, title, description, emoji, color, report_channel_id,
                 grouping_mode, group_roles, evidence_required, sticker_id, footer,
                 template_kind, approved_label, rejected_label, show_removed, show_payout, is_active
-            ) VALUES ('GLOBAL', ?, ?, ?, ?, ?, '', 'STATUS', '[]', 0, '', ?, ?, ?, ?, 1, 0, 1)
+            ) VALUES (current_guild_id(), ?, ?, ?, ?, ?, '', 'STATUS', '[]', 0, '', ?, ?, ?, ?, 1, 0, 1)
         `);
         for (const [name, kind, title, emoji, color, description, approvedLabel, rejectedLabel, footer] of universalTemplates) {
             if (!findUniversalTemplate.get(name)) insertUniversalTemplate.run(name, title, description, emoji, color, footer, kind, approvedLabel, rejectedLabel);
@@ -346,6 +317,9 @@ function initEconomyTables() {
         if (!aCols.includes('attendance_confirmed')) db.exec("ALTER TABLE event_attendance ADD COLUMN attendance_confirmed INTEGER DEFAULT 0");
         if (!aCols.includes('attendance_confirmed_at')) db.exec("ALTER TABLE event_attendance ADD COLUMN attendance_confirmed_at DATETIME DEFAULT NULL");
         if (!aCols.includes('status')) db.exec("ALTER TABLE event_attendance ADD COLUMN status TEXT DEFAULT 'PRESENT'");
+        if (!aCols.includes('roll_call_status')) db.exec('ALTER TABLE event_attendance ADD COLUMN roll_call_status TEXT DEFAULT NULL');
+        if (!aCols.includes('roll_call_by')) db.exec('ALTER TABLE event_attendance ADD COLUMN roll_call_by TEXT DEFAULT NULL');
+        if (!aCols.includes('roll_call_at')) db.exec('ALTER TABLE event_attendance ADD COLUMN roll_call_at DATETIME DEFAULT NULL');
     } catch (e) {
         console.error('[Migration Error event_attendance]:', e.message);
     }
@@ -355,8 +329,34 @@ function initEconomyTables() {
 // GESTIÓN DE CUENTAS FINANCIERAS (WALLET / BANK)
 // =========================================================================
 
-function getAccount(discordId, defaultGuildId = 'GLOBAL', username = '', avatar = '') {
-    let stmt = db.prepare('SELECT * FROM economy_accounts WHERE discord_id = ?');
+function migrateLegacyCommandNames() {
+    // Migrar la primera versión de la matriz (que guardaba subcomandos de
+    // economía sin prefijo) a sus rutas completas, sin perder restricciones.
+    const legacyCommandMap = {
+        balance: 'economia:balance', trabajar: 'economia:trabajar', crimen: 'economia:crimen',
+        robar: 'economia:robar', pagar: 'economia:pagar', depositar: 'economia:depositar',
+        retirar: 'economia:retirar', ranking: 'economia:ranking'
+    };
+    const findCmd = db.prepare('SELECT is_enabled, allowed_roles FROM economy_command_permissions WHERE guild_id = current_guild_id() AND command_name = ?');
+    const moveCmd = db.prepare('UPDATE economy_command_permissions SET is_enabled = ?, allowed_roles = ? WHERE guild_id = current_guild_id() AND command_name = ?');
+    const removeCmd = db.prepare('DELETE FROM economy_command_permissions WHERE guild_id = current_guild_id() AND command_name = ?');
+    for (const [legacyName, canonicalName] of Object.entries(legacyCommandMap)) {
+        const legacy = findCmd.get(legacyName);
+        const canonical = findCmd.get(canonicalName);
+        if (legacy && canonical) {
+            moveCmd.run(legacy.is_enabled, legacy.allowed_roles, canonicalName);
+        }
+        if (legacy) removeCmd.run(legacyName);
+    }
+
+    // Depurar comandos raíz obsoletos/innecesarios que no son ejecutables por sí mismos en Discord
+    db.prepare("DELETE FROM economy_command_permissions WHERE guild_id = current_guild_id() AND command_name IN ('admin', 'bono', 'economia', 'mod', 'tienda', 'evento')").run();
+    db.prepare("DELETE FROM economy_command_permissions WHERE guild_id = current_guild_id() AND command_name IN ('evento:confirmar', 'evento:panel_pago', 'evento:pagar_todos')").run();
+
+}
+
+function getAccount(discordId, defaultGuildId = currentGuild(), username = '', avatar = '') {
+    let stmt = db.prepare('SELECT * FROM (SELECT * FROM economy_accounts WHERE guild_id = current_guild_id()) AS economy_accounts WHERE discord_id = ?');
     let account = stmt.get(discordId);
 
     if (!account) {
@@ -367,8 +367,8 @@ function getAccount(discordId, defaultGuildId = 'GLOBAL', username = '', avatar 
             : 100;
 
         const insert = db.prepare(`
-            INSERT INTO economy_accounts (discord_id, username, avatar, wallet, bank, bank_capacity)
-            VALUES (?, ?, ?, ?, 0, 50000)
+            INSERT INTO economy_accounts (guild_id, discord_id, username, avatar, wallet, bank, bank_capacity)
+            VALUES (current_guild_id(), ?, ?, ?, ?, 0, 50000)
         `);
         insert.run(discordId, username || '', avatar || '', startingWallet);
         account = stmt.get(discordId);
@@ -385,16 +385,16 @@ function getAccount(discordId, defaultGuildId = 'GLOBAL', username = '', avatar 
         }
         if (fields.length > 0) {
             params.push(discordId);
-            db.prepare(`UPDATE economy_accounts SET ${fields.join(', ')} WHERE discord_id = ?`).run(...params);
+            db.prepare(`UPDATE economy_accounts SET ${fields.join(', ')} WHERE guild_id = current_guild_id() AND (discord_id = ?) `).run(...params);
             account = stmt.get(discordId);
         }
     }
     return account;
 }
 
-function syncAccountUser(discordId, username = '', avatar = '', guildId = 'GLOBAL') {
+function syncAccountUser(discordId, username = '', avatar = '', guildId = currentGuild()) {
     if (!discordId) return;
-    return getAccount(discordId, guildId || 'GLOBAL', username, avatar);
+    return getAccount(discordId, guildId || currentGuild(), username, avatar);
 }
 
 function updateCooldown(discordId, type, timestamp = Math.floor(Date.now() / 1000)) {
@@ -407,7 +407,7 @@ function updateCooldown(discordId, type, timestamp = Math.floor(Date.now() / 100
     const col = colMap[type];
     if (!col) return false;
 
-    const stmt = db.prepare(`UPDATE economy_accounts SET ${col} = ?, updated_at = CURRENT_TIMESTAMP WHERE discord_id = ?`);
+    const stmt = db.prepare(`UPDATE economy_accounts SET ${col} = ?, updated_at = CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (discord_id = ?) `);
     stmt.run(timestamp, discordId);
     return true;
 }
@@ -415,9 +415,9 @@ function updateCooldown(discordId, type, timestamp = Math.floor(Date.now() / 100
 function addWallet(discordId, amount, type = 'GENERAL', details = '') {
     getAccount(discordId);
     const stmt = db.prepare(`
-        UPDATE economy_accounts 
-        SET wallet = wallet + ?, updated_at = CURRENT_TIMESTAMP 
-        WHERE discord_id = ?
+        UPDATE economy_accounts
+        SET wallet = wallet + ?, updated_at = CURRENT_TIMESTAMP
+        WHERE guild_id = current_guild_id() AND (discord_id = ?)
     `);
     stmt.run(amount, discordId);
 
@@ -430,9 +430,9 @@ function removeWallet(discordId, amount, type = 'GENERAL', details = '') {
     if (acc.wallet < amount) return false;
 
     const stmt = db.prepare(`
-        UPDATE economy_accounts 
-        SET wallet = wallet - ?, updated_at = CURRENT_TIMESTAMP 
-        WHERE discord_id = ?
+        UPDATE economy_accounts
+        SET wallet = wallet - ?, updated_at = CURRENT_TIMESTAMP
+        WHERE guild_id = current_guild_id() AND (discord_id = ?)
     `);
     stmt.run(amount, discordId);
 
@@ -443,9 +443,9 @@ function removeWallet(discordId, amount, type = 'GENERAL', details = '') {
 function addBank(discordId, amount, type = 'GENERAL', details = '') {
     getAccount(discordId);
     const stmt = db.prepare(`
-        UPDATE economy_accounts 
-        SET bank = bank + ?, updated_at = CURRENT_TIMESTAMP 
-        WHERE discord_id = ?
+        UPDATE economy_accounts
+        SET bank = bank + ?, updated_at = CURRENT_TIMESTAMP
+        WHERE guild_id = current_guild_id() AND (discord_id = ?)
     `);
     stmt.run(amount, discordId);
 
@@ -458,9 +458,9 @@ function removeBank(discordId, amount, type = 'GENERAL', details = '') {
     if (acc.bank < amount) return false;
 
     const stmt = db.prepare(`
-        UPDATE economy_accounts 
-        SET bank = bank - ?, updated_at = CURRENT_TIMESTAMP 
-        WHERE discord_id = ?
+        UPDATE economy_accounts
+        SET bank = bank - ?, updated_at = CURRENT_TIMESTAMP
+        WHERE guild_id = current_guild_id() AND (discord_id = ?)
     `);
     stmt.run(amount, discordId);
 
@@ -481,7 +481,7 @@ function deposit(discordId, amount) {
     const actualAmount = Math.min(toDeposit, availableBank);
 
     const tx = db.transaction(() => {
-        db.prepare('UPDATE economy_accounts SET wallet = wallet - ?, bank = bank + ?, updated_at = CURRENT_TIMESTAMP WHERE discord_id = ?')
+        db.prepare('UPDATE economy_accounts SET wallet = wallet - ?, bank = bank + ?, updated_at = CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (discord_id = ?) ')
             .run(actualAmount, actualAmount, discordId);
         logTransaction(discordId, 'DEP', actualAmount, 'Depósito en caja fuerte militar');
     });
@@ -498,7 +498,7 @@ function withdraw(discordId, amount) {
     if (acc.bank < toWithdraw) return { success: false, message: 'No tienes suficientes fondos en tu banco.' };
 
     const tx = db.transaction(() => {
-        db.prepare('UPDATE economy_accounts SET bank = bank - ?, wallet = wallet + ?, updated_at = CURRENT_TIMESTAMP WHERE discord_id = ?')
+        db.prepare('UPDATE economy_accounts SET bank = bank - ?, wallet = wallet + ?, updated_at = CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (discord_id = ?) ')
             .run(toWithdraw, toWithdraw, discordId);
         logTransaction(discordId, 'WITH', toWithdraw, 'Retiro de caja fuerte militar');
     });
@@ -516,8 +516,8 @@ function transfer(fromId, toId, amount) {
     if (sender.wallet < num) return { success: false, message: 'No tienes suficiente dinero en tu cartera para realizar este envío.' };
 
     const tx = db.transaction(() => {
-        db.prepare('UPDATE economy_accounts SET wallet = wallet - ?, updated_at = CURRENT_TIMESTAMP WHERE discord_id = ?').run(num, fromId);
-        db.prepare('UPDATE economy_accounts SET wallet = wallet + ?, updated_at = CURRENT_TIMESTAMP WHERE discord_id = ?').run(num, toId);
+        db.prepare('UPDATE economy_accounts SET wallet = wallet - ?, updated_at = CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (discord_id = ?) ').run(num, fromId);
+        db.prepare('UPDATE economy_accounts SET wallet = wallet + ?, updated_at = CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (discord_id = ?) ').run(num, toId);
         logTransaction(fromId, 'PAY', -num, `Transferencia enviada a <@${toId}>`);
         logTransaction(toId, 'PAY', num, `Transferencia recibida de <@${fromId}>`);
     });
@@ -529,7 +529,7 @@ function transfer(fromId, toId, amount) {
 function getLeaderboard(limit = 10) {
     const stmt = db.prepare(`
         SELECT discord_id, username, avatar, wallet, bank, (wallet + bank) as net_worth
-        FROM economy_accounts
+        FROM (SELECT * FROM economy_accounts WHERE guild_id = current_guild_id()) AS economy_accounts
         WHERE LENGTH(discord_id) >= 17 AND discord_id GLOB '[0-9]*'
         ORDER BY net_worth DESC
         LIMIT ?
@@ -540,10 +540,10 @@ function getLeaderboard(limit = 10) {
 function getAllEconomyAccounts(limit = 50, search = '', offset = 0) {
     if (search && search.trim().length > 0) {
         const stmt = db.prepare(`
-            SELECT a.*, (a.wallet + a.bank) as net_worth, 
+            SELECT a.*, (a.wallet + a.bank) as net_worth,
                    COALESCE(NULLIF(a.username, ''), NULLIF(v.username, ''), '') as resolved_name
-            FROM economy_accounts a
-            LEFT JOIN verifications v ON a.discord_id = v.discord_id
+            FROM (SELECT * FROM economy_accounts WHERE guild_id = current_guild_id()) a
+            LEFT JOIN (SELECT * FROM verifications WHERE guild_id = current_guild_id()) v ON a.discord_id = v.discord_id
             WHERE (LENGTH(a.discord_id) >= 17 AND a.discord_id GLOB '[0-9]*')
               AND (a.discord_id LIKE ? OR a.username LIKE ? OR v.username LIKE ?)
             ORDER BY net_worth DESC
@@ -553,10 +553,10 @@ function getAllEconomyAccounts(limit = 50, search = '', offset = 0) {
         return stmt.all(q, q, q, limit, offset);
     } else {
         const stmt = db.prepare(`
-            SELECT a.*, (a.wallet + a.bank) as net_worth, 
+            SELECT a.*, (a.wallet + a.bank) as net_worth,
                    COALESCE(NULLIF(a.username, ''), NULLIF(v.username, ''), '') as resolved_name
-            FROM economy_accounts a
-            LEFT JOIN verifications v ON a.discord_id = v.discord_id
+            FROM (SELECT * FROM economy_accounts WHERE guild_id = current_guild_id()) a
+            LEFT JOIN (SELECT * FROM verifications WHERE guild_id = current_guild_id()) v ON a.discord_id = v.discord_id
             WHERE LENGTH(a.discord_id) >= 17 AND a.discord_id GLOB '[0-9]*'
             ORDER BY net_worth DESC
             LIMIT ? OFFSET ?
@@ -569,8 +569,8 @@ function countEconomyAccounts(search = '') {
     const q = `%${String(search || '').trim()}%`;
     return db.prepare(`
         SELECT COUNT(*) AS total
-        FROM economy_accounts a
-        LEFT JOIN verifications v ON a.discord_id = v.discord_id
+        FROM (SELECT * FROM economy_accounts WHERE guild_id = current_guild_id()) a
+        LEFT JOIN (SELECT * FROM verifications WHERE guild_id = current_guild_id()) v ON a.discord_id = v.discord_id
         WHERE LENGTH(a.discord_id) >= 17 AND a.discord_id GLOB '[0-9]*'
           AND (? = '%%' OR a.discord_id LIKE ? OR a.username LIKE ? OR v.username LIKE ?)
     `).get(q, q, q, q).total;
@@ -578,8 +578,8 @@ function countEconomyAccounts(search = '') {
 
 function deleteEconomyAccount(discordId) {
     const tx = db.transaction(() => {
-        db.prepare('DELETE FROM economy_inventory WHERE discord_id = ?').run(discordId);
-        return db.prepare('DELETE FROM economy_accounts WHERE discord_id = ?').run(discordId).changes;
+        db.prepare('DELETE FROM economy_inventory WHERE guild_id = current_guild_id() AND (discord_id = ?) ').run(discordId);
+        return db.prepare('DELETE FROM economy_accounts WHERE guild_id = current_guild_id() AND (discord_id = ?) ').run(discordId).changes;
     });
     return tx() > 0;
 }
@@ -589,7 +589,7 @@ function deleteEconomyAccount(discordId) {
 // =========================================================================
 
 function getCommandPermissions() {
-    const rows = db.prepare('SELECT * FROM economy_command_permissions ORDER BY command_name ASC').all();
+    const rows = db.prepare('SELECT * FROM (SELECT * FROM economy_command_permissions WHERE guild_id = current_guild_id()) AS economy_command_permissions ORDER BY command_name ASC').all();
     return rows.map(r => ({
         command_name: r.command_name,
         is_enabled: r.is_enabled === 1,
@@ -600,9 +600,9 @@ function getCommandPermissions() {
 function updateCommandPermission(commandName, isEnabled, allowedRoles = []) {
     const rolesJson = JSON.stringify(Array.isArray(allowedRoles) ? allowedRoles : []);
     const stmt = db.prepare(`
-        INSERT INTO economy_command_permissions (command_name, is_enabled, allowed_roles)
-        VALUES (?, ?, ?)
-        ON CONFLICT(command_name) DO UPDATE SET
+        INSERT INTO economy_command_permissions (guild_id, command_name, is_enabled, allowed_roles)
+        VALUES (current_guild_id(), ?, ?, ?)
+        ON CONFLICT(guild_id,command_name) DO UPDATE SET
             is_enabled = excluded.is_enabled,
             allowed_roles = excluded.allowed_roles
     `);
@@ -617,9 +617,9 @@ function updateCommandPermission(commandName, isEnabled, allowedRoles = []) {
 function bulkUpdateCommandPermissions(updates) {
     if (!Array.isArray(updates) || updates.length === 0) return getCommandPermissions();
     const stmt = db.prepare(`
-        INSERT INTO economy_command_permissions (command_name, is_enabled, allowed_roles)
-        VALUES (?, ?, ?)
-        ON CONFLICT(command_name) DO UPDATE SET
+        INSERT INTO economy_command_permissions (guild_id, command_name, is_enabled, allowed_roles)
+        VALUES (current_guild_id(), ?, ?, ?)
+        ON CONFLICT(guild_id,command_name) DO UPDATE SET
             is_enabled = excluded.is_enabled,
             allowed_roles = COALESCE(excluded.allowed_roles, economy_command_permissions.allowed_roles)
     `);
@@ -639,7 +639,7 @@ function isCommandAllowed(commandName, member) {
     if (!commandName) return { allowed: true };
 
     // Buscar el comando por su clave canónica exacta (ej: 'economia:balance')
-    const perm = db.prepare('SELECT is_enabled, allowed_roles FROM economy_command_permissions WHERE command_name = ?').get(commandName);
+    const perm = db.prepare('SELECT is_enabled, allowed_roles FROM (SELECT * FROM economy_command_permissions WHERE guild_id = current_guild_id()) AS economy_command_permissions WHERE command_name = ?').get(commandName);
 
     if (!perm) return { allowed: true };
 
@@ -703,11 +703,11 @@ function adminAdjustBalance(discordId, action, amount, target = 'wallet') {
     const num = parseInt(amount, 10);
 
     if (action === 'set') {
-        db.prepare(`UPDATE economy_accounts SET ${col} = ?, updated_at = CURRENT_TIMESTAMP WHERE discord_id = ?`).run(num, discordId);
+        db.prepare(`UPDATE economy_accounts SET ${col} = ?, updated_at = CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (discord_id = ?) `).run(num, discordId);
     } else if (action === 'add') {
-        db.prepare(`UPDATE economy_accounts SET ${col} = ${col} + ?, updated_at = CURRENT_TIMESTAMP WHERE discord_id = ?`).run(num, discordId);
+        db.prepare(`UPDATE economy_accounts SET ${col} = ${col} + ?, updated_at = CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (discord_id = ?) `).run(num, discordId);
     } else if (action === 'remove') {
-        db.prepare(`UPDATE economy_accounts SET ${col} = MAX(0, ${col} - ?), updated_at = CURRENT_TIMESTAMP WHERE discord_id = ?`).run(num, discordId);
+        db.prepare(`UPDATE economy_accounts SET ${col} = MAX(0, ${col} - ?), updated_at = CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (discord_id = ?) `).run(num, discordId);
     }
     logTransaction(discordId, 'ADMIN_ADJUST', num, `Ajuste administrativo (${action} ${target})`);
     return getAccount(discordId);
@@ -722,14 +722,14 @@ function setOnTransactionLogged(callback) {
 function logTransaction(discordId, type, amount, details = '') {
     try {
         const stmt = db.prepare(`
-            INSERT INTO economy_transactions (discord_id, type, amount, details)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO economy_transactions (guild_id, discord_id, type, amount, details)
+            VALUES (current_guild_id(), ?, ?, ?, ?)
         `);
         stmt.run(discordId, type, amount, details);
 
         if (typeof onTransactionLogged === 'function') {
             try {
-                onTransactionLogged({ discordId, type, amount, details });
+                onTransactionLogged({ discordId, type, amount, details, guildId: currentGuild() });
             } catch (cbErr) {
                 console.error('[Error en callback onTransactionLogged]:', cbErr.message);
             }
@@ -741,10 +741,10 @@ function logTransaction(discordId, type, amount, details = '') {
 
 function getRecentTransactions(discordId = null, limit = 20) {
     if (discordId) {
-        const stmt = db.prepare('SELECT * FROM economy_transactions WHERE discord_id = ? ORDER BY timestamp DESC LIMIT ?');
+        const stmt = db.prepare('SELECT * FROM (SELECT * FROM economy_transactions WHERE guild_id = current_guild_id()) AS economy_transactions WHERE discord_id = ? ORDER BY timestamp DESC LIMIT ?');
         return stmt.all(discordId, limit);
     } else {
-        const stmt = db.prepare('SELECT * FROM economy_transactions ORDER BY timestamp DESC LIMIT ?');
+        const stmt = db.prepare('SELECT * FROM (SELECT * FROM economy_transactions WHERE guild_id = current_guild_id()) AS economy_transactions ORDER BY timestamp DESC LIMIT ?');
         return stmt.all(limit);
     }
 }
@@ -754,13 +754,13 @@ function getRecentTransactions(discordId = null, limit = 20) {
  */
 function getEnrichedTransactions({ discordId = null, type = null, search = '', from = null, to = null, limit = 50, offset = 0 } = {}) {
     let query = `
-        SELECT t.*, 
-               COALESCE(a.username, 'Combatiente Desconocido') as username, 
+        SELECT t.*,
+               COALESCE(a.username, 'Combatiente Desconocido') as username,
                COALESCE(a.avatar, '') as avatar,
                COALESCE(a.wallet, 0) as current_wallet,
                COALESCE(a.bank, 0) as current_bank
-        FROM economy_transactions t
-        LEFT JOIN economy_accounts a ON t.discord_id = a.discord_id
+        FROM (SELECT * FROM economy_transactions WHERE guild_id = current_guild_id()) t
+        LEFT JOIN (SELECT * FROM economy_accounts WHERE guild_id = current_guild_id()) a ON t.discord_id = a.discord_id
         WHERE 1=1
     `;
     const params = [];
@@ -791,7 +791,7 @@ function getEnrichedTransactions({ discordId = null, type = null, search = '', f
 }
 
 function countEnrichedTransactions({ discordId = null, type = null, search = '', from = null, to = null } = {}) {
-    let query = `SELECT COUNT(*) AS total FROM economy_transactions t LEFT JOIN economy_accounts a ON t.discord_id = a.discord_id WHERE 1=1`;
+    let query = `SELECT COUNT(*) AS total FROM (SELECT * FROM economy_transactions WHERE guild_id = current_guild_id()) t LEFT JOIN (SELECT * FROM economy_accounts WHERE guild_id = current_guild_id()) a ON t.discord_id = a.discord_id WHERE 1=1`;
     const params = [];
     if (discordId) { query += ' AND t.discord_id = ?'; params.push(discordId); }
     if (type && type !== 'ALL') { query += ' AND t.type = ?'; params.push(type); }
@@ -804,13 +804,13 @@ function countEnrichedTransactions({ discordId = null, type = null, search = '',
 /**
  * Estadísticas globales de tesorería y flujo monetario para el panel web
  */
-function getTreasuryStats(guildId = 'GLOBAL') {
-    const totalEventPaid = db.prepare("SELECT COALESCE(SUM(amount), 0) as s FROM economy_transactions WHERE type = 'EVENT_CLAIM'").get().s;
-    const totalBonusPaid = db.prepare("SELECT COALESCE(SUM(amount), 0) as s FROM economy_transactions WHERE type IN ('BONUS_CLAIM', 'BONUS_GIVE', 'MASS_BONUS')").get().s;
-    const totalShopSpent = db.prepare("SELECT COALESCE(ABS(SUM(amount)), 0) as s FROM economy_transactions WHERE type = 'BUY_ITEM'").get().s;
-    const totalTransfers = db.prepare("SELECT COALESCE(SUM(amount), 0) as s FROM economy_transactions WHERE type = 'PAY' AND amount > 0").get().s;
-    const totalTxCount = db.prepare("SELECT COUNT(*) as c FROM economy_transactions").get().c;
-    const totalCirculating = db.prepare("SELECT COALESCE(SUM(wallet + bank), 0) as s FROM economy_accounts").get().s;
+function getTreasuryStats(guildId = currentGuild()) {
+    const totalEventPaid = db.prepare("SELECT COALESCE(SUM(amount), 0) as s FROM (SELECT * FROM economy_transactions WHERE guild_id = current_guild_id()) AS economy_transactions WHERE type = 'EVENT_CLAIM'").get().s;
+    const totalBonusPaid = db.prepare("SELECT COALESCE(SUM(amount), 0) as s FROM (SELECT * FROM economy_transactions WHERE guild_id = current_guild_id()) AS economy_transactions WHERE type IN ('BONUS_CLAIM', 'BONUS_GIVE', 'MASS_BONUS')").get().s;
+    const totalShopSpent = db.prepare("SELECT COALESCE(ABS(SUM(amount)), 0) as s FROM (SELECT * FROM economy_transactions WHERE guild_id = current_guild_id()) AS economy_transactions WHERE type = 'BUY_ITEM'").get().s;
+    const totalTransfers = db.prepare("SELECT COALESCE(SUM(amount), 0) as s FROM (SELECT * FROM economy_transactions WHERE guild_id = current_guild_id()) AS economy_transactions WHERE type = 'PAY' AND amount > 0").get().s;
+    const totalTxCount = db.prepare("SELECT COUNT(*) as c FROM (SELECT * FROM economy_transactions WHERE guild_id = current_guild_id()) AS economy_transactions").get().c;
+    const totalCirculating = db.prepare("SELECT COALESCE(SUM(wallet + bank), 0) as s FROM (SELECT * FROM economy_accounts WHERE guild_id = current_guild_id()) AS economy_accounts").get().s;
 
     return {
         totalEventPaid,
@@ -828,9 +828,9 @@ function getTreasuryStats(guildId = 'GLOBAL') {
 function getUserFinancialProfile(discordId) {
     const account = getAccount(discordId);
     const recentTransactions = getEnrichedTransactions({ discordId, limit: 30 });
-    const totalEarned = db.prepare("SELECT COALESCE(SUM(amount), 0) as s FROM economy_transactions WHERE discord_id = ? AND amount > 0").get(discordId).s;
-    const totalSpent = db.prepare("SELECT COALESCE(ABS(SUM(amount)), 0) as s FROM economy_transactions WHERE discord_id = ? AND amount < 0").get(discordId).s;
-    const itemsCount = db.prepare("SELECT COUNT(*) as c FROM economy_inventory WHERE discord_id = ?").get(discordId).c;
+    const totalEarned = db.prepare("SELECT COALESCE(SUM(amount), 0) as s FROM (SELECT * FROM economy_transactions WHERE guild_id = current_guild_id()) AS economy_transactions WHERE discord_id = ? AND amount > 0").get(discordId).s;
+    const totalSpent = db.prepare("SELECT COALESCE(ABS(SUM(amount)), 0) as s FROM (SELECT * FROM economy_transactions WHERE guild_id = current_guild_id()) AS economy_transactions WHERE discord_id = ? AND amount < 0").get(discordId).s;
+    const itemsCount = db.prepare("SELECT COUNT(*) as c FROM (SELECT * FROM economy_inventory WHERE guild_id = current_guild_id()) AS economy_inventory WHERE discord_id = ?").get(discordId).c;
 
     return {
         account,
@@ -845,7 +845,7 @@ function getUserFinancialProfile(discordId) {
  * Eliminar un registro contable específico por ID
  */
 function deleteTransaction(id) {
-    const info = db.prepare('DELETE FROM economy_transactions WHERE id = ?').run(id);
+    const info = db.prepare('DELETE FROM economy_transactions WHERE guild_id = current_guild_id() AND (id = ?) ').run(id);
     return info.changes > 0;
 }
 
@@ -857,7 +857,7 @@ function deleteTransactions(ids = []) {
     const cleanIds = ids.map(id => parseInt(id, 10)).filter(id => !isNaN(id));
     if (cleanIds.length === 0) return 0;
     const placeholders = cleanIds.map(() => '?').join(',');
-    const info = db.prepare(`DELETE FROM economy_transactions WHERE id IN (${placeholders})`).run(...cleanIds);
+    const info = db.prepare(`DELETE FROM economy_transactions WHERE guild_id = current_guild_id() AND (id IN (${placeholders})) `).run(...cleanIds);
     return info.changes;
 }
 
@@ -865,7 +865,7 @@ function deleteTransactions(ids = []) {
  * Vaciar / Purgar todos los registros contables del libro de auditoría
  */
 function clearAllTransactions() {
-    const info = db.prepare('DELETE FROM economy_transactions').run();
+    const info = db.prepare('DELETE FROM economy_transactions WHERE guild_id = current_guild_id()').run();
     return info.changes;
 }
 
@@ -873,21 +873,21 @@ function clearAllTransactions() {
 // AJUSTES DE ECONOMÍA (SETTINGS)
 // =========================================================================
 
-function getEconomySettings(guildId = 'GLOBAL') {
-    let stmt = db.prepare('SELECT * FROM economy_settings WHERE guild_id = ?');
+function getEconomySettings(guildId = currentGuild()) {
+    let stmt = db.prepare('SELECT * FROM (SELECT * FROM economy_settings WHERE guild_id = current_guild_id()) AS economy_settings WHERE guild_id = ?');
     let row = stmt.get(guildId);
 
     if (!row) {
         db.prepare(`
             INSERT INTO economy_settings (guild_id, currency_name, currency_symbol)
-            VALUES (?, 'Créditos USMC', '$')
+            VALUES (?, 'Créditos', '$')
         `).run(guildId);
         row = stmt.get(guildId);
     }
     return row;
 }
 
-function updateEconomySettings(guildId = 'GLOBAL', data = {}) {
+function updateEconomySettings(guildId = currentGuild(), data = {}) {
     getEconomySettings(guildId);
     const fields = [];
     const values = [];
@@ -910,7 +910,7 @@ function updateEconomySettings(guildId = 'GLOBAL', data = {}) {
     if (fields.length === 0) return getEconomySettings(guildId);
 
     values.push(guildId);
-    const query = `UPDATE economy_settings SET ${fields.join(', ')} WHERE guild_id = ?`;
+    const query = `UPDATE economy_settings SET ${fields.join(', ')} WHERE guild_id = current_guild_id() AND (guild_id = ?) `;
     db.prepare(query).run(...values);
     return getEconomySettings(guildId);
 }
@@ -919,10 +919,10 @@ function updateEconomySettings(guildId = 'GLOBAL', data = {}) {
 // TIENDA E INVENTARIO (SHOP & INVENTORY) ESTILO UNBELIEVABOAT
 // =========================================================================
 
-function getShopItems(guildId = 'GLOBAL', activeOnly = true) {
-    const query = activeOnly 
-        ? "SELECT * FROM economy_shop_items WHERE (guild_id = ? OR guild_id = 'GLOBAL') AND is_active = 1 ORDER BY price ASC, id ASC"
-        : "SELECT * FROM economy_shop_items WHERE (guild_id = ? OR guild_id = 'GLOBAL') ORDER BY price ASC, id ASC";
+function getShopItems(guildId = currentGuild(), activeOnly = true) {
+    const query = activeOnly
+        ? "SELECT * FROM (SELECT * FROM economy_shop_items WHERE guild_id = current_guild_id()) AS economy_shop_items WHERE (guild_id = ?) AND is_active = 1 ORDER BY price ASC, id ASC"
+        : "SELECT * FROM (SELECT * FROM economy_shop_items WHERE guild_id = current_guild_id()) AS economy_shop_items WHERE (guild_id = ?) ORDER BY price ASC, id ASC";
     const stmt = db.prepare(query);
     const rows = stmt.all(guildId);
 
@@ -936,7 +936,7 @@ function getShopItems(guildId = 'GLOBAL', activeOnly = true) {
 }
 
 function getShopItemById(id) {
-    const stmt = db.prepare('SELECT * FROM economy_shop_items WHERE id = ?');
+    const stmt = db.prepare('SELECT * FROM (SELECT * FROM economy_shop_items WHERE guild_id = current_guild_id()) AS economy_shop_items WHERE id = ?');
     const r = stmt.get(id);
     if (!r) return null;
 
@@ -950,7 +950,7 @@ function getShopItemById(id) {
 }
 
 function createShopItem({
-    guild_id = 'GLOBAL',
+    guild_id = currentGuild(),
     name,
     description = '',
     price,
@@ -1014,7 +1014,7 @@ function updateShopItem(id, data = {}) {
     if (fields.length === 0) return item;
 
     values.push(id);
-    const query = `UPDATE economy_shop_items SET ${fields.join(', ')} WHERE id = ?`;
+    const query = `UPDATE economy_shop_items SET ${fields.join(', ')} WHERE guild_id = current_guild_id() AND (id = ?) `;
     db.prepare(query).run(...values);
     return getShopItemById(id);
 }
@@ -1025,8 +1025,8 @@ function updateShopItem(id, data = {}) {
 function getItemBuyers(itemId) {
     const stmt = db.prepare(`
         SELECT inv.discord_id, inv.quantity, inv.acquired_at, COALESCE(acc.username, inv.discord_id) as username
-        FROM economy_inventory inv
-        LEFT JOIN economy_accounts acc ON inv.discord_id = acc.discord_id
+        FROM (SELECT * FROM economy_inventory WHERE guild_id = current_guild_id()) inv
+        LEFT JOIN (SELECT * FROM economy_accounts WHERE guild_id = current_guild_id()) acc ON inv.discord_id = acc.discord_id
         WHERE inv.item_id = ?
         ORDER BY inv.acquired_at DESC
     `);
@@ -1045,8 +1045,8 @@ function deleteShopItem(id, force = false) {
     }
 
     const tx = db.transaction(() => {
-        db.prepare('DELETE FROM economy_inventory WHERE item_id = ?').run(id);
-        db.prepare('DELETE FROM economy_shop_items WHERE id = ?').run(id);
+        db.prepare('DELETE FROM economy_inventory WHERE guild_id = current_guild_id() AND (item_id = ?) ').run(id);
+        db.prepare('DELETE FROM economy_shop_items WHERE guild_id = current_guild_id() AND (id = ?) ').run(id);
     });
     tx();
 
@@ -1057,8 +1057,8 @@ function deleteShopItem(id, force = false) {
 function getUserInventory(discordId) {
     const stmt = db.prepare(`
         SELECT inv.*, item.name, item.description, item.icon, item.price, item.roles_to_give, item.roles_to_remove
-        FROM economy_inventory inv
-        JOIN economy_shop_items item ON inv.item_id = item.id
+        FROM (SELECT * FROM economy_inventory WHERE guild_id = current_guild_id()) inv
+        JOIN (SELECT * FROM economy_shop_items WHERE guild_id = current_guild_id()) item ON inv.item_id = item.id
         WHERE inv.discord_id = ?
         ORDER BY inv.acquired_at DESC
     `);
@@ -1071,7 +1071,7 @@ function getUserInventory(discordId) {
 }
 
 function getUserItemCount(discordId, itemId) {
-    const stmt = db.prepare('SELECT COALESCE(SUM(quantity), 0) as count FROM economy_inventory WHERE discord_id = ? AND item_id = ?');
+    const stmt = db.prepare('SELECT COALESCE(SUM(quantity), 0) as count FROM (SELECT * FROM economy_inventory WHERE guild_id = current_guild_id()) AS economy_inventory WHERE discord_id = ? AND item_id = ?');
     const { count } = stmt.get(discordId, itemId);
     return count;
 }
@@ -1080,14 +1080,21 @@ function getUserItemCount(discordId, itemId) {
  * Compra atómica de un ítem de la tienda
  * Valida saldo, stock y límite por usuario en una transacción SQLite segura.
  */
-function purchaseShopItem(discordId, itemId, userRoleIds = []) {
+function purchaseShopItem(discordId, itemId, userRoleIds = [], guildId = currentGuild(), expectedPrice = null) {
+    return db.transaction(() => purchaseShopItemInTransaction(discordId, itemId, userRoleIds, guildId, expectedPrice))();
+}
+
+function purchaseShopItemInTransaction(discordId, itemId, userRoleIds, guildId, expectedPrice) {
     const item = getShopItemById(itemId);
-    if (!item) {
+    if (!item || ![guildId, 'GLOBAL'].includes(item.guild_id)) {
         return { success: false, message: 'El ítem solicitado no existe en la armería.' };
     }
     if (!item.is_active) {
         return { success: false, message: 'Este ítem militar se encuentra desactivado temporalmente.' };
     }
+    if (expectedPrice !== null && item.price !== expectedPrice) return { success: false, message: 'El precio cambió. Abre de nuevo la ficha para confirmar el importe actual.' };
+
+    if (!Number.isSafeInteger(item.price) || item.price < 0) return { success: false, message: 'El precio de este artículo no es válido.' };
 
     // 1. Validar Stock
     if (item.stock !== -1 && item.stock <= 0) {
@@ -1098,9 +1105,9 @@ function purchaseShopItem(discordId, itemId, userRoleIds = []) {
     if (item.max_per_user !== -1) {
         const userOwns = getUserItemCount(discordId, itemId);
         if (userOwns >= item.max_per_user) {
-            return { 
-                success: false, 
-                message: `⚠️ Ya has alcanzado el límite máximo permitido para este ítem (${item.max_per_user} compras).` 
+            return {
+                success: false,
+                message: `⚠️ Ya has alcanzado el límite máximo permitido para este ítem (${item.max_per_user} compras).`
             };
         }
     }
@@ -1137,31 +1144,34 @@ function purchaseShopItem(discordId, itemId, userRoleIds = []) {
     }
 
     // 6. Ejecutar Transacción Atómica
-    const tx = db.transaction(() => {
+    const debit = () => {
         // Descontar dinero de cartera
-        db.prepare('UPDATE economy_accounts SET wallet = wallet - ?, updated_at = CURRENT_TIMESTAMP WHERE discord_id = ?')
+        db.prepare('UPDATE economy_accounts SET wallet = wallet - ?, updated_at = CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (discord_id = ?) ')
             .run(item.price, discordId);
 
         // Descontar stock si no es infinito
         if (item.stock !== -1) {
-            db.prepare('UPDATE economy_shop_items SET stock = stock - 1 WHERE id = ?').run(itemId);
+            db.prepare('UPDATE economy_shop_items SET stock = stock - 1 WHERE guild_id = current_guild_id() AND (id = ?) ').run(itemId);
         }
 
         // Registrar en inventario (si ya existe suma cantidad, sino inserta)
-        const existingInv = db.prepare('SELECT id, quantity FROM economy_inventory WHERE discord_id = ? AND item_id = ?').get(discordId, itemId);
+        const existingInv = db.prepare('SELECT id, quantity FROM (SELECT * FROM economy_inventory WHERE guild_id = current_guild_id()) AS economy_inventory WHERE discord_id = ? AND item_id = ?').get(discordId, itemId);
         if (existingInv) {
-            db.prepare('UPDATE economy_inventory SET quantity = quantity + 1, acquired_at = CURRENT_TIMESTAMP WHERE id = ?').run(existingInv.id);
+            db.prepare('UPDATE economy_inventory SET quantity = quantity + 1, acquired_at = CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (id = ?) ').run(existingInv.id);
         } else {
-            db.prepare('INSERT INTO economy_inventory (discord_id, item_id, quantity) VALUES (?, ?, 1)').run(discordId, itemId);
+            db.prepare('INSERT INTO economy_inventory (guild_id, discord_id, item_id, quantity) VALUES (current_guild_id(), ?, ?, 1)').run(discordId, itemId);
         }
 
         // Registrar en historial de transacciones
         logTransaction(discordId, 'BUY_ITEM', -item.price, `Compra de ítem en tienda: ${item.name}`);
-    });
-    tx();
+    };
+    debit();
+    const orderId = db.prepare('INSERT INTO shop_orders (guild_id, discord_id, item_id, price, finite_stock) VALUES (current_guild_id(), ?, ?, ?, ?)')
+        .run(discordId, itemId, item.price, item.stock === -1 ? 0 : 1).lastInsertRowid;
 
     return {
         success: true,
+        orderId: Number(orderId),
         item,
         rolesToGive: item.roles_to_give,
         rolesToRemove: item.roles_to_remove,
@@ -1169,22 +1179,40 @@ function purchaseShopItem(discordId, itemId, userRoleIds = []) {
     };
 }
 
+function completeShopOrder(orderId) {
+    db.prepare("UPDATE shop_orders SET status = 'COMPLETED' WHERE guild_id = current_guild_id() AND (id = ? AND status = 'PENDING') ").run(orderId);
+}
+
+function refundShopOrder(orderId) {
+    return db.transaction(() => {
+        const order = db.prepare("SELECT * FROM (SELECT * FROM shop_orders WHERE guild_id = current_guild_id()) AS shop_orders WHERE id = ? AND status = 'PENDING'").get(orderId);
+        if (!order) return false;
+        db.prepare("UPDATE shop_orders SET status = 'REFUNDED' WHERE guild_id = current_guild_id() AND (id = ?) ").run(orderId);
+        db.prepare('UPDATE economy_accounts SET wallet = wallet + ? WHERE guild_id = current_guild_id() AND (discord_id = ?) ').run(order.price, order.discord_id);
+        if (order.finite_stock) db.prepare('UPDATE economy_shop_items SET stock = stock + 1 WHERE guild_id = current_guild_id() AND (id = ? AND stock >= 0) ').run(order.item_id);
+        db.prepare('UPDATE economy_inventory SET quantity = quantity - 1 WHERE guild_id = current_guild_id() AND (discord_id = ? AND item_id = ?) ').run(order.discord_id, order.item_id);
+        db.prepare('DELETE FROM economy_inventory WHERE guild_id = current_guild_id() AND (quantity <= 0 AND discord_id = ? AND item_id = ?) ').run(order.discord_id, order.item_id);
+        logTransaction(order.discord_id, 'SHOP_REFUND', order.price, `Reembolso de pedido #${orderId}: entrega fallida`);
+        return true;
+    })();
+}
+
 // =========================================================================
 // BONIFICACIONES Y MULTIPLICADORES POR ROL
 // =========================================================================
 
-function getRoleRewards(guildId = 'GLOBAL') {
-    const stmt = db.prepare("SELECT * FROM economy_role_rewards WHERE guild_id = ? OR guild_id = 'GLOBAL' ORDER BY multiplier DESC, flat_bonus DESC");
+function getRoleRewards(guildId = currentGuild()) {
+    const stmt = db.prepare("SELECT * FROM (SELECT * FROM economy_role_rewards WHERE guild_id = current_guild_id()) AS economy_role_rewards WHERE guild_id = ? ORDER BY multiplier DESC, flat_bonus DESC");
     return stmt.all(guildId);
 }
 
-function setRoleReward(guildId = 'GLOBAL', { role_id, role_name, multiplier = 1.0, flat_bonus = 0 }) {
-    const existing = db.prepare("SELECT id FROM economy_role_rewards WHERE (guild_id = ? OR guild_id = 'GLOBAL') AND role_id = ?").get(guildId, role_id);
+function setRoleReward(guildId = currentGuild(), { role_id, role_name, multiplier = 1.0, flat_bonus = 0 }) {
+    const existing = db.prepare("SELECT id FROM (SELECT * FROM economy_role_rewards WHERE guild_id = current_guild_id()) AS economy_role_rewards WHERE (guild_id = ?) AND role_id = ?").get(guildId, role_id);
     if (existing) {
         db.prepare(`
-            UPDATE economy_role_rewards 
+            UPDATE economy_role_rewards
             SET role_name = ?, multiplier = ?, flat_bonus = ?
-            WHERE id = ?
+            WHERE guild_id = current_guild_id() AND (id = ?)
         `).run(role_name, multiplier, flat_bonus, existing.id);
         return existing.id;
     } else {
@@ -1198,7 +1226,7 @@ function setRoleReward(guildId = 'GLOBAL', { role_id, role_name, multiplier = 1.
 }
 
 function deleteRoleReward(id) {
-    db.prepare('DELETE FROM economy_role_rewards WHERE id = ?').run(id);
+    db.prepare('DELETE FROM economy_role_rewards WHERE guild_id = current_guild_id() AND (id = ?) ').run(id);
     return true;
 }
 
@@ -1235,7 +1263,10 @@ function createEvent({
     max_participants = 0,
     phase = null,
     reward_role_id = null,
-    report_template_id = null
+    report_template_id = null,
+    created_by_id = null,
+    created_by_name = null,
+    private_server_id = null
 }) {
     const initialPhase = phase || (event_type === 'REGISTRATION' ? 'REGISTRATION' : 'ACTIVE');
     const template = report_template_id ? getEventReportTemplateById(report_template_id, guild_id) : null;
@@ -1244,14 +1275,16 @@ function createEvent({
     }
     const templateSnapshot = template ? JSON.stringify(template) : null;
 
+    const create = db.transaction(() => {
     const stmt = db.prepare(`
         INSERT INTO event_payouts (
             guild_id, name, event_type, target_channel_id, payout_channel_id,
             registration_channel_id, confirmation_channel_id,
             base_reward, claim_deadline_hours, grace_period_minutes, min_attendance_percent,
-            max_participants, phase, reward_role_id, report_template_id, report_template_snapshot, status
+            max_participants, phase, reward_role_id, report_template_id, report_template_snapshot,
+            created_by_id, created_by_name, private_server_id, status
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE')
     `);
 
     const info = stmt.run(
@@ -1270,10 +1303,30 @@ function createEvent({
         initialPhase,
         reward_role_id,
         template ? template.id : null,
-        templateSnapshot
+        templateSnapshot,
+        created_by_id ? String(created_by_id) : null,
+        created_by_name ? String(created_by_name).slice(0, 100) : null,
+        private_server_id ? Number(private_server_id) : null
     );
 
+    if (private_server_id) {
+        const reserved = serverDb.occupyPrivateServer(private_server_id, created_by_id, created_by_name, name, info.lastInsertRowid, guild_id);
+        if (!reserved.success) throw new Error(reserved.message);
+    }
     return { success: true, event: getEventById(info.lastInsertRowid) };
+    });
+    try { return create(); } catch (error) { return { success: false, message: error.message }; }
+}
+
+function cancelUnpublishedEvent(eventId, guildId) {
+    return db.transaction(() => {
+        const event = getEventById(eventId);
+        if (!event || event.guild_id !== guildId || event.registration_message_id || event.status !== 'ACTIVE') return false;
+        serverDb.releasePrivateServerByEventId(eventId, guildId);
+        db.prepare('DELETE FROM event_attendance WHERE guild_id = current_guild_id() AND (event_id = ?) ').run(eventId);
+        db.prepare('DELETE FROM event_payouts WHERE guild_id = current_guild_id() AND (id = ?) ').run(eventId);
+        return true;
+    })();
 }
 
 function parseTemplateRow(row) {
@@ -1290,19 +1343,19 @@ function parseTemplateRow(row) {
     };
 }
 
-function getEventReportTemplates(guildId = 'GLOBAL', includeInactive = false) {
+function getEventReportTemplates(guildId = currentGuild(), includeInactive = false) {
     const rows = db.prepare(`
-        SELECT * FROM event_report_templates
-        WHERE (guild_id = ? OR guild_id = 'GLOBAL') ${includeInactive ? '' : 'AND is_active = 1'}
+        SELECT * FROM (SELECT * FROM event_report_templates WHERE guild_id = current_guild_id()) AS event_report_templates
+        WHERE (guild_id = ?) ${includeInactive ? '' : 'AND is_active = 1'}
         ORDER BY is_active DESC, name COLLATE NOCASE ASC, id DESC
     `).all(guildId);
     return rows.map(parseTemplateRow);
 }
 
-function getEventReportTemplateById(id, guildId = 'GLOBAL') {
+function getEventReportTemplateById(id, guildId = currentGuild()) {
     const row = db.prepare(`
-        SELECT * FROM event_report_templates
-        WHERE id = ? AND (guild_id = ? OR guild_id = 'GLOBAL')
+        SELECT * FROM (SELECT * FROM event_report_templates WHERE guild_id = current_guild_id()) AS event_report_templates
+        WHERE id = ? AND (guild_id = ?)
     `).get(id, guildId);
     return parseTemplateRow(row);
 }
@@ -1326,7 +1379,7 @@ function saveEventReportTemplate(guildId, data = {}) {
         group_roles: JSON.stringify(groupRoles),
         evidence_required: data.evidence_required ? 1 : 0,
         sticker_id: String(data.sticker_id || '').trim(),
-        footer: String(data.footer || 'USMC • Registro Operativo Oficial').trim().slice(0, 200),
+        footer: String(data.footer || 'Registro Oficial de la Comunidad').trim().slice(0, 200),
         template_kind: templateKind,
         approved_label: String(data.approved_label || 'APROBADOS / ASISTENTES').trim().slice(0, 80),
         rejected_label: String(data.rejected_label || 'NO APROBADOS').trim().slice(0, 80),
@@ -1336,7 +1389,7 @@ function saveEventReportTemplate(guildId, data = {}) {
     };
 
     if (data.id) {
-        db.prepare(`UPDATE event_report_templates SET name=?, title=?, description=?, emoji=?, color=?, report_channel_id=?, grouping_mode=?, group_roles=?, evidence_required=?, sticker_id=?, footer=?, template_kind=?, approved_label=?, rejected_label=?, show_removed=?, show_payout=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND (guild_id=? OR guild_id='GLOBAL')`)
+        db.prepare(`UPDATE event_report_templates SET name=?, title=?, description=?, emoji=?, color=?, report_channel_id=?, grouping_mode=?, group_roles=?, evidence_required=?, sticker_id=?, footer=?, template_kind=?, approved_label=?, rejected_label=?, show_removed=?, show_payout=?, is_active=?, updated_at=CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (id=? AND (guild_id=? OR guild_id='GLOBAL')) `)
             .run(values.name, values.title, values.description, values.emoji, values.color, values.report_channel_id, values.grouping_mode, values.group_roles, values.evidence_required, values.sticker_id, values.footer, values.template_kind, values.approved_label, values.rejected_label, values.show_removed, values.show_payout, values.is_active, data.id, guildId);
         return getEventReportTemplateById(data.id, guildId);
     }
@@ -1346,39 +1399,119 @@ function saveEventReportTemplate(guildId, data = {}) {
 }
 
 function archiveEventReportTemplate(id, guildId) {
-    const info = db.prepare("UPDATE event_report_templates SET is_active=0, updated_at=CURRENT_TIMESTAMP WHERE id=? AND (guild_id=? OR guild_id='GLOBAL')").run(id, guildId);
+    const info = db.prepare("UPDATE event_report_templates SET is_active=0, updated_at=CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (id=? AND (guild_id=? OR guild_id='GLOBAL')) ").run(id, guildId);
     return info.changes > 0;
 }
 
-function saveEventReport(eventId, messageId, reportData) {
-    db.prepare('UPDATE event_payouts SET report_message_id=?, report_data=? WHERE id=?')
-        .run(messageId || null, JSON.stringify(reportData || {}), eventId);
+function saveEventReport(eventId, messageId, reportData, channelId = null) {
+    if (channelId) {
+        db.prepare('UPDATE event_payouts SET report_channel_id=?, report_message_id=?, report_data=? WHERE guild_id = current_guild_id() AND (id=?) ')
+            .run(channelId, messageId || null, JSON.stringify(reportData || {}), eventId);
+    } else {
+        db.prepare('UPDATE event_payouts SET report_message_id=?, report_data=? WHERE guild_id = current_guild_id() AND (id=?) ')
+            .run(messageId || null, JSON.stringify(reportData || {}), eventId);
+    }
     return getEventById(eventId);
 }
 
+/**
+ * Permite añadir o retirar combatientes por ID de Discord directamente en la lista del evento
+ */
+function syncEventParticipantsByIds(eventId, addIds = [], removeIds = [], usernamesMap = {}) {
+    const event = getEventById(eventId);
+    if (!event) return { success: false, message: 'Evento no encontrado.' };
+
+    const now = Math.floor(Date.now() / 1000);
+    let addedCount = 0;
+    let removedCount = 0;
+
+    const tx = db.transaction(() => {
+        for (const rawId of addIds) {
+            const discordId = String(rawId || '').replace(/[<@!>]/g, '').trim();
+            if (!/^\d{15,22}$/.test(discordId)) continue;
+
+            const existing = db.prepare('SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
+            const resolvedName = usernamesMap[discordId] || existing?.username || `Soldado_${discordId.slice(-4)}`;
+
+            if (existing) {
+                db.prepare(`
+                    UPDATE event_attendance
+                    SET username = ?, is_eligible = 1, attendance_confirmed = 1, status = 'CONFIRMED', last_seen = ?
+                    WHERE guild_id = current_guild_id() AND (id = ?)
+                `).run(resolvedName, now, existing.id);
+            } else {
+                db.prepare(`
+                    INSERT INTO event_attendance (guild_id,
+                        event_id, discord_id, username, first_seen, last_seen,
+                        total_seconds_present, message_count, is_eligible, claimed,
+                        registered_at, attendance_confirmed, attendance_confirmed_at, status
+                    )
+                    VALUES (current_guild_id(), ?, ?, ?, ?, ?, 600, 0, 1, 0, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP, 'CONFIRMED')
+                `).run(eventId, discordId, resolvedName, now, now);
+            }
+            addedCount++;
+        }
+
+        for (const rawId of removeIds) {
+            const discordId = String(rawId || '').replace(/[<@!>]/g, '').trim();
+            if (!/^\d{15,22}$/.test(discordId)) continue;
+
+            const existing = db.prepare('SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
+            if (existing) {
+                db.prepare(`
+                    UPDATE event_attendance
+                    SET is_eligible = 0, attendance_confirmed = 0, status = 'EXPELLED'
+                    WHERE guild_id = current_guild_id() AND (id = ?)
+                `).run(existing.id);
+                removedCount++;
+            }
+        }
+    });
+    tx();
+
+    return {
+        success: true,
+        addedCount,
+        removedCount,
+        roster: getEventRegistrations(eventId, true)
+    };
+}
+
 function saveEventCompletionNotice(eventId, channelId, messageId) {
-    db.prepare('UPDATE event_payouts SET completion_channel_id=?, completion_message_id=? WHERE id=?')
+    db.prepare('UPDATE event_payouts SET completion_channel_id=?, completion_message_id=? WHERE guild_id = current_guild_id() AND (id=?) ')
         .run(channelId || null, messageId || null, eventId);
     return getEventById(eventId);
 }
 
+function getEventFinalizationDraft(eventId) {
+    const event = getEventById(eventId);
+    if (!event?.finalization_draft) return null;
+    try { return JSON.parse(event.finalization_draft); } catch { return null; }
+}
+
+function saveEventFinalizationDraft(eventId, draft) {
+    db.prepare('UPDATE event_payouts SET finalization_draft=? WHERE guild_id = current_guild_id() AND (id=?) ')
+        .run(draft ? JSON.stringify(draft) : null, eventId);
+    return getEventById(eventId);
+}
+
 function getActiveEvent(guildId) {
-    const stmt = db.prepare("SELECT * FROM event_payouts WHERE (guild_id = ? OR guild_id = 'GLOBAL') AND status = 'ACTIVE' ORDER BY id DESC LIMIT 1");
+    const stmt = db.prepare("SELECT * FROM (SELECT * FROM event_payouts WHERE guild_id = current_guild_id()) AS event_payouts WHERE (guild_id = ?) AND status = 'ACTIVE' ORDER BY id DESC LIMIT 1");
     return stmt.get(guildId);
 }
 
 function getActiveEvents(guildId) {
     return db.prepare(`
-        SELECT * FROM event_payouts
-        WHERE (guild_id = ? OR guild_id = 'GLOBAL') AND status = 'ACTIVE'
+        SELECT * FROM (SELECT * FROM event_payouts WHERE guild_id = current_guild_id()) AS event_payouts
+        WHERE (guild_id = ?) AND status = 'ACTIVE'
         ORDER BY id DESC
     `).all(guildId);
 }
 
 function getRecentEvents(guildId, limit = 25) {
     return db.prepare(`
-        SELECT * FROM event_payouts
-        WHERE (guild_id = ? OR guild_id = 'GLOBAL')
+        SELECT * FROM (SELECT * FROM event_payouts WHERE guild_id = current_guild_id()) AS event_payouts
+        WHERE (guild_id = ?)
           AND (
               status = 'ACTIVE'
               OR COALESCE(ended_at, created_at) >= datetime('now', '-7 days')
@@ -1389,42 +1522,42 @@ function getRecentEvents(guildId, limit = 25) {
 }
 
 function getEventById(id) {
-    const stmt = db.prepare('SELECT * FROM event_payouts WHERE id = ?');
+    const stmt = db.prepare('SELECT * FROM (SELECT * FROM event_payouts WHERE guild_id = current_guild_id()) AS event_payouts WHERE id = ?');
     return stmt.get(id);
 }
 
 function recordAttendanceHeartbeat(eventId, discordId, username, addedSeconds = 10) {
     const now = Math.floor(Date.now() / 1000);
-    const existing = db.prepare('SELECT * FROM event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
+    const existing = db.prepare('SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
 
     if (existing) {
         db.prepare(`
-            UPDATE event_attendance 
-            SET last_seen = ?, total_seconds_present = total_seconds_present + ? 
-            WHERE id = ?
+            UPDATE event_attendance
+            SET last_seen = ?, total_seconds_present = total_seconds_present + ?
+            WHERE guild_id = current_guild_id() AND (id = ?)
         `).run(now, addedSeconds, existing.id);
     } else {
         db.prepare(`
-            INSERT INTO event_attendance (event_id, discord_id, username, first_seen, last_seen, total_seconds_present, message_count)
-            VALUES (?, ?, ?, ?, ?, ?, 0)
+            INSERT INTO event_attendance (guild_id, event_id, discord_id, username, first_seen, last_seen, total_seconds_present, message_count)
+            VALUES (current_guild_id(), ?, ?, ?, ?, ?, ?, 0)
         `).run(eventId, discordId, username, now, now, addedSeconds);
     }
 }
 
 function recordChatActivity(eventId, discordId, username) {
     const now = Math.floor(Date.now() / 1000);
-    const existing = db.prepare('SELECT * FROM event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
+    const existing = db.prepare('SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
 
     if (existing) {
         db.prepare(`
-            UPDATE event_attendance 
-            SET last_seen = ?, message_count = message_count + 1 
-            WHERE id = ?
+            UPDATE event_attendance
+            SET last_seen = ?, message_count = message_count + 1
+            WHERE guild_id = current_guild_id() AND (id = ?)
         `).run(now, existing.id);
     } else {
         db.prepare(`
-            INSERT INTO event_attendance (event_id, discord_id, username, first_seen, last_seen, total_seconds_present, message_count)
-            VALUES (?, ?, ?, ?, ?, 0, 1)
+            INSERT INTO event_attendance (guild_id, event_id, discord_id, username, first_seen, last_seen, total_seconds_present, message_count)
+            VALUES (current_guild_id(), ?, ?, ?, ?, ?, 0, 1)
         `).run(eventId, discordId, username, now, now);
     }
 }
@@ -1439,15 +1572,15 @@ function finalizeAttendanceCalculation(eventId) {
     const graceSeconds = (event.grace_period_minutes || 5) * 60;
     const minPercent = (event.min_attendance_percent || 80) / 100;
 
-    const attendees = db.prepare('SELECT * FROM event_attendance WHERE event_id = ?').all(eventId);
+    const attendees = db.prepare('SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ?').all(eventId);
 
-    const updateStmt = db.prepare('UPDATE event_attendance SET is_eligible = ? WHERE id = ?');
+    const updateStmt = db.prepare('UPDATE event_attendance SET is_eligible = ? WHERE guild_id = current_guild_id() AND (id = ?) ');
 
     const updateTx = db.transaction(() => {
         for (const att of attendees) {
             let eligible = 0;
 
-            if (att.status === 'EXPELLED' || att.status === 'CANCELLED') {
+            if (isEventAttendeeRejected(att)) {
                 eligible = 0;
             } else if (att.attendance_confirmed === 1) {
                 // Asistencia confirmada explícitamente por botón de pase de lista o validación de oficial
@@ -1477,7 +1610,7 @@ function finalizeAttendanceCalculation(eventId) {
     });
     updateTx();
 
-    return db.prepare('SELECT * FROM event_attendance WHERE event_id = ?').all(eventId);
+    return db.prepare('SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ?').all(eventId);
 }
 
 function finalizeEvent(eventId, discordMessageId = null) {
@@ -1488,20 +1621,20 @@ function finalizeEvent(eventId, discordMessageId = null) {
     const claimExpiresAt = Math.floor(Date.now() / 1000) + ((event.claim_deadline_hours || 24) * 3600);
 
     db.prepare(`
-        UPDATE event_payouts 
+        UPDATE event_payouts
         SET status = 'ENDED', ended_at = CURRENT_TIMESTAMP, claim_expires_at = ?, discord_message_id = ?
-        WHERE id = ?
+        WHERE guild_id = current_guild_id() AND (id = ?)
     `).run(claimExpiresAt, discordMessageId, eventId);
 
     return getEventById(eventId);
 }
 
 function getEventAttendance(eventId) {
-    return db.prepare('SELECT * FROM event_attendance WHERE event_id = ? ORDER BY is_eligible DESC, total_seconds_present DESC').all(eventId);
+    return db.prepare('SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ? ORDER BY is_eligible DESC, total_seconds_present DESC').all(eventId);
 }
 
 function getUserEventRecord(eventId, discordId) {
-    return db.prepare('SELECT * FROM event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
+    return db.prepare('SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
 }
 
 /**
@@ -1520,18 +1653,18 @@ function claimEventPayout(eventId, discordId, userRoleIds = []) {
     // Validar plazo de expiración
     const now = Math.floor(Date.now() / 1000);
     if (event.claim_expires_at && now > event.claim_expires_at) {
-        return { 
-            success: false, 
-            message: '⌛ **Plazo Expirado**: El periodo establecido para reclamar los fondos de esta operación militar ha finalizado.' 
+        return {
+            success: false,
+            message: '⌛ **Plazo Expirado**: El periodo establecido para reclamar los fondos de esta operación militar ha finalizado.'
         };
     }
 
     // Validar asistencia
     const att = getUserEventRecord(eventId, discordId);
     if (!att) {
-        return { 
-            success: false, 
-            message: '❌ **Sin Registro**: No fuiste detectado en el canal asignado durante el desarrollo de la operación.' 
+        return {
+            success: false,
+            message: '❌ **Sin Registro**: No fuiste detectado en el canal asignado durante el desarrollo de la operación.'
         };
     }
 
@@ -1549,17 +1682,17 @@ function claimEventPayout(eventId, discordId, userRoleIds = []) {
         };
     }
 
-    if (!att.is_eligible) {
-        return { 
-            success: false, 
-            message: `⚠️ **No Elegible**: Tu permanencia/participación no alcanzó el mínimo requerido (${event.min_attendance_percent}% de tiempo o actividad) o superaste la tolerancia permitida.` 
+    if (!att.is_eligible || isEventAttendeeRejected(att)) {
+        return {
+            success: false,
+            message: `⚠️ **No Elegible**: Tu permanencia/participación no alcanzó el mínimo requerido (${event.min_attendance_percent}% de tiempo o actividad) o superaste la tolerancia permitida.`
         };
     }
 
     if (att.claimed) {
-        return { 
-            success: false, 
-            message: `🎖️ **Ya Reclamado**: Ya cobraste tu paga de **$${att.payout_amount}** para esta misión el ${att.claimed_at}.` 
+        return {
+            success: false,
+            message: `🎖️ **Ya Reclamado**: Ya cobraste tu paga de **$${att.payout_amount}** para esta misión el ${att.claimed_at}.`
         };
     }
 
@@ -1570,14 +1703,14 @@ function claimEventPayout(eventId, discordId, userRoleIds = []) {
     // Ejecutar abono en transacción atómica
     const tx = db.transaction(() => {
         // Abonar a la cartera del usuario
-        db.prepare('UPDATE economy_accounts SET wallet = wallet + ?, updated_at = CURRENT_TIMESTAMP WHERE discord_id = ?')
+        db.prepare('UPDATE economy_accounts SET wallet = wallet + ?, updated_at = CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (discord_id = ?) ')
             .run(finalAmount, discordId);
 
         // Marcar asistencia como reclamada
         db.prepare(`
-            UPDATE event_attendance 
-            SET claimed = 1, claimed_at = CURRENT_TIMESTAMP, payout_amount = ? 
-            WHERE id = ?
+            UPDATE event_attendance
+            SET claimed = 1, claimed_at = CURRENT_TIMESTAMP, payout_amount = ?
+            WHERE guild_id = current_guild_id() AND (id = ?)
         `).run(finalAmount, att.id);
 
         // Registrar log de transacción
@@ -1595,23 +1728,23 @@ function claimEventPayout(eventId, discordId, userRoleIds = []) {
     };
 }
 
-function countEventHistory(guildId = 'GLOBAL') {
+function countEventHistory(guildId = currentGuild()) {
     return db.prepare(`
         SELECT COUNT(*) AS count
-        FROM event_payouts e
-        WHERE e.guild_id = ? OR e.guild_id = 'GLOBAL'
+        FROM (SELECT * FROM event_payouts WHERE guild_id = current_guild_id()) e
+        WHERE e.guild_id = ?
     `).get(guildId).count;
 }
 
-function getEventHistory(guildId = 'GLOBAL', limit = 15, offset = 0) {
+function getEventHistory(guildId = currentGuild(), limit = 15, offset = 0) {
     const stmt = db.prepare(`
-        SELECT e.*, 
-            (SELECT COUNT(*) FROM event_attendance WHERE event_id = e.id) as total_attendees,
-            (SELECT COUNT(*) FROM event_attendance WHERE event_id = e.id AND is_eligible = 1) as eligible_count,
-            (SELECT COUNT(*) FROM event_attendance WHERE event_id = e.id AND claimed = 1) as claimed_count,
-            (SELECT COALESCE(SUM(payout_amount), 0) FROM event_attendance WHERE event_id = e.id) as total_paid
-        FROM event_payouts e
-        WHERE e.guild_id = ? OR e.guild_id = 'GLOBAL'
+        SELECT e.*,
+            (SELECT COUNT(*) FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = e.id) as total_attendees,
+            (SELECT COUNT(*) FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = e.id AND is_eligible = 1) as eligible_count,
+            (SELECT COUNT(*) FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = e.id AND claimed = 1) as claimed_count,
+            (SELECT COALESCE(SUM(payout_amount), 0) FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = e.id) as total_paid
+        FROM (SELECT * FROM event_payouts WHERE guild_id = current_guild_id()) e
+        WHERE e.guild_id = ?
         ORDER BY e.created_at DESC, e.id DESC
         LIMIT ? OFFSET ?
     `);
@@ -1628,8 +1761,8 @@ function deleteEventRecord(eventId, guildId) {
     }
 
     const remove = db.transaction(() => {
-        const attendance = db.prepare('DELETE FROM event_attendance WHERE event_id = ?').run(eventId);
-        const deleted = db.prepare('DELETE FROM event_payouts WHERE id = ?').run(eventId);
+        const attendance = db.prepare('DELETE FROM event_attendance WHERE guild_id = current_guild_id() AND (event_id = ?) ').run(eventId);
+        const deleted = db.prepare('DELETE FROM event_payouts WHERE guild_id = current_guild_id() AND (id = ?) ').run(eventId);
         return { attendanceCount: attendance.changes, eventCount: deleted.changes };
     });
     const result = remove();
@@ -1656,14 +1789,14 @@ function registerUserForEvent(eventId, discordId, username = '') {
 
     // Comprobar límite de reclutas si está configurado
     if (event.max_participants > 0) {
-        const count = db.prepare("SELECT COUNT(*) as c FROM event_attendance WHERE event_id = ? AND status NOT IN ('CANCELLED', 'EXPELLED')").get(eventId).c;
+        const count = db.prepare("SELECT COUNT(*) as c FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ? AND status NOT IN ('CANCELLED', 'EXPELLED')").get(eventId).c;
         if (count >= event.max_participants) {
             return { success: false, message: `⚠️ Cupo militar agotado: se ha alcanzado el límite máximo de ${event.max_participants} reclutas.` };
         }
     }
 
     const now = Math.floor(Date.now() / 1000);
-    const existing = db.prepare('SELECT * FROM event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
+    const existing = db.prepare('SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
 
     if (existing) {
         if (existing.status === 'EXPELLED') {
@@ -1675,18 +1808,18 @@ function registerUserForEvent(eventId, discordId, username = '') {
         db.prepare(`
             UPDATE event_attendance
             SET status = 'REGISTERED', registered_at = CURRENT_TIMESTAMP, last_seen = ?
-            WHERE id = ?
+            WHERE guild_id = current_guild_id() AND (id = ?)
         `).run(now, existing.id);
         return { success: true, message: '¡Recluta reincorporado y registrado exitosamente a la operación!', event };
     }
 
     db.prepare(`
-        INSERT INTO event_attendance (
+        INSERT INTO event_attendance (guild_id,
             event_id, discord_id, username, first_seen, last_seen,
             total_seconds_present, message_count, is_eligible, claimed,
             registered_at, attendance_confirmed, status
         )
-        VALUES (?, ?, ?, ?, ?, 0, 0, 0, 0, CURRENT_TIMESTAMP, 0, 'REGISTERED')
+        VALUES (current_guild_id(), ?, ?, ?, ?, ?, 0, 0, 0, 0, CURRENT_TIMESTAMP, 0, 'REGISTERED')
     `).run(eventId, discordId, username || 'Recluta', now, now);
 
     return { success: true, message: '¡Inscripción militar formalizada con éxito!', event };
@@ -1702,7 +1835,7 @@ function unregisterUserFromEvent(eventId, discordId) {
         return { success: false, message: 'La operación ya concluyó; no es posible anular la inscripción.' };
     }
 
-    const existing = db.prepare('SELECT * FROM event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
+    const existing = db.prepare('SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
     if (!existing || existing.status === 'CANCELLED') {
         return { success: false, message: 'No figuras en la lista activa de reclutas inscritos para esta operación.' };
     }
@@ -1711,7 +1844,7 @@ function unregisterUserFromEvent(eventId, discordId) {
         return { success: false, message: 'Ya cobraste tus haberes para esta misión; no se puede cancelar el registro.' };
     }
 
-    db.prepare("UPDATE event_attendance SET status = 'CANCELLED', attendance_confirmed = 0, is_eligible = 0 WHERE id = ?").run(existing.id);
+    db.prepare("UPDATE event_attendance SET status = 'CANCELLED', attendance_confirmed = 0, is_eligible = 0 WHERE guild_id = current_guild_id() AND (id = ?) ").run(existing.id);
     return { success: true, message: 'Has anulado tu inscripción a la operación militar.' };
 }
 
@@ -1722,7 +1855,7 @@ function expelUserFromEvent(eventId, discordId, adminId = null) {
     const event = getEventById(eventId);
     if (!event) return { success: false, message: 'Operación militar no encontrada.' };
 
-    const existing = db.prepare('SELECT * FROM event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
+    const existing = db.prepare('SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
     if (!existing) {
         return { success: false, message: 'El combatiente no figura en el registro de esta operación.' };
     }
@@ -1732,11 +1865,11 @@ function expelUserFromEvent(eventId, discordId, adminId = null) {
         SET status = 'EXPELLED',
             attendance_confirmed = 0,
             is_eligible = 0
-        WHERE id = ?
+        WHERE guild_id = current_guild_id() AND (id = ?)
     `).run(existing.id);
 
-    return { 
-        success: true, 
+    return {
+        success: true,
         message: `Combatiente <@${discordId}> ha sido retirado de la operación militar.`,
         username: existing.username,
         discord_id: discordId
@@ -1751,19 +1884,22 @@ function confirmAttendanceForEvent(eventId, discordId, username = '') {
     if (!event) return { success: false, message: 'Operación militar no encontrada.' };
 
     const now = Math.floor(Date.now() / 1000);
-    const existing = db.prepare('SELECT * FROM event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
+    const existing = db.prepare('SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
 
     if (existing) {
+        if (['ABSENT', 'NO_RESPONSE'].includes(existing.roll_call_status)) {
+            return { success: false, message: 'El encargado ya revisó tu asistencia. Pídele que corrija tu estado en el pase de lista.' };
+        }
         if (existing.status === 'EXPELLED') {
-            return { 
-                success: false, 
-                message: '❌ **Acceso Denegado:** Has sido retirado / descalificado de esta operación militar por un oficial. No puedes confirmar asistencia.' 
+            return {
+                success: false,
+                message: '❌ **Acceso Denegado:** Has sido retirado / descalificado de esta operación militar por un oficial. No puedes confirmar asistencia.'
             };
         }
         if (existing.status === 'CANCELLED') {
-            return { 
-                success: false, 
-                message: '⚠️ Habías anulado tu inscripción a esta operación militar.' 
+            return {
+                success: false,
+                message: '⚠️ Habías anulado tu inscripción a esta operación militar.'
             };
         }
         if (existing.attendance_confirmed === 1) {
@@ -1776,27 +1912,27 @@ function confirmAttendanceForEvent(eventId, discordId, username = '') {
                 is_eligible = 1,
                 status = 'CONFIRMED',
                 last_seen = ?
-            WHERE id = ?
+            WHERE guild_id = current_guild_id() AND (id = ?)
         `).run(now, existing.id);
         return { success: true, message: '🎖️ ¡Asistencia confirmada! Has sido acreditado como apto para la paga militar.', event };
     }
 
     // Si el evento era de convocatoria con pre-registro estricto y no estaba en lista
     if (event.event_type === 'REGISTRATION') {
-        return { 
-            success: false, 
-            message: '⚠️ No estabas pre-registrado en la convocatoria de esta operación militar.' 
+        return {
+            success: false,
+            message: '⚠️ No estabas pre-registrado en la convocatoria de esta operación militar.'
         };
     }
 
     // Si no estaba pre-registrado y es un evento abierto, lo incorpora y confirma como asistente en el terreno
     db.prepare(`
-        INSERT INTO event_attendance (
+        INSERT INTO event_attendance (guild_id,
             event_id, discord_id, username, first_seen, last_seen,
             total_seconds_present, message_count, is_eligible, claimed,
             registered_at, attendance_confirmed, attendance_confirmed_at, status
         )
-        VALUES (?, ?, ?, ?, ?, 0, 0, 1, 0, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP, 'CONFIRMED')
+        VALUES (current_guild_id(), ?, ?, ?, ?, ?, 0, 0, 1, 0, CURRENT_TIMESTAMP, 1, CURRENT_TIMESTAMP, 'CONFIRMED')
     `).run(eventId, discordId, username || 'Recluta', now, now);
 
     return { success: true, message: '🎖️ ¡Asistencia confirmada en el terreno! Has sido acreditado para el cobro militar.', event };
@@ -1817,15 +1953,35 @@ function setEventPhase(eventId, phase, data = {}) {
     if (data.discord_message_id) { fields.push('discord_message_id = ?'); values.push(data.discord_message_id); }
 
     values.push(eventId);
-    db.prepare(`UPDATE event_payouts SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    db.prepare(`UPDATE event_payouts SET ${fields.join(', ')} WHERE guild_id = current_guild_id() AND (id = ?) `).run(...values);
     return getEventById(eventId);
 }
 
-/**
- * Ajuste manual de asistencia/elegibilidad por un oficial desde el panel web
- */
+// Las marcas del encargado prevalecen sobre la inscripción y el rastreo automático.
+function isEventAttendeeRejected(attendee) {
+    return ['EXPELLED', 'CANCELLED'].includes(attendee.status) || ['ABSENT', 'NO_RESPONSE'].includes(attendee.roll_call_status);
+}
+
+function setEventRollCall(eventId, discordId, state, officerId) {
+    if (!['PRESENT', 'ABSENT', 'NO_RESPONSE'].includes(state)) return { success: false, message: 'Estado de asistencia inválido.' };
+    const event = getEventById(eventId);
+    if (!event || String(event.created_by_id) !== String(officerId)) return { success: false, message: 'Solo el encargado del evento puede pasar lista.' };
+    if (event.status !== 'ACTIVE') return { success: false, message: 'El pase de lista está cerrado.' };
+    const present = state === 'PRESENT' ? 1 : 0;
+    const result = db.prepare(`UPDATE event_attendance
+        SET roll_call_status = ?, roll_call_by = ?, roll_call_at = CURRENT_TIMESTAMP,
+            attendance_confirmed = ?, is_eligible = ?,
+            attendance_confirmed_at = CASE WHEN ? = 1 THEN CURRENT_TIMESTAMP ELSE NULL END
+        WHERE guild_id = current_guild_id() AND (event_id = ? AND discord_id = ? AND claimed = 0 AND status NOT IN ('EXPELLED', 'CANCELLED')
+          AND EXISTS (SELECT 1 FROM event_payouts WHERE id = ? AND status = 'ACTIVE' AND created_by_id = ?)) `)
+        .run(state, officerId, present, present, present, eventId, discordId, eventId, officerId);
+    if (!result.changes) return { success: false, message: 'No se puede marcar este participante: fue retirado, ya cobró o no pertenece a la lista activa.' };
+    return { success: true };
+}
+
+/** Ajuste administrativo de asistencia/elegibilidad del panel existente. */
 function manualToggleAttendance(eventId, discordId, { isEligible, isConfirmed }) {
-    const existing = db.prepare('SELECT * FROM event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
+    const existing = db.prepare('SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ? AND discord_id = ?').get(eventId, discordId);
     if (!existing) return { success: false, message: 'Registro de combatiente no encontrado.' };
 
     const newEligible = isEligible !== undefined ? (isEligible ? 1 : 0) : existing.is_eligible;
@@ -1835,10 +1991,10 @@ function manualToggleAttendance(eventId, discordId, { isEligible, isConfirmed })
     db.prepare(`
         UPDATE event_attendance
         SET is_eligible = ?, attendance_confirmed = ?, status = ?
-        WHERE id = ?
+        WHERE guild_id = current_guild_id() AND (id = ?)
     `).run(newEligible, newConfirmed, newStatus, existing.id);
 
-    return { success: true, record: db.prepare('SELECT * FROM event_attendance WHERE id = ?').get(existing.id) };
+    return { success: true, record: db.prepare('SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE id = ?').get(existing.id) };
 }
 
 /**
@@ -1858,13 +2014,14 @@ function massPayoutEvent(eventId, discordClient = null, officerDiscordId = null)
                 attendance_confirmed = 1,
                 attendance_confirmed_at = COALESCE(attendance_confirmed_at, CURRENT_TIMESTAMP),
                 status = 'CONFIRMED'
-            WHERE event_id = ? AND status NOT IN ('EXPELLED', 'CANCELLED')
+            WHERE guild_id = current_guild_id() AND (event_id = ? AND status NOT IN ('EXPELLED', 'CANCELLED')
+              AND (roll_call_status IS NULL OR roll_call_status = 'PRESENT'))
         `).run(eventId);
     } else {
         finalizeAttendanceCalculation(eventId);
     }
 
-    const attendees = db.prepare("SELECT * FROM event_attendance WHERE event_id = ? AND is_eligible = 1 AND claimed = 0 AND status NOT IN ('EXPELLED', 'CANCELLED')").all(eventId);
+    const attendees = db.prepare("SELECT * FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ? AND is_eligible = 1 AND claimed = 0 AND status NOT IN ('EXPELLED', 'CANCELLED') AND (roll_call_status IS NULL OR roll_call_status = 'PRESENT')").all(eventId);
 
     const guild = discordClient && event.guild_id !== 'GLOBAL' ? discordClient.guilds.cache.get(event.guild_id) : null;
     let totalPaid = 0;
@@ -1885,14 +2042,14 @@ function massPayoutEvent(eventId, discordClient = null, officerDiscordId = null)
             getAccount(att.discord_id, event.guild_id, att.username);
 
             // Abonar fondos
-            db.prepare('UPDATE economy_accounts SET wallet = wallet + ?, updated_at = CURRENT_TIMESTAMP WHERE discord_id = ?')
+            db.prepare('UPDATE economy_accounts SET wallet = wallet + ?, updated_at = CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (discord_id = ?) ')
                 .run(finalAmount, att.discord_id);
 
             // Marcar como cobrado
             db.prepare(`
-                UPDATE event_attendance 
-                SET claimed = 1, claimed_at = CURRENT_TIMESTAMP, payout_amount = ? 
-                WHERE id = ?
+                UPDATE event_attendance
+                SET claimed = 1, claimed_at = CURRENT_TIMESTAMP, payout_amount = ?
+                WHERE guild_id = current_guild_id() AND (id = ?)
             `).run(finalAmount, att.id);
 
             // Log contable
@@ -1904,7 +2061,7 @@ function massPayoutEvent(eventId, discordClient = null, officerDiscordId = null)
         }
 
         // La liquidación y el cierre son una sola operación atómica.
-        db.prepare("UPDATE event_payouts SET status = 'ENDED', ended_at = CURRENT_TIMESTAMP, phase = 'ENDED' WHERE id = ?").run(eventId);
+        db.prepare("UPDATE event_payouts SET status = 'ENDED', ended_at = CURRENT_TIMESTAMP, phase = 'ENDED' WHERE guild_id = current_guild_id() AND (id = ?) ").run(eventId);
     });
     tx();
 
@@ -1925,29 +2082,29 @@ function getEventRegistrations(eventId, includeExpelled = false) {
         ? `
         SELECT a.*,
                COALESCE(acc.avatar, '') as avatar,
-               acc.wallet, 
+               acc.wallet,
                acc.bank
-        FROM event_attendance a
-        LEFT JOIN economy_accounts acc ON a.discord_id = acc.discord_id
+        FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) a
+        LEFT JOIN (SELECT * FROM economy_accounts WHERE guild_id = current_guild_id()) acc ON a.discord_id = acc.discord_id
         WHERE a.event_id = ?
         ORDER BY a.attendance_confirmed DESC, a.registered_at ASC, a.total_seconds_present DESC
         `
         : `
-        SELECT a.*, 
+        SELECT a.*,
                COALESCE(acc.avatar, '') as avatar,
-               acc.wallet, 
+               acc.wallet,
                acc.bank
-        FROM event_attendance a
-        LEFT JOIN economy_accounts acc ON a.discord_id = acc.discord_id
+        FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) a
+        LEFT JOIN (SELECT * FROM economy_accounts WHERE guild_id = current_guild_id()) acc ON a.discord_id = acc.discord_id
         WHERE a.event_id = ? AND a.status != 'EXPELLED' AND a.status != 'CANCELLED'
         ORDER BY a.attendance_confirmed DESC, a.registered_at ASC, a.total_seconds_present DESC
         `;
     return db.prepare(query).all(eventId);
 }
 
-function getEventRegistrationsPage(eventId, page = 1, limit = 10) {
+function getEventRegistrationsPage(eventId, page = 1, limit = 10, stableOrder = false) {
     const safeLimit = Math.min(Math.max(parseInt(limit, 10) || 10, 1), 50);
-    const total = db.prepare('SELECT COUNT(*) AS count FROM event_attendance WHERE event_id = ?').get(eventId).count;
+    const total = db.prepare('SELECT COUNT(*) AS count FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) AS event_attendance WHERE event_id = ?').get(eventId).count;
     const totalPages = Math.max(1, Math.ceil(total / safeLimit));
     const safePage = Math.min(Math.max(parseInt(page, 10) || 1, 1), totalPages);
     const offset = (safePage - 1) * safeLimit;
@@ -1957,10 +2114,10 @@ function getEventRegistrationsPage(eventId, page = 1, limit = 10) {
                COALESCE(acc.avatar, '') as avatar,
                acc.wallet,
                acc.bank
-        FROM event_attendance a
-        LEFT JOIN economy_accounts acc ON a.discord_id = acc.discord_id
+        FROM (SELECT * FROM event_attendance WHERE guild_id = current_guild_id()) a
+        LEFT JOIN (SELECT * FROM economy_accounts WHERE guild_id = current_guild_id()) acc ON a.discord_id = acc.discord_id
         WHERE a.event_id = ?
-        ORDER BY a.attendance_confirmed DESC, a.registered_at ASC, a.total_seconds_present DESC
+        ORDER BY ${stableOrder ? 'a.id ASC' : 'a.attendance_confirmed DESC, a.registered_at ASC, a.total_seconds_present DESC'}
         LIMIT ? OFFSET ?
     `).all(eventId, safeLimit, offset);
 
@@ -1971,10 +2128,10 @@ function getEventRegistrationsPage(eventId, page = 1, limit = 10) {
 // PANELES Y GESTIÓN DE BONOS MILITARES (INTERACTIVOS CON BOTÓN)
 // =========================================================================
 
-function getAllBonusPanels(guildId = 'GLOBAL') {
-    const panels = db.prepare("SELECT * FROM economy_bonus_panels WHERE (guild_id = ? OR guild_id = 'GLOBAL') ORDER BY id DESC").all(guildId);
+function getAllBonusPanels(guildId = currentGuild()) {
+    const panels = db.prepare("SELECT * FROM (SELECT * FROM economy_bonus_panels WHERE guild_id = current_guild_id()) AS economy_bonus_panels WHERE (guild_id = ?) ORDER BY id DESC").all(guildId);
     return panels.map(p => {
-        const stats = db.prepare('SELECT COUNT(*) as claims, COALESCE(SUM(amount), 0) as total FROM economy_bonus_claims WHERE panel_id = ?').get(p.id);
+        const stats = db.prepare('SELECT COUNT(*) as claims, COALESCE(SUM(amount), 0) as total FROM (SELECT * FROM economy_bonus_claims WHERE guild_id = current_guild_id()) AS economy_bonus_claims WHERE panel_id = ?').get(p.id);
         return {
             ...p,
             required_roles: JSON.parse(p.required_roles || '[]'),
@@ -1985,7 +2142,7 @@ function getAllBonusPanels(guildId = 'GLOBAL') {
 }
 
 function getBonusPanelById(panelId) {
-    const panel = db.prepare('SELECT * FROM economy_bonus_panels WHERE id = ?').get(panelId);
+    const panel = db.prepare('SELECT * FROM (SELECT * FROM economy_bonus_panels WHERE guild_id = current_guild_id()) AS economy_bonus_panels WHERE id = ?').get(panelId);
     if (!panel) return null;
     return {
         ...panel,
@@ -1993,11 +2150,11 @@ function getBonusPanelById(panelId) {
     };
 }
 
-function getBonusPanel(guildId = 'GLOBAL') {
-    let stmt = db.prepare("SELECT * FROM economy_bonus_panels WHERE (guild_id = ? OR guild_id = 'GLOBAL') AND is_active = 1 ORDER BY id DESC LIMIT 1");
+function getBonusPanel(guildId = currentGuild()) {
+    let stmt = db.prepare("SELECT * FROM (SELECT * FROM economy_bonus_panels WHERE guild_id = current_guild_id()) AS economy_bonus_panels WHERE (guild_id = ?) AND is_active = 1 ORDER BY id DESC LIMIT 1");
     let panel = stmt.get(guildId);
     if (!panel) {
-        let stmtAny = db.prepare("SELECT * FROM economy_bonus_panels WHERE (guild_id = ? OR guild_id = 'GLOBAL') ORDER BY id DESC LIMIT 1");
+        let stmtAny = db.prepare("SELECT * FROM (SELECT * FROM economy_bonus_panels WHERE guild_id = current_guild_id()) AS economy_bonus_panels WHERE (guild_id = ?) ORDER BY id DESC LIMIT 1");
         panel = stmtAny.get(guildId);
     }
     if (!panel) {
@@ -2009,7 +2166,7 @@ function getBonusPanel(guildId = 'GLOBAL') {
     };
 }
 
-function createBonusPanel(guildId = 'GLOBAL', data = {}) {
+function createBonusPanel(guildId = currentGuild(), data = {}) {
     const stmt = db.prepare(`
         INSERT INTO economy_bonus_panels (
             guild_id, title, description, amount, claim_mode, cooldown_seconds,
@@ -2036,7 +2193,7 @@ function createBonusPanel(guildId = 'GLOBAL', data = {}) {
     return getBonusPanelById(info.lastInsertRowid);
 }
 
-function saveBonusPanel(guildId = 'GLOBAL', data = {}) {
+function saveBonusPanel(guildId = currentGuild(), data = {}) {
     const panelId = data.id || (getBonusPanel(guildId)?.id);
     if (!panelId) return createBonusPanel(guildId, data);
 
@@ -2059,7 +2216,7 @@ function saveBonusPanel(guildId = 'GLOBAL', data = {}) {
     if (fields.length > 0) {
         fields.push('updated_at = CURRENT_TIMESTAMP');
         values.push(panelId);
-        const query = `UPDATE economy_bonus_panels SET ${fields.join(', ')} WHERE id = ?`;
+        const query = `UPDATE economy_bonus_panels SET ${fields.join(', ')} WHERE guild_id = current_guild_id() AND (id = ?) `;
         db.prepare(query).run(...values);
     }
     return getBonusPanelById(panelId);
@@ -2067,25 +2224,25 @@ function saveBonusPanel(guildId = 'GLOBAL', data = {}) {
 
 function deleteBonusPanel(panelId) {
     const tx = db.transaction(() => {
-        db.prepare('DELETE FROM economy_bonus_claims WHERE panel_id = ?').run(panelId);
-        db.prepare('DELETE FROM economy_bonus_panels WHERE id = ?').run(panelId);
+        db.prepare('DELETE FROM economy_bonus_claims WHERE guild_id = current_guild_id() AND (panel_id = ?) ').run(panelId);
+        db.prepare('DELETE FROM economy_bonus_panels WHERE guild_id = current_guild_id() AND (id = ?) ').run(panelId);
     });
     tx();
     return true;
 }
 
 function resetBonusClaims(panelId) {
-    const info = db.prepare('DELETE FROM economy_bonus_claims WHERE panel_id = ?').run(panelId);
+    const info = db.prepare('DELETE FROM economy_bonus_claims WHERE guild_id = current_guild_id() AND (panel_id = ?) ').run(panelId);
     return { success: true, deletedClaims: info.changes };
 }
 
 function claimPanelBonus(panelId, discordId, memberRoles = []) {
     let panel;
     if (panelId) {
-        panel = db.prepare('SELECT * FROM economy_bonus_panels WHERE id = ?').get(panelId);
+        panel = db.prepare('SELECT * FROM (SELECT * FROM economy_bonus_panels WHERE guild_id = current_guild_id()) AS economy_bonus_panels WHERE id = ?').get(panelId);
     }
     if (!panel) {
-        panel = db.prepare('SELECT * FROM economy_bonus_panels ORDER BY id DESC LIMIT 1').get();
+        panel = db.prepare('SELECT * FROM (SELECT * FROM economy_bonus_panels WHERE guild_id = current_guild_id()) AS economy_bonus_panels ORDER BY id DESC LIMIT 1').get();
     }
     if (!panel) {
         return { success: false, message: '❌ **Sin Panel Activo**: No hay un panel de bonos activo configurado en el sistema.' };
@@ -2099,9 +2256,9 @@ function claimPanelBonus(panelId, discordId, memberRoles = []) {
     if (requiredRoles.length > 0) {
         const hasReq = requiredRoles.some(rId => memberRoles.includes(rId));
         if (!hasReq) {
-            return { 
-                success: false, 
-                message: '⛔ **Acceso Restringido por Rango**: Tu escalafón militar actual no cumple los roles requeridos para reclamar este bono extraordinario.' 
+            return {
+                success: false,
+                message: '⛔ **Acceso Restringido por Rango**: Tu escalafón militar actual no cumple los roles requeridos para reclamar este bono extraordinario.'
             };
         }
     }
@@ -2110,7 +2267,7 @@ function claimPanelBonus(panelId, discordId, memberRoles = []) {
 
     // Modo: Una sola vez (ONCE)
     if (panel.claim_mode === 'ONCE') {
-        const existing = db.prepare('SELECT * FROM economy_bonus_claims WHERE panel_id = ? AND discord_id = ?').get(panel.id, discordId);
+        const existing = db.prepare('SELECT * FROM (SELECT * FROM economy_bonus_claims WHERE guild_id = current_guild_id()) AS economy_bonus_claims WHERE panel_id = ? AND discord_id = ?').get(panel.id, discordId);
         if (existing) {
             return {
                 success: false,
@@ -2118,7 +2275,7 @@ function claimPanelBonus(panelId, discordId, memberRoles = []) {
             };
         }
     } else if (panel.claim_mode === 'COOLDOWN') {
-        const lastClaim = db.prepare('SELECT * FROM economy_bonus_claims WHERE panel_id = ? AND discord_id = ? ORDER BY timestamp_unix DESC LIMIT 1').get(panel.id, discordId);
+        const lastClaim = db.prepare('SELECT * FROM (SELECT * FROM economy_bonus_claims WHERE guild_id = current_guild_id()) AS economy_bonus_claims WHERE panel_id = ? AND discord_id = ? ORDER BY timestamp_unix DESC LIMIT 1').get(panel.id, discordId);
         const cooldown = panel.cooldown_seconds || 86400;
         if (lastClaim && (now - lastClaim.timestamp_unix) < cooldown) {
             const waitSec = (lastClaim.timestamp_unix + cooldown) - now;
@@ -2137,12 +2294,12 @@ function claimPanelBonus(panelId, discordId, memberRoles = []) {
     const amount = panel.amount || 500;
     const tx = db.transaction(() => {
         getAccount(discordId);
-        db.prepare('UPDATE economy_accounts SET wallet = wallet + ?, last_bonus = ?, updated_at = CURRENT_TIMESTAMP WHERE discord_id = ?')
+        db.prepare('UPDATE economy_accounts SET wallet = wallet + ?, last_bonus = ?, updated_at = CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (discord_id = ?) ')
             .run(amount, now, discordId);
-        
+
         db.prepare(`
-            INSERT INTO economy_bonus_claims (panel_id, discord_id, amount, timestamp_unix)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO economy_bonus_claims (guild_id, panel_id, discord_id, amount, timestamp_unix)
+            VALUES (current_guild_id(), ?, ?, ?, ?)
         `).run(panel.id, discordId, amount, now);
 
         logTransaction(discordId, 'BONUS_CLAIM', amount, `Bono reclamado desde panel táctico: "${panel.title}" (Modo: ${panel.claim_mode})`);
@@ -2164,7 +2321,7 @@ function giveBonus(discordId, amount, reason = '', target = 'wallet', issuerTag 
     const col = target === 'bank' ? 'bank' : 'wallet';
     const num = Math.max(1, parseInt(amount, 10));
 
-    db.prepare(`UPDATE economy_accounts SET ${col} = ${col} + ?, updated_at = CURRENT_TIMESTAMP WHERE discord_id = ?`).run(num, discordId);
+    db.prepare(`UPDATE economy_accounts SET ${col} = ${col} + ?, updated_at = CURRENT_TIMESTAMP WHERE guild_id = current_guild_id() AND (discord_id = ?) `).run(num, discordId);
     logTransaction(discordId, 'BONUS_GIVE', num, `Bono concedido por ${issuerTag}: ${reason || 'Gratificación táctica'}`);
     return getAccount(discordId);
 }
@@ -2172,16 +2329,16 @@ function giveBonus(discordId, amount, reason = '', target = 'wallet', issuerTag 
 function giveMassBonus(amount, reason = '', issuerTag = 'Mando USMC') {
     const num = Math.max(1, parseInt(amount, 10));
     const stmt = db.prepare(`
-        UPDATE economy_accounts 
-        SET wallet = wallet + ?, updated_at = CURRENT_TIMESTAMP 
-        WHERE LENGTH(discord_id) >= 17 AND discord_id GLOB '[0-9]*'
+        UPDATE economy_accounts
+        SET wallet = wallet + ?, updated_at = CURRENT_TIMESTAMP
+        WHERE guild_id = current_guild_id() AND (LENGTH(discord_id) >= 17 AND discord_id GLOB '[0-9]*')
     `);
     const info = stmt.run(num);
-    logTransaction('GLOBAL', 'MASS_BONUS', num, `Bono masivo a ${info.changes} combatientes por ${issuerTag}: ${reason || 'Gratificación general de brigada'}`);
+    logTransaction('GLOBAL', 'MASS_BONUS', num, `Bono masivo a ${info.changes} combatientes por ${issuerTag}: ${reason || 'Gratificación general de comunidad'}`);
     return { count: info.changes, amount: num };
 }
 
-function getBonusStats(guildId = 'GLOBAL', panelId = null) {
+function getBonusStats(guildId = currentGuild(), panelId = null) {
     const panel = panelId ? getBonusPanelById(panelId) : getBonusPanel(guildId);
     if (!panel) {
         return {
@@ -2192,11 +2349,11 @@ function getBonusStats(guildId = 'GLOBAL', panelId = null) {
         };
     }
 
-    const countRow = db.prepare('SELECT COUNT(*) as total_claims, COALESCE(SUM(amount), 0) as total_distributed FROM economy_bonus_claims WHERE panel_id = ?').get(panel.id);
+    const countRow = db.prepare('SELECT COUNT(*) as total_claims, COALESCE(SUM(amount), 0) as total_distributed FROM (SELECT * FROM economy_bonus_claims WHERE guild_id = current_guild_id()) AS economy_bonus_claims WHERE panel_id = ?').get(panel.id);
     const recent = db.prepare(`
         SELECT c.*, COALESCE(NULLIF(a.username, ''), c.discord_id) as username, a.avatar
-        FROM economy_bonus_claims c
-        LEFT JOIN economy_accounts a ON c.discord_id = a.discord_id
+        FROM (SELECT * FROM economy_bonus_claims WHERE guild_id = current_guild_id()) c
+        LEFT JOIN (SELECT * FROM economy_accounts WHERE guild_id = current_guild_id()) a ON c.discord_id = a.discord_id
         WHERE c.panel_id = ?
         ORDER BY c.claimed_at DESC
         LIMIT 10
@@ -2213,11 +2370,16 @@ function getBonusStats(guildId = 'GLOBAL', panelId = null) {
 // Inicializar tablas de economía al cargar el módulo
 try {
     initEconomyTables();
+    migrateGuildTables(db, serverDb.dbPath, 'economy');
+    require('./guildMigration').installGuildConstraints(db);
+    migrateLegacyCommandNames();
 } catch (e) {
-    console.error('Error al inicializar tablas de economía:', e.message);
+    throw new Error('No se pudo preparar la economía por comunidad: ' + e.message);
 }
 
-module.exports = {
+module.exports = bindExports({
+    cancelUnpublishedEvent,
+    completeShopOrder, refundShopOrder,
     initEconomyTables,
     getAccount,
     updateCooldown,
@@ -2258,7 +2420,10 @@ module.exports = {
     saveEventReportTemplate,
     archiveEventReportTemplate,
     saveEventReport,
+    syncEventParticipantsByIds,
     saveEventCompletionNotice,
+    getEventFinalizationDraft,
+    saveEventFinalizationDraft,
     recordAttendanceHeartbeat,
     recordChatActivity,
     finalizeEvent,
@@ -2290,6 +2455,8 @@ module.exports = {
     confirmAttendanceForEvent,
     setEventPhase,
     manualToggleAttendance,
+    setEventRollCall,
+    isEventAttendeeRejected,
     massPayoutEvent,
     getEventRegistrations,
     getEventRegistrationsPage,
@@ -2301,4 +2468,4 @@ module.exports = {
     deleteTransactions,
     clearAllTransactions,
     setOnTransactionLogged
-};
+}, { getAccount: 1, syncAccountUser: 3, getEconomySettings: 0, updateEconomySettings: 0, getShopItems: 0, createShopItem: args => args[0]?.guild_id, purchaseShopItem: 3, getRoleRewards: 0, setRoleReward: 0, getBestRoleRewardForUser: 0, createEvent: args => args[0]?.guild_id, getActiveEvent: 0, getActiveEvents: 0, getRecentEvents: 0, getEventReportTemplates: 0, getEventReportTemplateById: 1, saveEventReportTemplate: 0, archiveEventReportTemplate: 1, getEventHistory: 0, countEventHistory: 0, deleteEventRecord: 1, cancelUnpublishedEvent: 1, getTreasuryStats: 0, getAllBonusPanels: 0, getBonusPanel: 0, createBonusPanel: 0, saveBonusPanel: 0, getBonusStats: 0 });

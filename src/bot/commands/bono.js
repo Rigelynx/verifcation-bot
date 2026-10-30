@@ -21,22 +21,22 @@ function buildBonusPanelMessage(panel, settings = null) {
         : `⏱️ Periódico (Cooldown de ${Math.round((panel.cooldown_seconds || 86400) / 3600)} horas)`;
 
     const embed = new EmbedBuilder()
-        .setColor(0xd4af37) // USMC Gold
+        .setColor(0xd4af37) // Comunidad Gold
         .setTitle(panel.title || '🎖️ [BONO MILITAR EXTRAORDINARIO // ASIGNACIÓN DE MANDO]')
         .setDescription(`
-${panel.description || 'El Estado Mayor de la Base USMC ha autorizado una asignación financiera especial para el personal militar en servicio activo.'}
+${panel.description || 'El Administración de la Base Comunidad ha autorizado una asignación financiera especial para el personal comunitario en servicio activo.'}
 
 > 💰 **Asignación Financiera:** \`${sym}${amount.toLocaleString()}\`
 > 📡 **Modalidad de Concesión:** \`${modeText}\`
 > 🛡️ **Estado:** \`${panel.is_active ? 'AUTORIZADO Y DISPONIBLE' : 'SUSPENDIDO'}\`
 
-Pulsa el botón táctico inferior para formalizar el cobro inmediato a tu cartera militar.
+Pulsa el botón táctico inferior para formalizar el cobro inmediato a tu cartera comunitario.
         `)
         .addFields(
-            { name: '🎖️ Fondo Militar', value: `\`${sym}${amount.toLocaleString()}\``, inline: true },
+            { name: '🎖️ Fondo de la comunidad', value: `\`${sym}${amount.toLocaleString()}\``, inline: true },
             { name: '📋 Modalidad', value: `\`${panel.claim_mode === 'ONCE' ? 'ÚNICA VEZ' : 'FRECUENCIA RECURRENTE'}\``, inline: true }
         )
-        .setFooter({ text: 'Tesorería Militar y Mando de Fuerzas Especiales USMC' })
+        .setFooter({ text: 'Tesorería Militar y Mando de Fuerzas Especiales Comunidad' })
         .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
@@ -54,10 +54,10 @@ Pulsa el botón táctico inferior para formalizar el cobro inmediato a tu carter
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('bono')
-        .setDescription('Sistema de bonos, asignaciones extraordinarias y gratificaciones militares USMC')
+        .setDescription('Sistema de bonos, asignaciones extraordinarias y gratificaciones comunitarios Comunidad')
         .addSubcommand(sub =>
             sub.setName('panel')
-                .setDescription('Despliega el panel de reclamo de bonos militares con botón interactivo (Oficiales)')
+                .setDescription('Despliega el panel de reclamo de bonos comunitarios con botón interactivo (Responsables)')
                 .addChannelOption(opt =>
                     opt.setName('canal')
                         .setDescription('Canal donde publicar el panel (por defecto este canal)')
@@ -73,7 +73,7 @@ module.exports = {
         )
         .addSubcommand(sub =>
             sub.setName('crear')
-                .setDescription('Crea un nuevo bono militar con ID único para que todos puedan reclamar (Oficiales)')
+                .setDescription('Crea un nuevo bono comunitario con ID único para que todos puedan reclamar (Responsables)')
                 .addIntegerOption(opt => opt.setName('monto').setDescription('Monto en créditos').setMinValue(1).setRequired(true))
                 .addStringOption(opt => opt.setName('titulo').setDescription('Título táctico del bono').setRequired(true))
                 .addStringOption(opt => opt.setName('descripcion').setDescription('Descripción o comunicado').setRequired(false))
@@ -85,28 +85,28 @@ module.exports = {
         )
         .addSubcommand(sub =>
             sub.setName('eliminar')
-                .setDescription('Elimina un bono militar y su historial de reclamos (Oficiales)')
-                .addIntegerOption(opt => opt.setName('id').setDescription('ID del bono militar a eliminar').setMinValue(1).setRequired(true))
+                .setDescription('Elimina un bono comunitario y su historial de reclamos (Responsables)')
+                .addIntegerOption(opt => opt.setName('id').setDescription('ID del bono comunitario a eliminar').setMinValue(1).setRequired(true))
         )
         .addSubcommand(sub =>
             sub.setName('reset_reclamos')
-                .setDescription('Reinicia los reclamos de un bono para que todos los soldados puedan volver a cobrarlo (Oficiales)')
-                .addIntegerOption(opt => opt.setName('id').setDescription('ID del bono militar a reiniciar').setMinValue(1).setRequired(true))
+                .setDescription('Reinicia los reclamos de un bono para que todos los soldados puedan volver a cobrarlo (Responsables)')
+                .addIntegerOption(opt => opt.setName('id').setDescription('ID del bono comunitario a reiniciar').setMinValue(1).setRequired(true))
         )
         .addSubcommand(sub =>
             sub.setName('lista')
-                .setDescription('Muestra la lista de todos los bonos militares creados con sus IDs y estado (Oficiales)')
+                .setDescription('Muestra la lista de todos los bonos comunitarios creados con sus IDs y estado (Responsables)')
         )
         .addSubcommand(sub =>
             sub.setName('reclamar')
-                .setDescription('Reclama tu asignación de bono militar disponible')
+                .setDescription('Reclama tu asignación de bono comunitario disponible')
         )
         .addSubcommand(sub =>
             sub.setName('dar')
-                .setDescription('Otorgar un bono financiero militar a un combatiente (Oficiales/Mando)')
+                .setDescription('Otorgar un bono financiero comunitario a un combatiente (Responsables/Mando)')
                 .addUserOption(opt =>
                     opt.setName('usuario')
-                        .setDescription('Combatiente que recibirá el bono militar')
+                        .setDescription('Combatiente que recibirá el bono comunitario')
                         .setRequired(true)
                 )
                 .addIntegerOption(opt =>
@@ -117,7 +117,7 @@ module.exports = {
                 )
                 .addStringOption(opt =>
                     opt.setName('motivo')
-                        .setDescription('Cita militar o motivo de la condecoración/bono')
+                        .setDescription('Cita comunitario o motivo de la condecoración/bono')
                         .setRequired(false)
                 )
                 .addStringOption(opt =>
@@ -132,7 +132,7 @@ module.exports = {
         )
         .addSubcommand(sub =>
             sub.setName('masivo')
-                .setDescription('Conceder un bono militar a todo el personal militar registrado (Comando)')
+                .setDescription('Conceder un bono comunitario a todo el personal comunitario registrado (Comando)')
                 .addIntegerOption(opt =>
                     opt.setName('monto')
                         .setDescription('Cantidad individual para cada combatiente')
@@ -147,7 +147,7 @@ module.exports = {
         )
         .addSubcommand(sub =>
             sub.setName('estado')
-                .setDescription('Consulta el estado de tu próximo bono y configuración de brigada')
+                .setDescription('Consulta el estado de tu próximo bono y configuración de comunidad')
         ),
 
     buildBonusPanelMessage,
@@ -183,7 +183,7 @@ module.exports = {
             const panel = panelIdOpt ? economyDb.getBonusPanelById(panelIdOpt) : economyDb.getBonusPanel(guildId);
             if (!panel) {
                 return interaction.reply({
-                    content: `❌ **Bono No Encontrado:** No existe un bono militar con ID \`#${panelIdOpt}\`. Usa \`/bono lista\` para ver los disponibles.`,
+                    content: `❌ **Bono No Encontrado:** No existe un bono comunitario con ID \`#${panelIdOpt}\`. Usa \`/bono lista\` para ver los disponibles.`,
                     flags: MessageFlags.Ephemeral
                 });
             }
@@ -218,14 +218,14 @@ module.exports = {
 
             if (!permCheck.allowed && !isOfficer) {
                 return interaction.reply({
-                    content: '🔒 **Acceso Denegado:** Tu rango militar actual no cuenta con autorización para otorgar bonificaciones financieras.',
+                    content: '🔒 **Acceso Denegado:** Tu rango comunitario actual no cuenta con autorización para otorgar bonificaciones financieras.',
                     flags: MessageFlags.Ephemeral
                 });
             }
 
             const targetUser = interaction.options.getUser('usuario');
             const amount = interaction.options.getInteger('monto');
-            const reason = interaction.options.getString('motivo') || 'Gratificación por mérito militar';
+            const reason = interaction.options.getString('motivo') || 'Gratificación por mérito comunitario';
             const target = interaction.options.getString('destino') || 'wallet';
 
             // Validar tope máximo salvo administradores
@@ -245,7 +245,7 @@ module.exports = {
                 .setColor(0x38e54d)
                 .setTitle('🎖️ [BONO MILITAR CONCEDIDO // ORDEN OFICIAL]')
                 .setDescription(`
-Se ha formalizado la concesión de una bonificación económica militar.
+Se ha formalizado la concesión de una bonificación económica comunitario.
 
 > 👤 **Beneficiario:** <@${targetUser.id}> (\`${targetUser.tag || targetUser.username}\`)
 > 💰 **Monto Concedido:** \`${sym}${amount.toLocaleString()}\` (${target === 'bank' ? 'Caja Fuerte' : 'Cartera'})
@@ -255,7 +255,7 @@ Se ha formalizado la concesión de una bonificación económica militar.
                 .addFields(
                     { name: '💵 Patrimonio Actualizado', value: `\`${sym}${(updatedAccount.wallet + updatedAccount.bank).toLocaleString()}\``, inline: true }
                 )
-                .setFooter({ text: 'Registro Contable Militar USMC' })
+                .setFooter({ text: 'Registro Contable Militar Comunidad' })
                 .setTimestamp();
 
             return interaction.reply({ embeds: [embed] });
@@ -268,7 +268,7 @@ Se ha formalizado la concesión de una bonificación económica militar.
             const isOfficer = hasOfficerPermission(interaction) || (interaction.member && interaction.member.permissions && interaction.member.permissions.has(8n));
             if (!isOfficer) {
                 return interaction.reply({
-                    content: '🔒 **Acceso Restringido:** Solo el Estado Mayor puede emitir pagos de bonos masivos a todo el pelotón.',
+                    content: '🔒 **Acceso Restringido:** Solo el Administración puede emitir pagos de bonos masivos a todo el pelotón.',
                     flags: MessageFlags.Ephemeral
                 });
             }
@@ -286,11 +286,11 @@ Se ha formalizado la concesión de una bonificación económica militar.
 ¡Atención a todo el personal de la base! Se ha dispersado un bono financiero general.
 
 > 💰 **Monto por Soldado:** \`${sym}${amount.toLocaleString()}\`
-> 👥 **Combatientes Beneficiados:** \`${res.count} reclutas\`
+> 👥 **Combatientes Beneficiados:** \`${res.count} miembros\`
 > 📜 **Motivo Militar:** *"${reason}"*
 > 🎖️ **Decretado por:** <@${interaction.user.id}>
                 `)
-                .setFooter({ text: 'Tesorería Central USMC • Los fondos han sido depositados en las carteras.' })
+                .setFooter({ text: 'Tesorería Central Comunidad • Los fondos han sido depositados en las carteras.' })
                 .setTimestamp();
 
             return interaction.reply({ embeds: [embed] });
@@ -306,7 +306,7 @@ Se ha formalizado la concesión de una bonificación económica militar.
                 return interaction.reply({
                     content: permCheck.reason === 'DISABLED'
                         ? '🔒 **Protocolo Inactivo:** El comando de bonos se encuentra temporalmente deshabilitado.'
-                        : '🔒 **Acceso Denegado:** Tu rango actual no cuenta con autorización para solicitar este bono militar.',
+                        : '🔒 **Acceso Denegado:** Tu rango actual no cuenta con autorización para solicitar este bono comunitario.',
                     flags: MessageFlags.Ephemeral
                 });
             }
@@ -335,7 +335,7 @@ Se ha formalizado la concesión de una bonificación económica militar.
 
 *La transacción ha sido sellada y archivada en los libros de tesorería.*
                 `)
-                .setFooter({ text: 'Tesorería Militar USMC' })
+                .setFooter({ text: 'Tesorería Militar Comunidad' })
                 .setTimestamp();
 
             return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
@@ -353,7 +353,7 @@ Se ha formalizado la concesión de una bonificación económica militar.
                 .setColor(0x1a3320)
                 .setTitle('📊 [SISTEMA DE BONOS // ESTADO DE SERVICIO]')
                 .setDescription(`
-Parámetros actuales del programa de bonificaciones militares de la base:
+Parámetros actuales del programa de bonificaciones comunitarios de la base:
 
 > 🎖️ **Panel Activo:** \`${panel.title}\`
 > 💰 **Monto Vigente:** \`${sym}${panel.amount.toLocaleString()}\`
@@ -362,7 +362,7 @@ Parámetros actuales del programa de bonificaciones militares de la base:
 > 💵 **Total Concedido:** \`${sym}${stats.totalDistributed.toLocaleString()}\`
 > 👤 **Tus Cobros Registrados:** \`${userClaims.length}\`
                 `)
-                .setFooter({ text: 'USMC Command Center' });
+                .setFooter({ text: 'Comunidad Command Center' });
 
             return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
         }
@@ -374,14 +374,14 @@ Parámetros actuales del programa de bonificaciones militares de la base:
             const isAuthorized = hasOfficerPermission(interaction) || hasAdminPermission(interaction);
             if (!isAuthorized) {
                 return interaction.reply({
-                    content: '🔒 **Acceso Denegado:** Se requieren credenciales de Oficial o Comandante para crear bonos militares.',
+                    content: '🔒 **Acceso Denegado:** Se requieren credenciales de Oficial o Comandante para crear bonos comunitarios.',
                     flags: MessageFlags.Ephemeral
                 });
             }
 
             const monto = interaction.options.getInteger('monto');
             const titulo = interaction.options.getString('titulo');
-            const descripcion = interaction.options.getString('descripcion') || 'Asignación financiera especial autorizada por el Estado Mayor USMC.';
+            const descripcion = interaction.options.getString('descripcion') || 'Asignación financiera especial autorizada por el Administración Comunidad.';
             const modo = interaction.options.getString('modo') || 'ONCE';
             const horasCooldown = interaction.options.getInteger('horas_cooldown') || 24;
 
@@ -398,7 +398,7 @@ Parámetros actuales del programa de bonificaciones militares de la base:
                 .setColor(0x38e54d)
                 .setTitle('🎖️ [NUEVO BONO MILITAR CREADO // ORDEN DE TESORERÍA]')
                 .setDescription(`
-Se ha creado exitosamente un nuevo bono militar con ID único.
+Se ha creado exitosamente un nuevo bono comunitario con ID único.
 
 > 🆔 **ID del Bono:** \`#${newPanel.id}\`
 > 📋 **Título:** \`${newPanel.title}\`
@@ -411,7 +411,7 @@ Se ha creado exitosamente un nuevo bono militar con ID único.
 
 *Cada bono tiene su propio ID y historial de reclamos independiente.*
                 `)
-                .setFooter({ text: 'Tesorería Militar USMC • Sistema de Bonos Independientes' })
+                .setFooter({ text: 'Tesorería Militar Comunidad • Sistema de Bonos Independientes' })
                 .setTimestamp();
 
             return interaction.reply({ embeds: [embed] });
@@ -424,7 +424,7 @@ Se ha creado exitosamente un nuevo bono militar con ID único.
             const isAuthorized = hasOfficerPermission(interaction) || hasAdminPermission(interaction);
             if (!isAuthorized) {
                 return interaction.reply({
-                    content: '🔒 **Acceso Denegado:** Se requieren credenciales de Oficial o Comandante para eliminar bonos militares.',
+                    content: '🔒 **Acceso Denegado:** Se requieren credenciales de Oficial o Comandante para eliminar bonos comunitarios.',
                     flags: MessageFlags.Ephemeral
                 });
             }
@@ -434,7 +434,7 @@ Se ha creado exitosamente un nuevo bono militar con ID único.
 
             if (!panel) {
                 return interaction.reply({
-                    content: `❌ **Bono No Encontrado:** No existe un bono militar con ID \`#${panelId}\`. Usa \`/bono lista\` para ver los existentes.`,
+                    content: `❌ **Bono No Encontrado:** No existe un bono comunitario con ID \`#${panelId}\`. Usa \`/bono lista\` para ver los existentes.`,
                     flags: MessageFlags.Ephemeral
                 });
             }
@@ -446,7 +446,7 @@ Se ha creado exitosamente un nuevo bono militar con ID único.
                 .setColor(0xff4444)
                 .setTitle('🗑️ [BONO MILITAR ELIMINADO // BAJA DE TESORERÍA]')
                 .setDescription(`
-El bono militar ha sido eliminado permanentemente del sistema junto con todo su historial de reclamos.
+El bono comunitario ha sido eliminado permanentemente del sistema junto con todo su historial de reclamos.
 
 > 🆔 **ID Eliminado:** \`#${panelId}\`
 > 📋 **Título:** \`${panel.title}\`
@@ -457,7 +457,7 @@ El bono militar ha sido eliminado permanentemente del sistema junto con todo su 
 
 *Los fondos ya concedidos a los soldados NO se revierten.*
                 `)
-                .setFooter({ text: 'Tesorería Militar USMC • Baja Contable' })
+                .setFooter({ text: 'Tesorería Militar Comunidad • Baja Contable' })
                 .setTimestamp();
 
             return interaction.reply({ embeds: [embed] });
@@ -480,7 +480,7 @@ El bono militar ha sido eliminado permanentemente del sistema junto con todo su 
 
             if (!panel) {
                 return interaction.reply({
-                    content: `❌ **Bono No Encontrado:** No existe un bono militar con ID \`#${panelId}\`. Usa \`/bono lista\` para ver los existentes.`,
+                    content: `❌ **Bono No Encontrado:** No existe un bono comunitario con ID \`#${panelId}\`. Usa \`/bono lista\` para ver los existentes.`,
                     flags: MessageFlags.Ephemeral
                 });
             }
@@ -500,7 +500,7 @@ Se han borrado todos los registros de reclamo del bono seleccionado. Ahora todos
 
 *Todos los combatientes pueden reclamar este bono nuevamente.*
                 `)
-                .setFooter({ text: 'Tesorería Militar USMC • Reset Contable' })
+                .setFooter({ text: 'Tesorería Militar Comunidad • Reset Contable' })
                 .setTimestamp();
 
             return interaction.reply({ embeds: [embed] });
@@ -522,16 +522,16 @@ Se han borrado todos los registros de reclamo del bono seleccionado. Ahora todos
 
             if (panels.length === 0) {
                 return interaction.reply({
-                    content: '📋 **Sin Bonos:** No hay bonos militares registrados en el sistema. Usa `/bono crear` para crear uno nuevo.',
+                    content: '📋 **Sin Bonos:** No hay bonos comunitarios registrados en el sistema. Usa `/bono crear` para crear uno nuevo.',
                     flags: MessageFlags.Ephemeral
                 });
             }
 
             const embed = new EmbedBuilder()
                 .setColor(0xd4af37)
-                .setTitle('📋 [REGISTRO DE BONOS MILITARES // TESORERÍA USMC]')
-                .setDescription('Lista completa de bonos militares creados en el sistema. Cada bono tiene su propio ID y reclamos independientes.')
-                .setFooter({ text: `Total: ${panels.length} bono(s) • Tesorería Militar USMC` })
+                .setTitle('📋 [REGISTRO DE BONOS MILITARES // TESORERÍA Comunidad]')
+                .setDescription('Lista completa de bonos comunitarios creados en el sistema. Cada bono tiene su propio ID y reclamos independientes.')
+                .setFooter({ text: `Total: ${panels.length} bono(s) • Tesorería Militar Comunidad` })
                 .setTimestamp();
 
             for (const p of panels.slice(0, 15)) {

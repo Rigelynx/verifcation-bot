@@ -98,7 +98,10 @@ async function loadAdminAuditLogs() {
     const res = await fetch('/api/admin/audit-logs?limit=50', { headers: { 'Authorization': `Bearer ${adminToken}` } });
     if (!res.ok) return;
     const data = await res.json();
-    tbody.innerHTML = (data.logs || []).map(log => `<tr><td style="font-size:0.8rem;color:#728c75;">${log.created_at}</td><td style="color:#a8c7ad;">${log.actor}</td><td style="color:var(--usmc-gold);">${log.action}</td><td style="font-family:var(--font-mono);">${log.target_id || '—'}</td><td>${log.details || '—'}</td></tr>`).join('') || '<tr><td colspan="5">No hay acciones administrativas registradas.</td></tr>';
+    tbody.innerHTML = (data.logs || []).map(log => {
+        const opBadge = log.operator_id ? `<br><span style="font-size:0.7rem;color:#728c75;">ID: ${log.operator_id}</span>` : '';
+        return `<tr><td style="font-size:0.8rem;color:#728c75;">${log.created_at}</td><td style="color:#38e54d;font-weight:bold;">👮 ${log.actor}${opBadge}</td><td style="color:var(--usmc-gold);">${log.action}</td><td style="font-family:var(--font-mono);">${log.target_id || '—'}</td><td>${log.details || '—'}</td></tr>`;
+    }).join('') || '<tr><td colspan="5">No hay acciones administrativas registradas.</td></tr>';
 }
 
 async function saveEconomyLogChannel() {

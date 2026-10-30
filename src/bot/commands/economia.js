@@ -5,10 +5,10 @@ const { hasOfficerPermission } = require('../handlers/permissionHandler');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('economia')
-        .setDescription('Comandos del sistema financiero y económico militar USMC')
+        .setDescription('Comandos del sistema financiero y económico comunitario Comunidad')
         .addSubcommand(sub =>
             sub.setName('balance')
-                .setDescription('Consulta tu balance militar o el de otro recluta')
+                .setDescription('Consulta tu balance comunitario o el de otro recluta')
                 .addUserOption(opt => opt.setName('usuario').setDescription('Recluta a consultar').setRequired(false))
         )
         .addSubcommand(sub =>
@@ -18,7 +18,7 @@ module.exports = {
         )
         .addSubcommand(sub =>
             sub.setName('retirar')
-                .setDescription('Retira dinero de tu caja fuerte militar a tu cartera')
+                .setDescription('Retira dinero de tu caja fuerte comunitario a tu cartera')
                 .addStringOption(opt => opt.setName('monto').setDescription('Cantidad numérica o escribe "all" para retirar todo').setRequired(true))
         )
         .addSubcommand(sub =>
@@ -42,11 +42,11 @@ module.exports = {
         )
         .addSubcommand(sub =>
             sub.setName('ranking')
-                .setDescription('Muestra el escalafón de los 10 reclutas más acaudalados')
+                .setDescription('Muestra el escalafón de los 10 miembros más acaudalados')
         )
         .addSubcommandGroup(group =>
             group.setName('admin')
-                .setDescription('Gestión de fondos para el cuerpo de oficiales y mando')
+                .setDescription('Gestión de fondos para el cuerpo de responsables y mando')
                 .addSubcommand(sub =>
                     sub.setName('dar')
                         .setDescription('Acreditar fondos a un recluta')
@@ -83,7 +83,7 @@ module.exports = {
         const guildId = interaction.guildId || 'GLOBAL';
         const settings = economyDb.getEconomySettings(guildId);
         const sym = settings.currency_symbol || '$';
-        const curName = settings.currency_name || 'Créditos USMC';
+        const curName = settings.currency_name || 'Créditos';
 
         // Sincronizar datos del usuario
         economyDb.syncAccountUser(
@@ -102,7 +102,7 @@ module.exports = {
         if (group === 'admin') {
             if (!hasOfficerPermission(interaction)) {
                 return interaction.reply({
-                    content: '❌ **Acceso Restringido:** Solo oficiales autorizados pueden ejecutar ajustes de tesorería.',
+                    content: '❌ **Acceso Restringido:** Solo responsables autorizados pueden ejecutar ajustes de tesorería.',
                     flags: MessageFlags.Ephemeral
                 });
             }
@@ -138,8 +138,8 @@ module.exports = {
         if (!permCheck.allowed) {
             return interaction.reply({
                 content: permCheck.reason === 'DISABLED'
-                    ? `🔒 **Protocolo Inactivo:** La orden militar \`/${commandKey.replaceAll(':', ' ')}\` se encuentra temporalmente deshabilitada por el Estado Mayor.`
-                    : `🔒 **Acceso Denegado:** Tu rango militar actual no cuenta con la autorización requerida para ejecutar \`/${commandKey.replaceAll(':', ' ')}\`.`,
+                    ? `🔒 **Protocolo Inactivo:** La orden comunitario \`/${commandKey.replaceAll(':', ' ')}\` se encuentra temporalmente deshabilitada por el Administración.`
+                    : `🔒 **Acceso Denegado:** Tu rango comunitario actual no cuenta con la autorización requerida para ejecutar \`/${commandKey.replaceAll(':', ' ')}\`.`,
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -164,7 +164,7 @@ Divisa Operativa: **${curName}** (\`${sym}\`)
 > 🏦 **Caja Fuerte (Banco):** \`${sym}${acc.bank.toLocaleString()}\` / \`${sym}${acc.bank_capacity.toLocaleString()}\`
 > 💎 **Patrimonio Neto Total:** \`${sym}${netWorth.toLocaleString()}\`
                 `)
-                .setFooter({ text: 'Sistema de Tesorería USMC • Cuartel General', iconURL: interaction.guild.iconURL() })
+                .setFooter({ text: 'Sistema de Tesorería Comunidad • Cuartel General', iconURL: interaction.guild.iconURL() })
                 .setTimestamp();
 
             return interaction.reply({ embeds: [embed] });
@@ -185,13 +185,13 @@ Divisa Operativa: **${curName}** (\`${sym}\`)
                 .setColor(0x38e54d)
                 .setTitle('🏦 [DEPÓSITO BANCARIO CONFIRMADO]')
                 .setDescription(`
-Has resguardado **${sym}${res.deposited.toLocaleString()}** en la caja fuerte militar.
+Has resguardado **${sym}${res.deposited.toLocaleString()}** en la caja fuerte comunitario.
 Tus fondos están protegidos contra robos e incidentes.
 
 > 💵 **Efectivo Restante:** \`${sym}${res.account.wallet.toLocaleString()}\`
 > 🏦 **Nuevo Saldo Bancario:** \`${sym}${res.account.bank.toLocaleString()}\`
                 `)
-                .setFooter({ text: 'Banco Central Militar USMC' });
+                .setFooter({ text: 'Banco Central Militar Comunidad' });
 
             return interaction.reply({ embeds: [embed] });
         }
@@ -216,7 +216,7 @@ Has retirado **${sym}${res.withdrawn.toLocaleString()}** de la caja fuerte a tu 
 > 💵 **Efectivo en Mano:** \`${sym}${res.account.wallet.toLocaleString()}\`
 > 🏦 **Saldo Bancario:** \`${sym}${res.account.bank.toLocaleString()}\`
                 `)
-                .setFooter({ text: 'Banco Central Militar USMC' });
+                .setFooter({ text: 'Banco Central Militar Comunidad' });
 
             return interaction.reply({ embeds: [embed] });
         }
@@ -245,9 +245,9 @@ Has retirado **${sym}${res.withdrawn.toLocaleString()}** de la caja fuerte a tu 
                 .setTitle('💸 [TRANSFERENCIA FINANCIERA COMPLETADA]')
                 .setDescription(`
 Has transferido **${sym}${amount.toLocaleString()}** en efectivo a <@${recipient.id}>.
-Transacción militar asentada en los registros del cuartel.
+Transacción comunitario asentada en los registros del cuartel.
                 `)
-                .setFooter({ text: 'Tesorería Táctica USMC' })
+                .setFooter({ text: 'Tesorería Táctica Comunidad' })
                 .setTimestamp();
 
             return interaction.reply({ embeds: [embed] });
@@ -280,7 +280,7 @@ Transacción militar asentada en los registros del cuartel.
             const bestRole = economyDb.getBestRoleRewardForUser(guildId, userRoleIds);
             const totalEarn = Math.floor((baseEarn * bestRole.multiplier) + bestRole.flat_bonus);
 
-            economyDb.addWallet(interaction.user.id, totalEarn, 'WORK', `Salario de guardia militar (Bono: ${bestRole.role_name || 'Base'})`);
+            economyDb.addWallet(interaction.user.id, totalEarn, 'WORK', `Salario de guardia comunitario (Bono: ${bestRole.role_name || 'Base'})`);
             economyDb.updateCooldown(interaction.user.id, 'work', now);
 
             const workDescriptions = [
@@ -302,7 +302,7 @@ ${desc}
 > 🎖️ **Bono por Rango:** \`${bestRole.role_name}\` (x${bestRole.multiplier} + ${sym}${bestRole.flat_bonus})
 > 💵 **Pago Total Acreditado:** \`${sym}${totalEarn.toLocaleString()}\`
                 `)
-                .setFooter({ text: 'Paga de Servicio • USMC Base Defense' });
+                .setFooter({ text: 'Paga de Servicio • Comunidad Base Defense' });
 
             return interaction.reply({ embeds: [embed] });
         }
@@ -319,7 +319,7 @@ ${desc}
                 const remaining = cooldown - (now - acc.last_crime);
                 const minutes = Math.ceil(remaining / 60);
                 return interaction.reply({
-                    content: `🚨 **Bajo Vigilancia:** La policía militar tiene fichada tu ubicación. Espera **${minutes} minuto(s)** antes de planear otra incursión clandestina.`,
+                    content: `🚨 **Bajo Vigilancia:** La policía comunitario tiene fichada tu ubicación. Espera **${minutes} minuto(s)** antes de planear otra incursión clandestina.`,
                     flags: MessageFlags.Ephemeral
                 });
             }
@@ -341,7 +341,7 @@ ${desc}
 ¡La Policía Militar te descubrió con las manos en la masa!
 Has sido sancionado con una multa disciplinaria de **${sym}${penalty.toLocaleString()}** debitada de tu efectivo.
                     `)
-                    .setFooter({ text: 'Código de Justicia Militar USMC' });
+                    .setFooter({ text: 'Código de Justicia Militar Comunidad' });
 
                 return interaction.reply({ embeds: [embed] });
             } else {
@@ -374,7 +374,7 @@ Lograste extraer suministros del mercado negro sin ser detectado por los centine
                 return interaction.reply({ content: '❌ No puedes asaltarte a ti mismo.', flags: MessageFlags.Ephemeral });
             }
             if (targetUser.bot) {
-                return interaction.reply({ content: '❌ No puedes asaltar a una máquina militar.', flags: MessageFlags.Ephemeral });
+                return interaction.reply({ content: '❌ No puedes asaltar a una máquina comunitario.', flags: MessageFlags.Ephemeral });
             }
 
             const senderAcc = economyDb.getAccount(interaction.user.id, guildId);
@@ -446,7 +446,7 @@ Lograste sustraer **${sym}${stolen.toLocaleString()}** de la cartera de <@${targ
         if (sub === 'ranking') {
             const top = economyDb.getLeaderboard(10);
             if (top.length === 0) {
-                return interaction.reply({ content: 'Aún no hay registros financieros en el batallón.', flags: MessageFlags.Ephemeral });
+                return interaction.reply({ content: 'Aún no hay registros financieros en el comunidad.', flags: MessageFlags.Ephemeral });
             }
 
             const medals = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'];
@@ -460,8 +460,8 @@ Lograste sustraer **${sym}${stolen.toLocaleString()}** de la cartera de <@${targ
             const embed = new EmbedBuilder()
                 .setColor(0x38e54d)
                 .setTitle(`🏆 [ESCALAFÓN DE RIQUEZA MILITAR // TOP 10]`)
-                .setDescription(`Los 10 reclutas y oficiales con mayor patrimonio neto del cuartel:\n\n${lines.join('\n\n')}`)
-                .setFooter({ text: 'Tesorería Central USMC' })
+                .setDescription(`Los 10 miembros y responsables con mayor patrimonio neto del cuartel:\n\n${lines.join('\n\n')}`)
+                .setFooter({ text: 'Tesorería Central Comunidad' })
                 .setTimestamp();
 
             return interaction.reply({ embeds: [embed] });

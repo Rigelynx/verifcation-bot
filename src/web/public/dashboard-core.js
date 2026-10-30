@@ -1,9 +1,80 @@
 let adminToken = localStorage.getItem('usmc_admin_key') || '';
+let adminOperatorName = localStorage.getItem('usmc_operator_name') || '';
+let adminOperatorId = localStorage.getItem('usmc_operator_id') || '';
 let allVerifications = [];
 let verificationPage = 0;
 const verificationPageSize = 25;
 let allQuestions = [];
 let activeFilter = 'TODOS';
+let adminCookieSession = false, adminCsrfToken = '';
+
+document.addEventListener('DOMContentLoaded', async () => {
+    if (window.DiscordWeb && await DiscordWeb.bootAdmin()) return;
+    if (adminToken && adminOperatorName) loadDashboardData();
+});
+
+// Capturar sesión directa desde /admin panel-web si viene en la URL
+(function checkUrlSession() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const urlSession = params.get('session');
+        const urlOpName = params.get('op_name');
+        const urlOpId = params.get('op_id');
+        if (urlSession) {
+            adminToken = urlSession;
+            localStorage.setItem('usmc_admin_key', urlSession);
+        }
+        if (urlOpName) {
+            adminOperatorName = urlOpName;
+            localStorage.setItem('usmc_operator_name', urlOpName);
+        }
+        if (urlOpId) {
+            adminOperatorId = urlOpId;
+            localStorage.setItem('usmc_operator_id', urlOpId);
+        }
+        if (urlSession || urlOpName) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    } catch (e) {}
+})();
+
+// Interceptor de fetch para inyectar siempre la identidad del Operador en llamadas /api/admin
+const originalFetch = window.fetch.bind(window);
+window.fetch = function(input, init = {}) {
+    const url = typeof input === 'string' ? input : (input?.url || '');
+    if (url.startsWith('/api/admin')) {
+        const headers = new Headers(init.headers || {});
+        if (adminCookieSession && adminCsrfToken) headers.set('X-CSRF-Token', adminCsrfToken);
+        if (adminOperatorName && !headers.has('X-Operator-Name')) {
+            headers.set('X-Operator-Name', encodeURIComponent(adminOperatorName));
+        }
+        if (adminOperatorId && !headers.has('X-Operator-Id')) {
+            headers.set('X-Operator-Id', encodeURIComponent(adminOperatorId));
+        }
+        init.headers = headers;
+    }
+    return originalFetch(input, init);
+};
+
+function updateOperatorBadge(opData = null) {
+    if (opData && opData.operator_name && opData.operator_name !== 'ADMIN_WEB') {
+        adminOperatorName = opData.operator_name;
+        localStorage.setItem('usmc_operator_name', adminOperatorName);
+    }
+    if (opData && opData.discord_id) {
+        adminOperatorId = opData.discord_id;
+        localStorage.setItem('usmc_operator_id', adminOperatorId);
+    }
+    const badge = document.getElementById('active-operator-badge');
+    if (badge) {
+        badge.textContent = adminOperatorName || 'Alto Mando';
+        badge.title = adminOperatorId ? `Operador · Discord ID ${adminOperatorId}` : 'Operador de Alto Mando';
+    }
+    const nameInput = document.getElementById('admin-operator-name');
+    if (nameInput && adminOperatorName && !nameInput.value) nameInput.value = adminOperatorName;
+    const idInput = document.getElementById('admin-operator-id');
+    if (idInput && adminOperatorId && !idInput.value) idInput.value = adminOperatorId;
+}
 
 // Reloj Zulu en vivo
 function updateClock() {
@@ -14,22 +85,50 @@ function updateClock() {
 }
 setInterval(updateClock, 1000);
 updateClock();
+updateOperatorBadge();
 
-// Control de Login
+// Control de Login Nominal
 document.getElementById('login-form').addEventListener('submit', async (e) => {
     e.preventDefault();
+    const opName = (document.getElementById('admin-operator-name')?.value || '').trim();
+    const opId = (document.getElementById('admin-operator-id')?.value || '').trim();
     const pass = document.getElementById('admin-pass').value.trim();
-    const res = await testAdminAuth(pass);
-    if (res) {
-        adminToken = pass;
-        localStorage.setItem('usmc_admin_key', pass);
-        document.getElementById('login-modal').style.display = 'none';
-        document.getElementById('main-content').style.display = 'block';
-        TerminalFX.playBeepSuccess();
-        loadDashboardData();
-    } else {
+
+    if (!opName) {
         TerminalFX.playBeepError();
-        alert("CLAVE DE ACCESO MILITAR INCORRECTA. ACCESO DENEGADO.");
+        alert("DEBES INGRESAR TU NOMBRE O INDICATIVO DE OFICIAL PARA REGISTRAR LA TRAZABILIDAD.");
+        return;
+    }
+
+    try {
+        const loginRes = await fetch('/api/admin/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: pass, operator_name: opName, operator_id: opId })
+        });
+        const loginData = await loginRes.json();
+
+        if (loginRes.ok && loginData.success && loginData.session) {
+            adminToken = loginData.session.token;
+            adminOperatorName = loginData.session.operator_name;
+            adminOperatorId = loginData.session.discord_id || opId || '';
+
+            localStorage.setItem('usmc_admin_key', adminToken);
+            localStorage.setItem('usmc_operator_name', adminOperatorName);
+            localStorage.setItem('usmc_operator_id', adminOperatorId);
+
+            updateOperatorBadge(loginData.session);
+            document.getElementById('login-modal').style.display = 'none';
+            document.getElementById('main-content').style.display = 'block';
+            TerminalFX.playBeepSuccess();
+            loadDashboardData();
+        } else {
+            TerminalFX.playBeepError();
+            alert(loginData.message || "CLAVE DE ACCESO MILITAR INCORRECTA. ACCESO DENEGADO.");
+        }
+    } catch (err) {
+        TerminalFX.playBeepError();
+        alert("ERROR DE CONEXIÓN AL SERVIDOR MILITAR.");
     }
 });
 
@@ -44,14 +143,22 @@ async function testAdminAuth(key) {
     }
 }
 
-function logoutAdmin() {
+async function logoutAdmin() {
+    if (adminCookieSession) {
+        const res = await fetch('/auth/logout', { method: 'POST', headers: { 'X-CSRF-Token': adminCsrfToken } });
+        if (!res.ok) { alert('No pude cerrar la sesión. Recarga y reintenta.'); return; }
+    }
     localStorage.removeItem('usmc_admin_key');
+    localStorage.removeItem('usmc_operator_name');
+    localStorage.removeItem('usmc_operator_id');
     location.reload();
 }
 
 // Cambio de Pestañas
 function switchTab(tabName) {
     TerminalFX.playKeyClick();
+    document.dispatchEvent(new CustomEvent('usmc:tabchange', { detail: tabName }));
+    document.getElementById('personnel-telemetry').style.display = tabName === 'expedientes' ? 'grid' : 'none';
     document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
 
@@ -64,7 +171,8 @@ function switchTab(tabName) {
         'roles': 5,
         'eventos': 6,
         'comandos': 7,
-        'auditoria': 8
+        'auditoria': 8,
+        'servidores': 9
     };
 
     const idx = tabMap[tabName];
@@ -74,23 +182,33 @@ function switchTab(tabName) {
     const pane = document.getElementById('tab-' + tabName);
     if (pane) pane.style.display = 'block';
 
+    if (tabName === 'servidores') loadOperationServers();
     if (tabName === 'economia') loadEconomyData();
     if (tabName === 'tienda') loadShopData();
     if (tabName === 'roles') loadRoleRewards();
     if (tabName === 'eventos') loadEventsData();
     if (tabName === 'comandos') loadCommandsData();
-    if (tabName === 'auditoria') loadAuditoriaData();
+    if (tabName === 'auditoria') {
+        loadAuditoriaData();
+        if (typeof loadAdminAuditLogs === 'function') loadAdminAuditLogs();
+    }
 }
 
 // Cargar Datos del Dashboard
 async function loadDashboardData() {
     try {
+        if ((!adminToken && !adminCookieSession) || !adminOperatorName) {
+            throw new Error('Identificación nominal requerida');
+        }
         const res = await fetch('/api/admin/data', {
             headers: { 'Authorization': `Bearer ${adminToken}` }
         });
         if (!res.ok) throw new Error('No autorizado');
 
         const data = await res.json();
+        if (data.operator) updateOperatorBadge(data.operator);
+        document.getElementById('login-modal').style.display = 'none';
+        document.getElementById('main-content').style.display = 'block';
 
         // Telemetría
         allVerifications = data.verifications;
@@ -217,16 +335,26 @@ function openDossierModal(discordId) {
         `;
     }
 
+    const safeUsername = String(dossier.username || '').replace(/"/g, '&quot;');
+
     modalBody.innerHTML = `
         <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 20px; border-bottom: 1px dashed var(--border-light); padding-bottom: 15px;">
             <img src="${dossier.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png'}" style="width: 60px; height: 60px; border: 2px solid var(--usmc-gold);">
-            <div>
+            <div style="flex: 1;">
                 <h2 style="color: #fff; font-family: var(--font-tech); font-size: 1.4rem;">${dossier.username}</h2>
                 <p style="color: var(--usmc-gold);">DISCORD ID: ${dossier.discord_id}</p>
                 <p style="font-size: 0.8rem; color: #8fa892;">ESTADO: <span class="status-badge ${dossier.status.toLowerCase()}">${dossier.status}</span></p>
                 ${dossier.reviewer_id ? `<p style="font-size: 0.8rem; color: #a8c7ad; margin-top: 4px;">RESUELTO POR: ${dossier.reviewer_name || 'Discord'}<br><span style="color:#728c75;">ID: ${dossier.reviewer_id}</span></p>` : ''}
                 ${dossier.reason ? `<p style="font-size: 0.8rem; color: #ff7a7a; margin-top: 4px;">MOTIVO: ${dossier.reason}</p>` : ''}
             </div>
+        </div>
+        <div style="background: rgba(212, 175, 55, 0.06); border: 1px solid var(--border-light); padding: 12px; margin-bottom: 15px;">
+            <label style="display:block; color: var(--usmc-gold); font-size: 0.8rem; margin-bottom: 6px; font-family: var(--font-tech);">✏️ EDITAR NOMBRE / CALLSIGN DEL EXPEDIENTE (CON TRAZABILIDAD NOMINAL):</label>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <input type="text" id="edit-dossier-username" value="${safeUsername}" class="input-retro" style="flex: 1; min-width: 180px; margin: 0;" placeholder="Nuevo nombre o callsign">
+                <button class="btn-retro" onclick="saveDossierChanges('${dossier.discord_id}')">💾 GUARDAR NOMBRE</button>
+            </div>
+            <p style="font-size: 0.72rem; color: #728c75; margin-top: 5px;">Quedará registrado en Auditoría Forense que <strong>${adminOperatorName || 'el operador actual'}</strong> realizó esta modificación.</p>
         </div>
         <h4 style="color: var(--usmc-green); margin-bottom: 10px; font-family: var(--font-tech);">DECLARACIÓN DEL RECLUTA:</h4>
         ${answersHtml || '<p style="color: #728c75;">Sin respuestas registradas.</p>'}
@@ -236,6 +364,37 @@ function openDossierModal(discordId) {
     document.getElementById('modal-btn-reject').onclick = () => { takeAction(dossier.discord_id, 'RECHAZADO'); closeDossierModal(); };
 
     document.getElementById('dossier-modal').style.display = 'flex';
+}
+
+async function saveDossierChanges(discordId) {
+    const newUsername = document.getElementById('edit-dossier-username')?.value.trim();
+    if (!newUsername) {
+        alert("El nombre del usuario no puede estar vacío.");
+        return;
+    }
+
+    try {
+        const res = await fetch(`/api/admin/verifications/${discordId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${adminToken}`
+            },
+            body: JSON.stringify({ username: newUsername })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+            TerminalFX.playBeepSuccess();
+            await loadDashboardData();
+            openDossierModal(discordId);
+            alert(`✅ Nombre actualizado a "${newUsername}". Acción registrada en Auditoría a nombre de ${adminOperatorName}.`);
+        } else {
+            TerminalFX.playBeepError();
+            alert("ERROR AL ACTUALIZAR: " + (data.message || 'Error desconocido'));
+        }
+    } catch (err) {
+        alert("ERROR DE CONEXIÓN: " + err.message);
+    }
 }
 
 function closeDossierModal() {

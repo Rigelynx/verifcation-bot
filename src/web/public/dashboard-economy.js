@@ -787,7 +787,13 @@ function renderShopItems() {
         return;
     }
 
-    container.innerHTML = allShopItems.map(item => {
+    const query = (document.getElementById('shop-search')?.value || '').toLowerCase();
+    const category = document.getElementById('shop-category-filter')?.value || 'all';
+    const filtered = allShopItems.filter(item => `${item.name} ${item.description || ''}`.toLowerCase().includes(query) &&
+        (category === 'all' || (category === 'empty' ? item.stock === 0 : category === 'ranks' ? item.roles_to_give.length > 0 : item.roles_to_give.length === 0)));
+    if (!filtered.length) { container.innerHTML = '<div class="ops-empty">No hay artículos que coincidan con los filtros.</div>'; return; }
+    container.innerHTML = filtered.map(originalItem => {
+        const item = { ...originalItem, name: opsText(originalItem.name), description: opsText(originalItem.description), icon: opsText(originalItem.icon) };
         let rolesBadges = '';
         if (item.roles_to_give && item.roles_to_give.length > 0) {
             rolesBadges += `<div style="font-size: 0.75rem; color: var(--usmc-green); margin-top: 4px;">➕ Otorga Rol: <strong>${item.roles_to_give.map(r => getRoleNameById(r)).join(', ')}</strong></div>`;
@@ -804,27 +810,22 @@ function renderShopItems() {
         const activeBadge = item.is_active ? '<span class="status-badge aprobado">ACTIVO</span>' : '<span class="status-badge rechazado">DESACTIVADO</span>';
 
         return `
-            <div class="retro-window" style="padding: 16px; margin-bottom: 0; display: flex; flex-direction: column; justify-content: space-between;">
+            <article class="retro-window product-card" data-motion-key="product-${item.id}">
+                <div class="product-art ${item.roles_to_give.length ? 'product-art-rank' : ''}">${item.roles_to_give.length ? '<img src="/media/unit-crest.svg" alt="" class="product-crest">' : '<img src="/media/quartermaster.png" alt="" loading="lazy">'}<span class="product-category">${item.roles_to_give.length ? 'ACREDITACIÓN / UNIDAD' : 'SUMINISTRO / INTENDENCIA'}</span></div>
+                <div class="product-content">
                 <div>
-                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px;">
-                        <div style="font-size: 2rem;">${item.icon || '🎖️'}</div>
-                        <div>${activeBadge}</div>
-                    </div>
-                    <h4 style="color: #fff; font-family: var(--font-tech); font-size: 1.1rem; margin-bottom: 4px;">[#${item.id}] ${item.name}</h4>
-                    <div style="font-size: 1.2rem; font-weight: bold; color: var(--usmc-gold); margin-bottom: 8px;">
-                        ${sym}${item.price.toLocaleString()}
-                    </div>
-                    <p style="font-size: 0.8rem; color: #8fa892; margin-bottom: 8px;">${item.description || 'Sin descripción adicional.'}</p>
-                    ${rolesBadges}
-                    <div style="font-size: 0.75rem; color: #728c75; margin-top: 10px; border-top: 1px dashed var(--border-light); padding-top: 6px;">
-                        📦 Stock: <strong>${stockText}</strong> &bull; 👤 Límite: <strong>${maxUserText}</strong>
-            </div>
-        </div>
-                <div style="display: flex; gap: 8px; margin-top: 15px;">
-                    <button class="btn-retro" style="flex: 1; padding: 6px; font-size: 0.8rem; justify-content: center;" onclick="editShopItem(${item.id})">✏️ EDITAR</button>
-                    <button class="btn-retro danger" style="padding: 6px 10px; font-size: 0.8rem;" onclick="deleteShopItem(${item.id})">🗑️</button>
+                    <div class="product-meta"><span class="product-id">ITEM / ${String(item.id).padStart(3, '0')}</span>${activeBadge}</div>
+                    <h3 class="product-name">${item.icon || ''} ${item.name}</h3>
+                    <p class="product-price">${sym}${item.price.toLocaleString()}</p>
+                    <p class="product-description">${item.description || 'Artículo del catálogo de intendencia.'}</p>
+                    <div class="product-roles">${rolesBadges}</div>
+                    <p class="product-stock">Stock: <strong>${stockText}</strong> &nbsp;·&nbsp; Límite: <strong>${maxUserText}</strong></p>
                 </div>
-            </div>
+                <footer class="product-actions">
+                    <button class="btn-retro" onclick="editShopItem(${item.id})">Editar artículo <span aria-hidden="true">↗</span></button>
+                    <button class="btn-retro danger" onclick="deleteShopItem(${item.id})">Eliminar</button>
+                </footer>
+            </div></article>
         `;
     }).join('');
 }
@@ -832,7 +833,7 @@ function renderShopItems() {
 function getRoleNameById(roleId) {
     if (guildResources && guildResources.roles) {
         const found = guildResources.roles.find(r => r.id === roleId);
-        if (found) return found.name;
+        if (found) return opsText(found.name);
     }
     return roleId;
 }

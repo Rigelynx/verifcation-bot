@@ -1,0 +1,94 @@
+/* BRM5 command center — shared visual language, existing forms and permissions. */
+body.command-center {
+    --bg-deep: #0b111a; --bg-panel: #121c29; --bg-panel-dark: #0d1621;
+    --bg-header: #172435; --border-light: #34465b; --border-bevel: #27384b;
+    --usmc-green: #63d4ae; --usmc-green-dim: #2a7865; --usmc-gold: #e6bc75;
+    --usmc-amber: #e6bc75; --usmc-red: #ee8691; --usmc-blue: #81b9ec;
+    --font-tech: 'Chakra Petch', 'Segoe UI', sans-serif;
+    color: #dbe5f0; font-family: 'Segoe UI', Arial, sans-serif;
+    background: radial-gradient(ellipse at 90% 0, #1a3046 0, transparent 48%), #0b111a;
+    line-height: 1.55;
+}
+.command-center .crt-overlay { opacity: .07; }
+.command-center .crt-vignette { box-shadow: inset 0 0 120px #0003; }
+.command-center .terminal-wrapper { max-width: 1500px; width: calc(100% - 48px); margin: 24px auto; }
+.command-center.verification-portal .terminal-wrapper { max-width: 960px; }
+.command-center .retro-window { border: 1px solid #304154; border-radius: 12px; background: #121c29; box-shadow: 0 12px 36px #0003; overflow: hidden; }
+.command-center .window-titlebar { padding: 13px 20px; background: #0f1926; border-bottom: 1px solid #2b3c50; font-size: .74rem; gap: 12px; flex-wrap: wrap; }
+.command-center .military-header { padding: 28px; background: linear-gradient(110deg, #172c3e, #121c29 75%); border-bottom: 1px solid #2b3c50; }
+.command-center .header-meta { border-color: #34465b; color: #9fb3c9; gap: 10px; font-size: .72rem; }
+.command-center .military-insignia { border: 1px solid #55766e; border-radius: 14px; background: #193431; box-shadow: none; }
+.command-center .branding-text h1 { font-size: clamp(1.25rem, 2.6vw, 2rem); letter-spacing: .5px; text-shadow: none; }
+.command-center .branding-text p { color: #9fb3c9; margin-top: 5px; font-size: .78rem; }
+.command-center .admin-nav { padding: 12px 20px; background: #0d1723; border-bottom: 1px solid #2b3c50; gap: 7px !important; }
+.command-center .nav-tab { border: 1px solid transparent; border-radius: 7px; padding: 9px 12px; background: transparent; color: #aebed0; font-size: .73rem; letter-spacing: .3px; }
+.command-center .nav-tab:hover { background: #1c2b3b; color: #fff; }
+.command-center .nav-tab.active { background: #1e3e39; color: #8aebc8; border-color: #345c52; box-shadow: none; }
+.command-center .dossier-body { padding: 26px; }
+.command-center .telemetry-grid { gap: 14px; }
+.command-center .telemetry-card { border: 1px solid #2c4054; border-radius: 10px; padding: 18px; background: linear-gradient(120deg, #192a3b, #131e2b); }
+.command-center .telemetry-label { color: #a4b5c8; font-family: var(--font-tech); font-size: .7rem; letter-spacing: 1.1px; }
+.command-center .telemetry-value { font-family: var(--font-tech); font-size: 2rem; text-shadow: none; }
+.command-center .retro-input, .command-center .retro-select, .command-center .retro-textarea { background: #0e1824; color: #e0e9f4; border: 1px solid #3a4e65; border-radius: 7px; padding: 11px 12px; font-family: inherit; box-shadow: none; }
+.command-center .retro-input:focus, .command-center .retro-select:focus, .command-center .retro-textarea:focus { outline: 2px solid #63d4ae88; outline-offset: 2px; border-color: #63d4ae; }
+.command-center .retro-select option { background: #121c29; color: #e0e9f4; }
+.command-center .form-group { background: #162232; border-radius: 8px; }
+.command-center .form-label { color: #b6c6d8; font-size: .77rem; letter-spacing: .3px; }
+.command-center .btn-retro { border: 1px solid #40556e; border-radius: 7px; background: #24374b; color: #dfeaf6; box-shadow: none; font-size: .76rem; padding: 10px 15px; letter-spacing: .3px; }
+.command-center .btn-retro.primary { background: #285b4c; color: #e6fff6; border-color: #4a927b; }
+.command-center .btn-retro.danger { background: #482936; color: #ffdce2; border-color: #7a4456; }
+.command-center .btn-retro.amber { background: #55432a; color: #ffe3b1; border-color: #896c42; }
+.command-center button:hover { filter: brightness(1.12); }
+.command-center button:disabled { opacity: .55; cursor: wait; }
+.command-center :focus-visible { outline: 2px solid #81b9ec; outline-offset: 3px; }
+.command-center .retro-table-wrapper { border: 1px solid #2b3c50; border-radius: 9px; }
+.command-center .retro-table th { background: #1a2a3b; color: #acc0d6; border-color: #34465b; padding: 13px; font-size: .72rem; }
+.command-center .retro-table td { border-color: #26374a; padding: 14px 13px; color: #d3dfed; }
+.command-center .retro-table tr:hover td { background: #1d2d3f; }
+.command-center .status-badge { border-radius: 5px; padding: 4px 8px; font-family: var(--font-tech); font-size: .68rem; }
+.command-center .login-overlay { background: radial-gradient(ellipse at 30% 20%, #213c50, #0b111a 70%); }
+.command-center .login-box { padding: 0; }
+.command-center .answer-card { background: #172333; border-radius: 6px; }
+.command-center .action-icon-btn { background: #213348; color: #c7d7e8; border-color: #3a506b; border-radius: 5px; }
+.command-center .dossier-modal { backdrop-filter: blur(7px); }
+.command-center .military-footer { color: #8fa4bd; }
+.ops-heading { display: flex; justify-content: space-between; gap: 20px; align-items: center; margin-bottom: 22px; }
+.ops-eyebrow { color: #63d4ae; text-transform: uppercase; letter-spacing: 2px; font: .7rem var(--font-tech); }
+.ops-heading h2 { color: #f3f7fc; font: 700 1.7rem var(--font-tech); margin: 5px 0; }
+.ops-muted { color: #a1b4c9; font-size: .86rem; }
+.ops-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px; border: 1px solid #2d4157; background: #142131; border-radius: 10px; margin-bottom: 20px; }
+.ops-toolbar input { flex: 1; min-width: 180px; }
+.ops-toolbar select { width: auto; min-width: 150px; }
+.ops-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 18px; }
+.ops-card { background: linear-gradient(130deg, #192a3a, #131f2c); border: 1px solid #334a60; border-radius: 12px; padding: 21px; position: relative; }
+.ops-card.busy { border-top: 3px solid #e6bc75; }
+.ops-card.free { border-top: 3px solid #63d4ae; }
+.ops-card h3 { font: 700 1.15rem var(--font-tech); color: #eef5fc; margin: 13px 0 4px; }
+.ops-card dl { display: grid; grid-template-columns: 80px 1fr; gap: 10px; font-size: .85rem; margin: 20px 0; }
+.ops-card dt { color: #91a9c2; }
+.ops-card dd { margin: 0; overflow-wrap: anywhere; }
+.ops-card code { background: #0b1723; padding: 6px 9px; border: 1px solid #34465b; border-radius: 5px; }
+.ops-card footer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+.ops-badge { display: inline-block; padding: 4px 9px; font: .7rem var(--font-tech); border-radius: 5px; color: #8ce9c8; background: #25473f; }
+.busy .ops-badge { color: #ffdaa1; background: #51402c; }
+.ops-empty { grid-column: 1 / -1; border: 1px dashed #48617a; border-radius: 12px; padding: 40px; text-align: center; color: #a8bdd2; }
+.ops-dialog { color: #dce8f4; background: #132132; border: 1px solid #49617c; border-radius: 14px; padding: 26px; width: min(520px, 92vw); max-height: 90vh; overflow: auto; margin: auto; }
+.ops-dialog::backdrop { background: #050c16b8; backdrop-filter: blur(5px); }
+.ops-dialog h2 { font: 700 1.4rem var(--font-tech); margin-bottom: 20px; }
+.ops-dialog label { display: block; font-size: .82rem; color: #a9c0d8; margin: 14px 0 6px; }
+.ops-dialog input, .ops-dialog textarea { width: 100%; }
+.ops-feedback { min-height: 26px; color: #e6bc75; margin-bottom: 12px; overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+ .command-center .terminal-wrapper { width: calc(100% - 20px); margin: 10px auto; }
+ .command-center .military-header, .command-center .dossier-body { padding: 17px; }
+ .command-center .admin-nav { padding: 10px; flex-wrap: nowrap !important; overflow-x: auto; }
+ .command-center .nav-tab { flex-shrink: 0; }
+ .command-center .window-controls { flex-wrap: wrap; }
+ .command-center .telemetry-grid { grid-template-columns: repeat(2, 1fr); }
+ .ops-heading { align-items: flex-start; flex-direction: column; }
+ .ops-grid { grid-template-columns: 1fr; }
+ .ops-toolbar select { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+ .command-center *, .command-center *::before, .command-center *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

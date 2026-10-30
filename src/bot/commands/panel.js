@@ -27,14 +27,14 @@ module.exports = {
 
         const embed = new EmbedBuilder()
             .setColor(0x1a3320)
-            .setTitle(`🎖️ ${config.military_base_name || 'USMC CLASSIFIED ACCESS TERMINAL'}`)
+            .setTitle(`🎖️ ${config.comunitarioy_base_name || 'Comunidad CLASSIFIED ACCESS TERMINAL'}`)
             .setDescription(`
 **[ ATENCIÓN ASPIRANTE // PROTOCOLO DE SEGURIDAD MILITAR ]**
 
 Bienvenido a las instalaciones. Para obtener acceso completo a la base, ver canales tácticos y recibir tu rol de miembro, debes formalizar tu **Expediente de Identificación**.
 
 > 🔹 **Paso 1:** Pulsa el botón **\`[ SOLICITAR ACCESO / VERIFICARSE ]\`** situado al pie de este mensaje.
-> 🔹 **Paso 2:** El sistema te entregará un enlace militar seguro hacia tu **Dossier de Reclutamiento Web**.
+> 🔹 **Paso 2:** El sistema te entregará un enlace comunitario seguro hacia tu **Dossier de Reclutamiento Web**.
 > 🔹 **Paso 3:** Completa tu declaración jurada en la terminal web retro y transmite tu solicitud al Centro de Comando.
 
 *Nota: Cualquier falsificación en tu declaración causará el rechazo inmediato y sanción disciplinaria.*
@@ -44,7 +44,7 @@ Bienvenido a las instalaciones. Para obtener acceso completo a la base, ver cana
                 { name: '📡 Modo Operativo', value: `\`${config.verification_mode === 'auto' ? 'AUTÓNOMO (INMEDIATO)' : 'REVISIÓN DE ESTADO MAYOR'}\``, inline: true }
             )
             .setImage('https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1000&q=80')
-            .setFooter({ text: 'Sistema Autónomo de Verificación Táctica • USMC Defense', iconURL: interaction.guild.iconURL() });
+            .setFooter({ text: 'Sistema Autónomo de Verificación Táctica • Comunidad Defense', iconURL: interaction.guild.iconURL() });
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()

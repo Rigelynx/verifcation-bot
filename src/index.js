@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { createDiscordBot } = require('./bot/client');
 const { createWebServer } = require('./web/server');
+const { oauthConfig } = require('./web/discordAuth');
 
 const PORT = process.env.PORT || 3000;
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
@@ -18,7 +19,7 @@ const app = createWebServer(client);
 const server = app.listen(PORT, () => {
     console.log(`🌐 [TERMINAL WEB ACTIVA]: http://localhost:${PORT}`);
     console.log(`🛡️ [PANEL DE CONTROL ADMIN]: http://localhost:${PORT}/admin`);
-    console.log(`🔑 [CLAVE MAESTRA ADMIN]: ${process.env.ADMIN_KEY || 'USMC-COMMAND-2026'}`);
+    console.log(oauthConfig().enabled ? '🔐 [ACCESO WEB]: Inicio con Discord activado.' : '🔐 [ACCESO WEB]: OAuth2 de Discord pendiente de configuración.');
     console.log('---------------------------------------------------------');
 });
 

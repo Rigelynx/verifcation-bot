@@ -6,14 +6,14 @@ const { parseRoleIds } = require('../utils/roleUtils');
 async function handleNewSubmission(client, guildId, record, mode) {
     try {
         const config = db.getConfig(guildId);
-        const guild = client.guilds.cache.get(guildId) || client.guilds.cache.first();
+        const guild = client.guilds.cache.get(guildId);
         if (!guild) return;
 
         // MODO AUTOMÁTICO: Otorga el rol inmediatamente
         if (mode === 'auto') {
             await applyVerifiedRole(guild, record.discord_id, config);
             economyDb.syncAccountUser(record.discord_id, record.username, record.avatar, guildId);
-            sendDirectMessage(client, record.discord_id, `🎖️ **[COMUNICADO USMC]** Tu verificación militar ha sido aprobada de manera automática. Ya posees acceso a las instalaciones.`);
+            sendDirectMessage(client, record.discord_id, `🎖️ **[COMUNICADO DE LA COMUNIDAD]** Tu verificación militar ha sido aprobada de manera automática. Ya posees acceso a las instalaciones.`);
             logToChannel(guild, config.log_channel_id, createAuditEmbed(record, 'AUTOMÁTICO', 'Verificado por sistema autónomo'));
             return;
         }
@@ -42,7 +42,7 @@ async function handleNewSubmission(client, guildId, record, mode) {
                     });
                 }
 
-                embed.setFooter({ text: 'USMC Military Defense Network • Terminal de Oficiales', iconURL: guild.iconURL() });
+                embed.setFooter({ text: 'Sistema de la comunidad • Terminal de Oficiales', iconURL: guild.iconURL() });
 
                 const row = new ActionRowBuilder().addComponents(
                     new ButtonBuilder()
@@ -69,16 +69,16 @@ async function handleNewSubmission(client, guildId, record, mode) {
 async function handleStatusChange(client, guildId, record, action, reason, moderatorTag = 'Oficial de Mando') {
     try {
         const config = db.getConfig(guildId);
-        const guild = client.guilds.cache.get(guildId) || client.guilds.cache.first();
+        const guild = client.guilds.cache.get(guildId);
         if (!guild) return;
 
         if (action === 'APROBADO') {
             await applyVerifiedRole(guild, record.discord_id, config);
             economyDb.syncAccountUser(record.discord_id, record.username, record.avatar, guildId);
-            sendDirectMessage(client, record.discord_id, `🎖️ **[COMUNICADO USMC]** ¡Felicitaciones recluta! Tu expediente ha sido **APROBADO** por ${moderatorTag}. Ahora cuentas con acreditación oficial.`);
+            sendDirectMessage(client, record.discord_id, `🎖️ **[COMUNICADO DE LA COMUNIDAD]** ¡Felicitaciones recluta! Tu expediente ha sido **APROBADO** por ${moderatorTag}. Ahora cuentas con acreditación oficial.`);
             logToChannel(guild, config.log_channel_id, createAuditEmbed(record, 'APROBADO', `Aprobado por ${moderatorTag}`));
         } else if (action === 'RECHAZADO') {
-            sendDirectMessage(client, record.discord_id, `⚠️ **[COMUNICADO USMC]** Tu solicitud de verificación ha sido **DENEGADA**. Motivo: *${reason || 'No cumple requisitos mínimos'}*. Puedes contactar con un oficial si crees que es un error.`);
+            sendDirectMessage(client, record.discord_id, `⚠️ **[COMUNICADO DE LA COMUNIDAD]** Tu solicitud de verificación ha sido **DENEGADA**. Motivo: *${reason || 'No cumple requisitos mínimos'}*. Puedes contactar con un oficial si crees que es un error.`);
             logToChannel(guild, config.log_channel_id, createAuditEmbed(record, 'RECHAZADO', `Denegado por ${moderatorTag}. Motivo: ${reason || 'N/A'}`));
         }
     } catch (err) {

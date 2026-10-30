@@ -1,0 +1,42 @@
+.patrol-portal .terminal-wrapper { max-width: 1380px; }
+.patrol-portal .command-hero { min-height: 340px; }
+.patrol-portal .hero-copy h1 { font: 550 clamp(32px, 4vw, 54px)/1.08 var(--font-tech); letter-spacing: -2px; color: #f1f2ea; margin: 16px 0; }
+.patrol-portal [hidden] { display: none !important; }
+.patrol-portal #patrol-auth p { margin: 14px 0 28px; }
+.patrol-portal a { text-decoration: none; }
+.patrol-portal .ops-card { padding: 24px; }
+.patrol-portal .ops-card h3 { margin: 14px 0; }
+.patrol-portal .ops-card p { margin: 8px 0; }
+.patrol-portal .ops-card button { margin-top: 14px; }
+.patrol-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 18px 0; }
+.patrol-columns { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); align-items: start; gap: 22px; }
+.patrol-panel { background: #242b21; padding: 24px; border: 1px solid #ffffff13; border-radius: 15px; min-width: 0; }
+.patrol-panel h3 { font-size: 21px; letter-spacing: -.5px; margin-bottom: 12px; }
+.patrol-panel label { display: block; font-size: 12px; color: #b4c1a7; margin: 16px 0 6px; }
+.patrol-panel input, .patrol-panel select, .patrol-panel textarea { width: 100%; }
+.patrol-panel textarea { min-height: 100px; resize: vertical; }
+.patrol-panel button[type="submit"] { margin-top: 20px; }
+.patrol-panel fieldset { border: 0; padding: 0; margin: 26px 0 8px; min-width: 0; }
+.patrol-panel fieldset:disabled { opacity: .65; }
+.patrol-panel legend { font-size: 15px; color: #dee6d2; padding-top: 12px; }
+.patrol-roster-row { padding: 14px 0; border-bottom: 1px solid #ffffff0c; overflow-wrap: anywhere; }
+.patrol-roster-row strong { display: block; font-size: 13px; }
+.patrol-roster-row small { color: #a4b596; font-size: 11px; }
+.roster-person { flex: 1; }
+.roll-call-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 20px 0; }
+.roll-total { border: 1px solid #ffffff17; background: #192117; border-radius: 12px; padding: 14px; }
+.roll-total b { display: block; font-size: 25px; color: #e5ebdb; }
+.roll-total span { font-size: 11px; color: #adbaa2; }
+.roll-total.present { border-color: #a9ce803d; }
+.roll-total.absent { border-color: #d88f8f3d; }
+.roll-total.no_response { border-color: #d4ba783d; }
+.roll-controls { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.roll-choice { font: inherit; font-size: 11px; padding: 8px 10px; color: #c4cdbb; background: #192017; border: 1px solid #ffffff22; border-radius: 8px; cursor: pointer; min-height: 36px; }
+.roll-choice[aria-pressed="true"].present { background: #a8c58b; color: #172016; border-color: #b8d39c; }
+.roll-choice[aria-pressed="true"].absent { background: #623b3b; color: #ffdad3; border-color: #d38c83; }
+.roll-choice[aria-pressed="true"].no_response { background: #5a4a29; color: #f6df9e; border-color: #c4a65f; }
+.roll-choice:focus-visible { outline: 2px solid #dce6cd; outline-offset: 3px; }
+.roll-choice:disabled { opacity: .6; cursor: wait; }
+#patrol-detail { margin-top: 35px; scroll-margin-top: 20px; outline: none; }
+.patrol-servers { margin-top: 40px; }
+@media(max-width: 800px) { .patrol-columns { grid-template-columns: minmax(0, 1fr); } .patrol-panel { padding: 20px; } }

@@ -1,0 +1,52 @@
+/* Motion never controls whether information is visible or usable. */
+.field-journal { --motion-ease: cubic-bezier(.22, 1, .36, 1); }
+@media (prefers-reduced-motion: no-preference) {
+    .field-journal .hero-scene { transition: transform .75s var(--motion-ease); }
+    .field-journal .btn-retro, .field-journal .hero-button, .field-journal .hero-link,
+    .field-journal .win-btn, .field-journal .nav-tab {
+        transition: transform .25s var(--motion-ease), background .25s ease, border-color .25s ease, box-shadow .25s ease;
+    }
+    .field-journal .btn-retro:hover:not(:disabled), .field-journal .hero-button:hover {
+        transform: translateY(-2px); box-shadow: 0 6px 18px #0002;
+    }
+    .field-journal .btn-retro:active:not(:disabled), .field-journal .hero-button:active,
+    .field-journal .win-btn:active { transform: translateY(0) scale(.975); }
+    .field-journal .nav-tab:hover .ui-icon { transform: translateX(2px); }
+    .field-journal .nav-tab .ui-icon { transition: transform .3s var(--motion-ease); }
+    .field-journal .ops-card, .field-journal .product-card {
+        transition: transform .45s var(--motion-ease), box-shadow .45s ease, border-color .3s ease;
+    }
+    .field-journal .ops-card:hover, .field-journal .product-card:hover {
+        transform: translateY(-4px); border-color: #c8d6b733; box-shadow: 0 15px 36px #0003;
+    }
+    .field-journal .server-art::after { transition: opacity .5s ease; }
+    .field-journal .ops-card:hover .server-art::after { opacity: .65; }
+    .field-journal .hero-link span { display: inline-block; transition: transform .3s var(--motion-ease); }
+    .field-journal .hero-link:hover span { transform: translateX(4px); }
+    .field-journal .retro-input, .field-journal .retro-select, .field-journal .retro-textarea {
+        transition: border-color .25s ease, background .25s ease, box-shadow .25s ease;
+    }
+    .field-journal .ops-dialog[open] { animation: field-dialog-in .38s var(--motion-ease) both; }
+    .field-journal .ops-dialog[open]::backdrop { animation: field-backdrop-in .25s ease both; }
+    .field-journal.nav-open .admin-nav { animation: field-menu-in .32s var(--motion-ease) both; }
+    .field-journal button[type="submit"]:disabled {
+        background-image: linear-gradient(110deg, transparent 30%, #ffffff18 50%, transparent 70%);
+        background-size: 250% 100%; animation: field-processing 1.5s ease infinite;
+    }
+}
+@keyframes field-dialog-in {
+    from { opacity: 0; transform: translateY(12px) scale(.98); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes field-menu-in {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes field-backdrop-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes field-processing { from { background-position: 150% 0; } to { background-position: -50% 0; } }
+@media (prefers-reduced-motion: reduce) {
+    .field-journal .hero-scene { transform: none !important; }
+    .field-journal *, .field-journal *::before, .field-journal *::after {
+        animation: none !important; transition: none !important; scroll-behavior: auto !important;
+    }
+}

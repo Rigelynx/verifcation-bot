@@ -12,86 +12,71 @@ const economyDb = require('../../database/economyDb');
 /**
  * Función central de procesamiento de compra para comandos, botones y select menus
  */
-async function processShopPurchase(interaction, itemId) {
+const pendingPurchases = new Set();
+async function processShopPurchase(interaction, itemId, confirmed = false, expectedPrice = null) {
     const guildId = interaction.guildId || 'GLOBAL';
+    const permission = economyDb.isCommandAllowed('tienda:comprar', interaction.member);
+    if (!permission.allowed) return interaction.reply({ content: 'La compra de artículos está restringida para tu usuario.', flags: MessageFlags.Ephemeral });
+    economyDb.syncAccountUser(interaction.user.id, interaction.user.tag || interaction.user.username || '',
+        interaction.user.displayAvatarURL?.({ extension: 'png', size: 128 }) || '', guildId);
+    const item = economyDb.getShopItemById(itemId);
+    if (!item || !item.is_active || ![guildId, 'GLOBAL'].includes(item.guild_id)) {
+        return interaction.reply({ content: 'Este artículo ya no está disponible.', flags: MessageFlags.Ephemeral });
+    }
     const settings = economyDb.getEconomySettings(guildId);
     const sym = settings.currency_symbol || '$';
-    const userRoleIds = interaction.member.roles.cache.map(r => r.id);
-
-    // Sincronizar datos de usuario
-    economyDb.syncAccountUser(
-        interaction.user.id,
-        interaction.user.tag || interaction.user.username,
-        interaction.user.displayAvatarURL({ extension: 'png', size: 128 }),
-        interaction.guildId
-    );
-
-    const result = economyDb.purchaseShopItem(interaction.user.id, itemId, userRoleIds);
-
-    if (!result.success) {
-        return interaction.reply({
-            content: result.message,
-            flags: MessageFlags.Ephemeral
-        });
+    if (!confirmed || (expectedPrice !== null && item.price !== expectedPrice)) {
+        const acc = economyDb.getAccount(interaction.user.id, guildId);
+        return interaction.reply({ flags: MessageFlags.Ephemeral, embeds: [new EmbedBuilder().setColor(0xdcb96c)
+            .setTitle('🛒 CONFIRMAR ADQUISICIÓN')
+            .setDescription(`**${item.name}**\n${String(item.description || 'Suministro de intendencia.').slice(0, 600)}\n\n**Precio:** ${sym}${item.price.toLocaleString()}\n**Tu saldo:** ${sym}${acc.wallet.toLocaleString()}\n**Stock:** ${item.stock === -1 ? 'Ilimitado' : item.stock}${item.required_roles.length ? `\n**Requiere:** ${formatRoleMentions(item.required_roles)}` : ''}`)
+            .setFooter({ text: 'Confirma para descontar el importe y entregar el artículo.' })],
+            components: [new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`shop_confirm_${item.id}_${interaction.user.id}_${item.price}`).setLabel('Confirmar compra').setStyle(ButtonStyle.Success).setDisabled(item.stock === 0),
+                new ButtonBuilder().setCustomId('shop_cancel_purchase').setLabel('Cancelar').setStyle(ButtonStyle.Secondary))], allowedMentions: { parse: [] } });
     }
-
-    const item = result.item;
-    const rolesAddedLog = [];
-    const rolesRemovedLog = [];
-
-    // Otorgar roles automáticos en Discord
-    if (result.rolesToGive && result.rolesToGive.length > 0) {
-        for (const rId of result.rolesToGive) {
-            try {
-                const roleObj = interaction.guild.roles.cache.get(rId);
-                if (roleObj) {
-                    await interaction.member.roles.add(rId);
-                    rolesAddedLog.push(roleObj.name);
-                }
-            } catch (e) {
-                console.error(`[Shop Role Add Error]:`, e.message);
-            }
+    const key = `${interaction.user.id}:${itemId}`;
+    if (pendingPurchases.has(key)) return interaction.reply({ content: 'Tu compra se está procesando.', flags: MessageFlags.Ephemeral });
+    pendingPurchases.add(key);
+    let result, delivered = false;
+    const added = [], removed = [];
+    try {
+        await interaction.deferUpdate();
+        await interaction.editReply({ content: 'Procesando adquisición…', embeds: [], components: [] });
+        const member = await interaction.guild.members.fetch(interaction.user.id);
+        for (const id of [...item.roles_to_give, ...item.roles_to_remove]) {
+            const role = interaction.guild.roles.cache.get(id);
+            if (!role || role.managed || !role.editable) throw new Error('No puedo gestionar uno de los roles de este artículo. Administración debe revisar mi jerarquía.');
         }
-    }
-
-    // Remover roles automáticos en Discord (ascenso de rango)
-    if (result.rolesToRemove && result.rolesToRemove.length > 0) {
-        for (const rId of result.rolesToRemove) {
-            try {
-                const roleObj = interaction.guild.roles.cache.get(rId);
-                if (roleObj && interaction.member.roles.cache.has(rId)) {
-                    await interaction.member.roles.remove(rId);
-                    rolesRemovedLog.push(roleObj.name);
-                }
-            } catch (e) {
-                console.error(`[Shop Role Remove Error]:`, e.message);
-            }
+        result = economyDb.purchaseShopItem(interaction.user.id, itemId, [...member.roles.cache.keys()], guildId, item.price);
+        if (!result.success) return interaction.editReply({ content: result.message });
+        for (const id of result.rolesToGive || []) {
+            if (!member.roles.cache.has(id)) { await member.roles.add(id); added.push(id); }
         }
-    }
-
-    const acc = economyDb.getAccount(interaction.user.id, guildId);
-
-    let actionSummary = '';
-    if (rolesAddedLog.length > 0) {
-        actionSummary += `\n🎖️ **Rango Otorgado:** \`+ ${rolesAddedLog.join(', ')}\``;
-    }
-    if (rolesRemovedLog.length > 0) {
-        actionSummary += `\n🔄 **Rango Reemplazado:** \`- ${rolesRemovedLog.join(', ')}\``;
-    }
-
-    const embed = new EmbedBuilder()
-        .setColor(0x38e54d)
-        .setTitle(`🛍️ [ADQUISICIÓN CONFIRMADA // ${item.name.toUpperCase()}]`)
-        .setDescription(`
-${result.customReply || '¡Transacción formalizada con éxito en la intendencia militar!'}
-
-> 💰 **Precio Pagado:** \`${sym}${item.price.toLocaleString()}\`
-> 💵 **Efectivo Restante:** \`${sym}${acc.wallet.toLocaleString()}\`${actionSummary}
-        `)
-        .setFooter({ text: 'Intendencia de Armería USMC • Cuartel General' })
-        .setTimestamp();
-
-    return interaction.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
+        for (const id of result.rolesToRemove || []) {
+            if (member.roles.cache.has(id)) { await member.roles.remove(id); removed.push(id); }
+        }
+        economyDb.completeShopOrder(result.orderId);
+        delivered = true;
+        const account = economyDb.getAccount(interaction.user.id, guildId);
+        return interaction.editReply({ content: '', embeds: [new EmbedBuilder().setColor(0x59c9a5)
+            .setTitle('✅ ADQUISICIÓN COMPLETADA')
+            .setDescription(`**${item.name}**\n${result.customReply}\n\n**Pagado:** ${sym}${item.price.toLocaleString()}\n**Saldo:** ${sym}${account.wallet.toLocaleString()}`)
+            .setFooter({ text: `Comunidad · Intendencia · Pedido #${result.orderId}` })], components: [], allowedMentions: { parse: [] } });
+    } catch (error) {
+        if (delivered) {
+            console.error('[Shop receipt]', { orderId: result.orderId, error: error.message });
+            return;
+        }
+        let restored = true;
+        for (const id of removed.reverse()) await interaction.member.roles.add(id).catch(() => { restored = false; });
+        for (const id of added.reverse()) await interaction.member.roles.remove(id).catch(() => { restored = false; });
+        if (result?.orderId) economyDb.refundShopOrder(result.orderId);
+        console.error('[Shop delivery]', { orderId: result?.orderId, restored, error: error.message });
+        const content = `⚠️ ${error.message}${result?.orderId ? '\nEl importe se ha reembolsado y el inventario fue restaurado.' : '\nNo se ha realizado ningún cobro.'}${!restored ? '\nAdministración debe revisar tus roles: no pude revertir todos los cambios.' : ''}`;
+        if (interaction.deferred) return interaction.editReply({ content, embeds: [], components: [] });
+        throw error;
+    } finally { pendingPurchases.delete(key); }
 }
 
 /**
@@ -110,22 +95,23 @@ function formatRoleMentions(roles) {
 /**
  * Genera el panel visual táctico interactivo de la tienda con paginación
  */
-function buildShopPanel(guildId, page = 1) {
-    const items = economyDb.getShopItems(guildId, true);
+function buildShopPanel(guildId, page = 1, category = 'all') {
+    const allItems = economyDb.getShopItems(guildId, true);
+    const items = allItems.filter(item => category === 'all' || (category === 'ranks' ? item.roles_to_give.length > 0 : item.roles_to_give.length === 0));
     const settings = economyDb.getEconomySettings(guildId);
     const sym = settings.currency_symbol || '$';
 
     if (items.length === 0) {
         const emptyEmbed = new EmbedBuilder()
             .setColor(0xffb000)
-            .setTitle('🛒 [ARMERÍA Y TIENDA MILITAR // USMC LOGISTICS]')
+            .setTitle('🛒 [ARMERÍA Y TIENDA MILITAR // Comunidad LOGISTICS]')
             .setDescription(`
 **La armería táctica se encuentra en inventario cero.**
-El Estado Mayor no ha suministrado equipamiento ni rangos activos en este momento.
+El Administración no ha suministrado equipamiento ni rangos activos en este momento.
 
-*Visita el panel web para registrar nuevos pertrechos militares.*
+*Visita el panel web para registrar nuevos pertrechos comunitarios.*
             `)
-            .setFooter({ text: 'Intendencia Militar USMC' })
+            .setFooter({ text: 'Intendencia Militar Comunidad' })
             .setTimestamp();
 
         const emptyRow = new ActionRowBuilder().addComponents(
@@ -143,6 +129,7 @@ El Estado Mayor no ha suministrado equipamiento ni rangos activos en este moment
                 .setStyle(ButtonStyle.Secondary)
         );
 
+        if (allItems.length) emptyRow.addComponents(new ButtonBuilder().setCustomId('shop_page_1_all').setLabel('Todo el catálogo').setStyle(ButtonStyle.Primary));
         return { embeds: [emptyEmbed], components: [emptyRow] };
     }
 
@@ -153,14 +140,14 @@ El Estado Mayor no ha suministrado equipamiento ni rangos activos en este moment
 
     const embed = new EmbedBuilder()
         .setColor(0x38e54d)
-        .setTitle('🎖️ [ARMERÍA TÁCTICA Y CATÁLOGO DE RANGOS // USMC]')
+        .setTitle('📦 INTENDENCIA · Comunidad LOGISTICS')
         .setDescription(`
 **BIENVENIDO AL ALMACÉN MILITAR DEL BATALLÓN**
-*Adquiere rangos oficiales, insignias de servicio y pertrechos de intendencia.*
+*Adquiere rangos responsables, insignias de servicio y pertrechos de intendencia.*
 
-Selecciona cualquier artículo en el **menú desplegable inferior** para adquirirlo en 1 clic.
+Selecciona un artículo para ver su ficha y confirmar la compra. Consulta tu saldo e inventario desde los botones inferiores.
         `)
-        .setFooter({ text: `Página ${currentPage}/${totalPages} • Total: ${items.length} artículos en armería • USMC Logistics` })
+        .setFooter({ text: `Página ${currentPage}/${totalPages} • Total: ${items.length} artículos en armería • Comunidad Logistics` })
         .setTimestamp();
 
     for (const item of pageItems) {
@@ -194,6 +181,11 @@ Selecciona cualquier artículo en el **menú desplegable inferior** para adquiri
 
     const components = [];
 
+    components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
+        .setCustomId('shop_category').setPlaceholder('Filtrar catálogo…').addOptions([
+            { label: 'Todo el catálogo', value: 'all', default: category === 'all' },
+            { label: 'Rangos y acreditaciones', value: 'ranks', default: category === 'ranks' },
+            { label: 'Suministros', value: 'supplies', default: category === 'supplies' }])));
     // 1. Selector táctico desplegable para comprar ítems de la página actual
     const selectOptions = pageItems.map(item => {
         let desc = `${sym}${item.price.toLocaleString()}`;
@@ -217,7 +209,7 @@ Selecciona cualquier artículo en el **menú desplegable inferior** para adquiri
     if (selectOptions.length > 0) {
         const selectMenu = new StringSelectMenuBuilder()
             .setCustomId('select_buy_shop')
-            .setPlaceholder(`🛒 Comprar artículo de esta página (${currentPage}/${totalPages})...`)
+            .setPlaceholder(`🛒 Ver artículo de esta página (${currentPage}/${totalPages})...`)
             .addOptions(selectOptions);
 
         components.push(new ActionRowBuilder().addComponents(selectMenu));
@@ -226,7 +218,7 @@ Selecciona cualquier artículo en el **menú desplegable inferior** para adquiri
     // 2. Fila de botones de navegación por páginas
     const navRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
-            .setCustomId(`shop_page_${currentPage - 1}`)
+            .setCustomId(`shop_page_${currentPage - 1}_${category}`)
             .setLabel('◀️ Anterior')
             .setStyle(ButtonStyle.Primary)
             .setDisabled(currentPage <= 1),
@@ -236,7 +228,7 @@ Selecciona cualquier artículo en el **menú desplegable inferior** para adquiri
             .setStyle(ButtonStyle.Secondary)
             .setDisabled(true),
         new ButtonBuilder()
-            .setCustomId(`shop_page_${currentPage + 1}`)
+            .setCustomId(`shop_page_${currentPage + 1}_${category}`)
             .setLabel('Siguiente ▶️')
             .setStyle(ButtonStyle.Primary)
             .setDisabled(currentPage >= totalPages)
@@ -273,7 +265,7 @@ module.exports = {
         )
         .addSubcommand(sub =>
             sub.setName('comprar')
-                .setDescription('Adquiere directamente un suministro o rol militar por ID')
+                .setDescription('Adquiere directamente un suministro o rol comunitario por ID')
                 .addIntegerOption(opt => opt.setName('id').setDescription('ID numérico del ítem en la armería').setRequired(true))
         )
         .addSubcommand(sub =>
@@ -305,8 +297,8 @@ module.exports = {
         if (!permCheck.allowed) {
             return interaction.reply({
                 content: permCheck.reason === 'DISABLED'
-                    ? `🔒 **Protocolo Inactivo:** El protocolo \`/tienda ${sub}\` se encuentra temporalmente cerrado por orden del Estado Mayor.`
-                    : '🔒 **Acceso Denegado:** Tu rango militar actual no cuenta con autorización para acceder a este módulo de la armería.',
+                    ? `🔒 **Protocolo Inactivo:** El protocolo \`/tienda ${sub}\` se encuentra temporalmente cerrado por orden del Administración.`
+                    : '🔒 **Acceso Denegado:** Tu rango comunitario actual no cuenta con autorización para acceder a este módulo de la armería.',
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -348,7 +340,7 @@ module.exports = {
                 .setTitle(`🎒 [EQUIPAMIENTO E INVENTARIO // ${targetUser.tag.toUpperCase()}]`)
                 .setThumbnail(targetUser.displayAvatarURL())
                 .setDescription(`Lista de pertrechos, suministros e insignias en posesión:`)
-                .setFooter({ text: 'Logística USMC' })
+                .setFooter({ text: 'Logística Comunidad' })
                 .setTimestamp();
 
             for (const row of inventory) {

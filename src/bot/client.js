@@ -37,13 +37,13 @@ function createDiscordBot() {
 
     client.once(Events.ClientReady, async () => {
         console.log(`\n==================================================`);
-        console.log(`🎖️  [BOT USMC ONLINE]: Autenticado como ${client.user.tag}`);
+        console.log(`🎖️  [BOT ONLINE]: Autenticado como ${client.user.tag}`);
         console.log(`🛡️  Base de Datos: SQLite Local activa (Host 50GB)`);
         console.log(`==================================================\n`);
 
         client.user.setPresence({
             activities: [{
-                name: 'Cuartel General // /panel-verificacion',
+                name: 'Comunidades · /help',
                 type: ActivityType.Watching
             }],
             status: 'online'
@@ -59,26 +59,12 @@ function createDiscordBot() {
         try {
             const token = process.env.DISCORD_TOKEN;
             const clientId = process.env.CLIENT_ID || client.user.id;
-            const guildId = process.env.GUILD_ID;
 
             if (token && clientId) {
                 const rest = new REST({ version: '10' }).setToken(token);
 
-                if (guildId) {
-                    console.log(`[Slash Commands] Registrando ${slashCommandsList.length} comandos en el servidor ${guildId}...`);
-                    await rest.put(
-                        Routes.applicationGuildCommands(clientId, guildId),
-                        { body: slashCommandsList }
-                    );
-                    console.log(`[Slash Commands] ¡Comandos registrados de inmediato en el servidor!`);
-                } else {
-                    console.log(`[Slash Commands] Registrando ${slashCommandsList.length} comandos globales...`);
-                    await rest.put(
-                        Routes.applicationCommands(clientId),
-                        { body: slashCommandsList }
-                    );
-                    console.log(`[Slash Commands] ¡Comandos globales registrados!`);
-                }
+                const registration = await require('./registerCommands').registerCommands(rest, clientId, slashCommandsList);
+                console.log(`[Slash Commands] ${slashCommandsList.length} comandos registrados: ${registration.scope}.`);
             }
         } catch (err) {
             console.error('[Slash Commands Error]:', err);
@@ -86,7 +72,16 @@ function createDiscordBot() {
     });
 
     client.on('interactionCreate', async (interaction) => {
-        await handleInteraction(interaction, client, client.commands);
+        try {
+            await handleInteraction(interaction, client, client.commands);
+        } catch (error) {
+            console.error('[Interaction]', { code: error.code, customId: interaction.customId,
+                ageMs: Date.now() - interaction.createdTimestamp, message: error.message });
+            if ([10062, 40060].includes(error.code)) return;
+            const payload = { content: '⚠️ No pude completar la acción. Vuelve a abrir el panel y reintenta.', flags: 64 };
+            if (interaction.deferred) await interaction.editReply({ content: payload.content }).catch(() => {});
+            else if (!interaction.replied) await interaction.reply(payload).catch(() => {});
+        }
     });
 
     client.on('voiceStateUpdate', (oldState, newState) => {

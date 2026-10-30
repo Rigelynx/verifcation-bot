@@ -1,0 +1,27 @@
+body[data-community-theme]{--usmc-gold:var(--community-accent);--accent:var(--community-accent)}
+body[data-community-theme="ukaf"]{--bg-base:#101827;--bg-panel:#18243a;--border-light:#455570;--text-main:#eef1f7;--usmc-green:#6f88b8;background:#101827}
+body[data-community-theme="ukaf"] .window-titlebar{background:#18243a;border-top:3px solid #b9444d}
+body[data-community-theme="ukaf"] .military-header{background-color:#18243a}
+body[data-community-theme="neutral"],body[data-community-theme="custom"]{--bg-base:#161b1a;--bg-panel:#202725;background:#161b1a}
+.community-branding-form{margin:20px 0 35px;padding:24px;border:1px solid var(--border-light,#53604e);border-radius:12px;background:#101a17;color:#eef1e9}
+.community-branding-form h3{font-size:24px;margin:12px 0}.community-branding-form>p{font-size:13px;color:#b8c2b2}
+.branding-fields{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:25px 0}.branding-fields label{display:flex;flex-direction:column;gap:9px;font-size:12px}
+.branding-fields input,.branding-fields select{min-width:0;width:100%;padding:10px;border:1px solid #53604e;border-radius:6px;background:#1b2923;color:#fff;font:inherit}.branding-fields [type=color]{height:42px}.branding-fields [type=file]{font-size:11px}.branding-feedback{margin-top:15px}
+@media(max-width:650px){.branding-fields{grid-template-columns:1fr}}
+
+body.field-journal[data-community-theme="ukaf"]{--bg-deep:#101623;--bg-panel:#19263b;--bg-panel-dark:#121d30;--bg-header:#1f2c42;--border-light:#4a5b75;--border-bevel:#30415d;--usmc-green:#a3b7dc;--usmc-gold:var(--community-accent);background:radial-gradient(ellipse at 30% -10%,#4e668d55,transparent 55%),#101623}
+body.field-journal[data-community-theme="ukaf"] .dashboard-shell{background:#19263b}
+body.field-journal[data-community-theme="ukaf"] .admin-nav{background:linear-gradient(160deg,#18263d,#111c2c)}
+body.field-journal[data-community-theme="ukaf"] .window-titlebar{background:#19263b}
+body.field-journal[data-community-theme="neutral"] .admin-nav::after,body.field-journal[data-community-theme="custom"] .admin-nav::after{content:'TU COMUNIDAD / TU ESPACIO';background-image:var(--community-mark)}
+body.field-journal[data-community-theme="ukaf"] .admin-nav::after{content:'UKAF / COMMUNITY OPERATIONS';background-image:var(--community-mark)}
+
+body.field-journal[data-community-theme="ukaf"] .dossier-body{background:#172238}
+body.field-journal[data-community-theme="ukaf"] .telemetry-card,body.field-journal[data-community-theme="ukaf"] .ops-card{background:#1d2d47}
+body.field-journal[data-community-theme="ukaf"] .retro-table th{background:#243654}
+body.field-journal[data-community-theme="ukaf"] .retro-table td{background:#19273e}
+body.field-journal[data-community-theme="ukaf"] .retro-table tr:hover td{background:#243654}
+body.field-journal[data-community-theme="ukaf"] .ops-dialog,body.field-journal[data-community-theme="ukaf"] .community-branding-form{background:#172238}
+body.field-journal[data-community-theme="ukaf"] .hero-seal span{white-space:normal}
+
+body.field-journal[data-community-theme="ukaf"] .branding-fields input,body.field-journal[data-community-theme="ukaf"] .branding-fields select{background:#1a2b45;border-color:#4c6181}

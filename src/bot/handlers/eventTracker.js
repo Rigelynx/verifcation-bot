@@ -1,3 +1,4 @@
+const { withGuild } = require('../../database/guildContext');
 const economyDb = require('../../database/economyDb');
 
 // Intervalo en segundos para el latido de presencia en voz
@@ -24,12 +25,12 @@ function initEventMonitoring(client) {
                         // Miembros actualmente conectados en la sala de voz
                         for (const [memberId, member] of channel.members) {
                             if (member.user.bot) continue;
-                            economyDb.recordAttendanceHeartbeat(
+                            withGuild(guild.id, () => economyDb.recordAttendanceHeartbeat(
                                 activeEvent.id,
                                 memberId,
                                 member.user.tag,
                                 VOICE_HEARTBEAT_INTERVAL
-                            );
+                            ));
                         }
                     }
                 }
@@ -83,6 +84,6 @@ function handleChatMessage(message) {
 
 module.exports = {
     initEventMonitoring,
-    handleVoiceStateUpdate,
-    handleChatMessage
+    handleVoiceStateUpdate: (oldState, newState) => withGuild((newState.guild || oldState.guild).id, () => handleVoiceStateUpdate(oldState, newState)),
+    handleChatMessage: message => message.guild && withGuild(message.guild.id, () => handleChatMessage(message))
 };

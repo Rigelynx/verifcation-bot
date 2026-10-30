@@ -5,11 +5,11 @@ const { hasOfficerPermission } = require('../handlers/permissionHandler');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('datos-usuario')
-        .setDescription('Consulta en la base de datos local el expediente militar y respuestas de un usuario')
+        .setDescription('Consulta en la base de datos local el expediente comunitario y respuestas de un usuario')
         .setDefaultMemberPermissions(null)
         .addUserOption(option =>
             option.setName('usuario')
-                .setDescription('Usuario militar a consultar')
+                .setDescription('Usuario comunitario a consultar')
                 .setRequired(true)
         ),
 
@@ -62,7 +62,7 @@ module.exports = {
             });
         }
 
-        embed.setFooter({ text: `Base de Datos Local Host • USMC Intelligence • ID #${dossier.id}`, iconURL: interaction.guild.iconURL() });
+        embed.setFooter({ text: `Base de Datos Local Host • Comunidad Intelligence • ID #${dossier.id}`, iconURL: interaction.guild.iconURL() });
 
         await interaction.reply({ embeds: [embed] });
     }

@@ -149,8 +149,57 @@ async function runFullVerificationTest() {
         }).then(r => r.json());
         console.log(`   -> Pregunta CHECKBOX creada con ID #${checkQ.id}`);
 
-        // 11. Limpiar datos de prueba
-        console.log('\n11. Limpieza de datos de prueba...');
+        // 11. PROBAR TRAZABILIDAD NOMINAL WEB: Login individual y edición de nombre de usuario
+        console.log('\n11. Probando Login Individual de Alto Mando y Auditoría de edición de nombre...');
+        const loginRes = await fetch(`${baseUrl}/api/admin/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                key: 'USMC-COMMAND-2026',
+                operator_name: 'Col. Vance',
+                operator_id: '111222333444555666',
+                operator_rank: 'Alto Mando Web'
+            })
+        }).then(r => r.json());
+        if (!loginRes.success || !loginRes.session_token) {
+            throw new Error('Fallo en /api/admin/login con identidad de operador.');
+        }
+        console.log(`   -> Sesión nominal iniciada: ${loginRes.operator_name} (Token: ${loginRes.session_token.slice(0, 16)}...)`);
+
+        const editUserRes = await fetch(`${baseUrl}/api/admin/verifications/${testDiscordId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${loginRes.session_token}`
+            },
+            body: JSON.stringify({
+                username: 'Sgt_Morrison_BRM5'
+            })
+        }).then(r => r.json());
+        if (!editUserRes.success || editUserRes.record.username !== 'Sgt_Morrison_BRM5') {
+            throw new Error('Fallo al editar el nombre del usuario desde el panel web.');
+        }
+        const auditLogs = db.getAdminAuditLogs(5);
+        const editLog = auditLogs.find(l => l.action === 'MODIFICACION_NOMBRE_USUARIO' && l.target_id === testDiscordId);
+        if (!editLog || editLog.actor !== 'Col. Vance') {
+            throw new Error(`No se registró correctamente el autor en auditoría: ${JSON.stringify(editLog)}`);
+        }
+        console.log(`   -> Auditoría verificada: "${editLog.actor}" (${editLog.operator_id}) -> ${editLog.details}`);
+
+        // 12. PROBAR SERVIDORES PRIVADOS BRM 5 (Ocupar / Liberar)
+        console.log('\n12. Probando sistema de Servidores Privados BRM 5 ([🔴 EN USO] / [🟢 DISPONIBLE])...');
+        const serversList = db.getPrivateServers();
+        if (serversList.length === 0) throw new Error('No se sembraron los servidores privados BRM 5 por defecto.');
+        const targetServer = serversList[0];
+        const occupiedRes = db.occupyPrivateServer(targetServer.id, '111222333444555666', 'Col. Vance', 'Patrulla Nocturna en Ronograd');
+        if (!occupiedRes.success || occupiedRes.server.status !== 'EN_USO') throw new Error('El servidor no cambió a estado EN_USO.');
+        console.log(`   -> Servidor #${occupiedRes.server.id} (${occupiedRes.server.server_name}) marcado como [🔴 ESTÁ USADO] por ${occupiedRes.server.current_officer_name}`);
+        const releasedRes = db.releasePrivateServer(targetServer.id);
+        if (!releasedRes.success || releasedRes.server.status !== 'LIBRE') throw new Error('El servidor no volvió a estado LIBRE.');
+        console.log(`   -> Servidor #${releasedRes.server.id} liberado a [🟢 DISPONIBLE] correctamente.`);
+
+        // 13. Limpiar datos de prueba
+        console.log('\n13. Limpieza de datos de prueba...');
         db.removeVerification(testDiscordId);
         db.deleteQuestion(newQRes.id);
         db.deleteQuestion(radioQ.id);
@@ -162,6 +211,7 @@ async function runFullVerificationTest() {
         console.log('====================================================\n');
     } catch (err) {
         console.error('❌ Error durante la prueba de validación:', err);
+        process.exitCode = 1;
     } finally {
         server.close();
     }

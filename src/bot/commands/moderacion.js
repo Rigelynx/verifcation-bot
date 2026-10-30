@@ -5,7 +5,7 @@ const { hasOfficerPermission } = require('../handlers/permissionHandler');
 module.exports = {
     data: new SlashCommandBuilder()
         .setName('mod')
-        .setDescription('Comandos de moderación militar y orden en la base')
+        .setDescription('Comandos de moderación comunitario y orden en la base')
         .setDefaultMemberPermissions(null)
         .addSubcommand(sub =>
             sub.setName('ban')
@@ -35,7 +35,7 @@ module.exports = {
     async execute(interaction) {
         if (!hasOfficerPermission(interaction)) {
             return interaction.reply({
-                content: '❌ **Acceso denegado:** Solo oficiales con el rol autorizado en el panel web o administradores pueden ejecutar protocolos disciplinarios.',
+                content: '❌ **Acceso denegado:** Solo responsables con el rol autorizado en el panel web o administradores pueden ejecutar protocolos disciplinarios.',
                 flags: MessageFlags.Ephemeral
             });
         }
@@ -46,14 +46,14 @@ module.exports = {
 
         if (subcommand === 'ban') {
             const targetUser = interaction.options.getUser('usuario');
-            const reason = interaction.options.getString('motivo') || 'Violación de directivas militares';
+            const reason = interaction.options.getString('motivo') || 'Violación de directivas comunitarios';
 
             const member = await interaction.guild.members.fetch(targetUser.id).catch(() => null);
             if (member && !member.bannable) {
                 return interaction.reply({ content: '❌ No es posible sancionar a este miembro (jerarquía superior o permisos insuficientes).', flags: MessageFlags.Ephemeral });
             }
 
-            targetUser.send(`🚨 **[CORTE MARCIAL USMC]** Has sido vetado de **${interaction.guild.name}**. Motivo: *${reason}*.`).catch(() => {});
+            targetUser.send(`🚨 **[CORTE MARCIAL Comunidad]** Has sido vetado de **${interaction.guild.name}**. Motivo: *${reason}*.`).catch(() => {});
 
             await interaction.guild.bans.create(targetUser.id, { reason: `${reason} | Por: ${interaction.user.tag}` });
 

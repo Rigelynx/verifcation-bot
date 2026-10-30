@@ -6,8 +6,13 @@
     <title>USMC // TERMINAL DE VERIFICACIÓN MILITAR</title>
     <link rel="stylesheet" href="/military-retro.css">
     <script src="/terminal-effects.js"></script>
-</head>
-<body>
+<link rel="stylesheet" href="/command-center.css">
+<link rel="stylesheet" href="/field-journal.css">
+<link rel="stylesheet" href="/field-motion.css">
+<link rel="stylesheet" href="/mission-art.css">
+<script src="/field-motion.js" defer></script>
+<link rel="stylesheet" href="/community-branding.css"><script src="/community-branding.js" defer></script></head>
+<body class="command-center verification-portal field-journal">
     <div class="crt-overlay"></div>
     <div class="crt-vignette"></div>
 
@@ -31,13 +36,13 @@
             <!-- ENCABEZADO MILITAR -->
             <div class="military-header">
                 <div class="header-meta">
-                    <div>DIVISIÓN: <strong>UNITED STATES MARINE CORPS // SECTOR DISCORD</strong></div>
+                    <div>DIVISIÓN: <strong>COMUNIDAD // SECTOR DISCORD</strong></div>
                     <div>FRECUENCIA: <strong>142.85 MHz [SECURE]</strong></div>
                     <div id="utc-clock">RELOJ ZULU: --:--:-- UTC</div>
                 </div>
 
                 <div class="base-branding">
-                    <div class="military-insignia">⚓</div>
+                    <div class="military-insignia"><img src="/media/unit-crest.svg" width="48" height="56" alt="Insignia USMC"></div>
                     <div class="branding-text">
                         <h1 id="base-name">USMC CLASSIFIED ACCESS TERMINAL</h1>
                         <p id="base-subtitle">DIVISIÓN DE INTELIGENCIA, SEGURIDAD Y ADMISIÓN DE RECLUTAS</p>
@@ -49,9 +54,11 @@
                 </div>
             </div>
 
+            <section id="discord-verification-access" class="ops-empty recruit-access-card" hidden><img src="/media/unit-crest.svg" alt="" width="55" height="65"><h2>Tu identidad. Tu expediente.</h2><p id="discord-verification-message" class="ops-muted" role="status"></p><a id="discord-verification-link" class="hero-button discord-login-button" href="/verify">Continuar con Discord →</a></section>
+            <div class="recruit-path" aria-label="Proceso de ingreso"><span><b>01</b> Identidad Discord</span><span><b>02</b> Tu expediente</span><span><b>03</b> Revisión de mando</span></div>
             <!-- TARJETA DEL RECLUTA (IDENTIDAD DISCORD) -->
             <div class="recruit-badge" id="user-badge">
-                <img src="/default-avatar.png" id="recruit-avatar" class="recruit-avatar" alt="Insignia del Recluta" onerror="this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+                <img src="/media/unit-crest.svg" id="recruit-avatar" class="recruit-avatar" alt="Insignia del Recluta" onerror="this.onerror=null;this.src='/media/unit-crest.svg'">
                 <div class="recruit-info">
                     <h3 id="recruit-username">RECLUTA: CARGANDO DATOS...</h3>
                     <p>IDENTIFICADOR DISCORD: <span class="badge-tag" id="recruit-id">------------------</span></p>
@@ -175,12 +182,27 @@
         const token = pathParts[pathParts.length - 1];
 
         let questionsData = [];
+        let verificationCsrf = '';
 
         // Cargar datos del usuario y preguntas
         async function loadTerminal() {
             try {
                 const res = await fetch(`/api/verify-data/${token}`);
                 const data = await res.json();
+
+                if ([401, 403, 503].includes(res.status) && data.message) {
+                    document.getElementById('verification-form').style.display = 'none';
+                    document.getElementById('user-badge').style.display = 'none';
+                    document.getElementById('discord-verification-access').hidden = false;
+                    document.getElementById('discord-verification-message').textContent = data.message;
+                    const link = document.getElementById('discord-verification-link');
+                    link.href = data.login_url?.startsWith('/auth/discord?') ? data.login_url : '/verify';
+                    link.textContent = res.status === 403 ? 'Abrir mi propio expediente →' : 'Continuar con Discord →';
+                    link.hidden = res.status === 503;
+                    return;
+                }
+                if (data.profile && window.applyCommunityProfile) await window.applyCommunityProfile(data.profile);
+                verificationCsrf = data.csrf_token || '';
 
                 if (!res.ok || !data.success) {
                     TerminalFX.playBeepError();
@@ -377,7 +399,7 @@
             try {
                 const res = await fetch(`/api/verify/${token}`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': verificationCsrf },
                     body: JSON.stringify({ answers })
                 });
 
