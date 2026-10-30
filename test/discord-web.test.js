@@ -7,6 +7,7 @@ Object.assign(process.env, { USMC_DB_PATH: path.join(temporary, 'isolated.sqlite
 delete process.env.ADMIN_LEGACY_LOGIN;
 const db = require('../src/database/db'), eco = require('../src/database/economyDb');
 const { createWebServer } = require('../src/web/server');
+const { oauthConfig } = require('../src/web/discordAuth');
 const { Collection } = require('discord.js');
 const adminId = '111111111111111111', officerId = '222222222222222222', otherId = '333333333333333333', recruitId = '444444444444444444', participantId = '555555555555555555';
 const members = new Map();
@@ -29,7 +30,11 @@ const guild = { id: process.env.GUILD_ID, ownerId: adminId, systemChannel: chann
 const client = { isReady: () => true, user: { id: process.env.CLIENT_ID }, guilds: { cache: new Map([[guild.id, guild]]) } };
 const oauthFetch = async (url, init) => {
     let body;
-    if (url.endsWith('/oauth2/token')) body = { access_token: new URLSearchParams(init.body).get('code') };
+    if (url.endsWith('/oauth2/token')) {
+        const form = new URLSearchParams(init.body);
+        assert.equal(form.get('redirect_uri'), oauthConfig().redirectUri);
+        body = { access_token: form.get('code') };
+    }
     else if (url.endsWith('/users/@me')) { const id = init.headers.Authorization.slice(7); body = { id, username: `discord-${id[0]}`, avatar: null }; }
     else if (url.includes('/guilds/')) body = { nick: 'Confirmed by Discord', roles: [] };
     else throw new Error('Unexpected request');
@@ -66,6 +71,39 @@ test('OAuth state is browser-bound, single use and prevents external redirects',
     assert.equal((await fetch(`${base}/auth/discord/callback?state=${session.state}&code=${officerId}`, { headers: { Cookie: `usmc_oauth_state=${session.state}` } })).status, 400);
     const stored = db.db.prepare('SELECT token_hash FROM discord_web_sessions').all();
     assert.ok(stored.every(row => !session.cookie.includes(row.token_hash)));
+});
+test('public HTTP OAuth keeps the callback port and authenticates with browser-bound cookies', async () => {
+    const previousUrl = process.env.WEB_URL;
+    process.env.WEB_URL = 'http://va46.holy.gg:25757';
+    try {
+        const config = await fetch(base + '/api/auth/config').then(res => res.json());
+        assert.equal(config.enabled, true);
+        const start = await fetch(base + '/auth/discord?next=/patrullas', { redirect: 'manual' });
+        assert.equal(start.status, 302);
+        const authorize = new URL(start.headers.get('location'));
+        assert.equal(authorize.origin, 'https://discord.com');
+        assert.equal(authorize.searchParams.get('redirect_uri'), 'http://va46.holy.gg:25757/auth/discord/callback');
+        const state = authorize.searchParams.get('state');
+        const stateCookie = start.headers.getSetCookie().find(value => value.startsWith('usmc_oauth_state='));
+        assert.match(stateCookie, /HttpOnly/);
+        assert.match(stateCookie, /SameSite=Lax/i);
+        assert.doesNotMatch(stateCookie, /;\s*Secure(?:;|$)/i);
+        const callbackUrl = `${base}/auth/discord/callback?state=${state}&code=${officerId}`;
+        assert.equal((await fetch(callbackUrl, { redirect: 'manual' })).status, 400);
+        const callback = await fetch(callbackUrl, { redirect: 'manual', headers: { Cookie: stateCookie.split(';')[0] } });
+        assert.equal(callback.status, 302);
+        const sessionCookie = callback.headers.getSetCookie().find(value => value.startsWith('usmc_discord='));
+        assert.match(sessionCookie, /HttpOnly/);
+        assert.match(sessionCookie, /SameSite=Lax/i);
+        assert.doesNotMatch(sessionCookie, /;\s*Secure(?:;|$)/i);
+        const session = await fetch(base + '/api/auth/session', { headers: { Cookie: sessionCookie.split(';')[0] } }).then(res => res.json());
+        assert.equal(session.success, true);
+        const active = { cookie: sessionCookie.split(';')[0], csrf: session.csrf_token };
+        assert.equal((await api(active, '/auth/logout', 'POST', {}, { Origin: 'http://other.example' })).status, 403);
+        assert.equal((await api(active, '/auth/logout', 'POST', {}, { Origin: process.env.WEB_URL })).status, 200);
+    } finally {
+        process.env.WEB_URL = previousUrl;
+    }
 });
 test('patrol sessions cannot enter admin; live role revocation and CSRF are enforced', async () => {
     const officer = await login(officerId);

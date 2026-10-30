@@ -9,7 +9,7 @@ function oauthConfig() {
     let origin;
     try {
         const url = new URL(process.env.WEB_URL);
-        if (url.username || url.password || (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)))) throw new Error();
+        if (url.username || url.password || !['http:', 'https:'].includes(url.protocol)) throw new Error();
         origin = url.origin;
     } catch { origin = null; }
     const enabled = Boolean(origin && /^\d{17,20}$/.test(process.env.CLIENT_ID || '') && process.env.DISCORD_CLIENT_SECRET);
@@ -102,7 +102,7 @@ function installDiscordAuth(app, client, options = {}) {
     });
     app.get('/auth/discord', (req, res) => {
         const config = oauthConfig();
-        if (!config.enabled) return res.status(503).send('El inicio con Discord requiere CLIENT_ID, DISCORD_CLIENT_SECRET y WEB_URL con HTTPS.');
+        if (!config.enabled) return res.status(503).send('El inicio con Discord requiere CLIENT_ID, DISCORD_CLIENT_SECRET y WEB_URL con una dirección HTTP o HTTPS válida.');
         const state = random();
         db.db.prepare('DELETE FROM discord_login_states WHERE expires_at < ?').run(Date.now());
         db.db.prepare('INSERT INTO discord_login_states VALUES (?, ?, ?)').run(hash(state), safeTarget(req.query.next), Date.now() + 300000);

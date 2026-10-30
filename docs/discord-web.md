@@ -2,9 +2,9 @@
 
 ## Activación en HolyHosting
 
-El código está implementado. Introduce `CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `GUILD_ID` y `WEB_URL` en las variables del alojamiento o en `.env`. Usa `.env.discord.example` como referencia. `WEB_URL` debe ser el origen público con HTTPS, sin `/admin` ni `/patrullas`. HTTP solo se permite en localhost/127.0.0.1 para desarrollo. No compartas secretos en el chat.
+El código está implementado. Introduce `CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `GUILD_ID` y `WEB_URL` en las variables del alojamiento o en `.env`. Usa `.env.discord.example` como referencia. `WEB_URL` admite HTTP o HTTPS y debe ser el origen público, con el puerto si corresponde, sin `/admin` ni `/patrullas`. Puedes usar la dirección proporcionada por el host sin comprar un dominio. HTTPS se recomienda para cifrar el tráfico; HTTP funciona, pero no lo cifra. No compartas secretos en el chat.
 
-En Discord Developer Portal → aplicación del bot → OAuth2 → Redirects, registra exactamente `https://tu-dominio-publico/auth/discord/callback`. El flujo solicita `identify` y `guilds.members.read`. El bot debe estar conectado al servidor configurado y poder consultar miembros. Se utilizan los roles de Oficial y Alto Mando ya configurados.
+En Discord Developer Portal → aplicación del bot → OAuth2 → Redirects, registra exactamente `WEB_URL/auth/discord/callback`, sustituyendo `WEB_URL` por la dirección configurada. Por ejemplo, para `WEB_URL=http://va46.holy.gg:25757`, registra `http://va46.holy.gg:25757/auth/discord/callback`. El protocolo, host, puerto y ruta deben coincidir. El flujo solicita `identify`. El bot debe estar conectado al servidor configurado y poder consultar miembros. Se utilizan los roles de Oficial y Alto Mando ya configurados.
 
 Reinicia con `npm start`. `/patrulla` abre el nuevo portal; los comandos existentes siguen disponibles. `/admin panel-web` ofrece inicio con Discord cuando OAuth2 está configurado.
 
@@ -47,7 +47,7 @@ La web y los comandos comparten datos. Guardar AAR guarda un borrador; Publicar 
 
 El pase de lista guarda estado, encargado y fecha, y registra cada cambio en auditoría. Los estados **Ausente** y **No responde** conservan al participante en la lista, pero lo excluyen de pagos, roles de entrenamiento y aprobados del reporte. El encargado puede corregirlos antes de finalizar; después la lista queda cerrada. Los participantes no pueden anular esta revisión confirmándose desde Discord. **Sin revisar** significa que el encargado aún no marcó a esa persona; conserva el comportamiento anterior de cada tipo de evento. `/evento lista` muestra los estados guardados al actualizar el panel.
 
-Las rutas reutilizan Express y el puerto actual. Como el formulario ya abre públicamente según lo confirmado por el usuario, no se necesita otra instancia. Hace falta el enlace HTTPS definitivo para registrar el callback.
+Las rutas reutilizan Express y el puerto actual. Como el formulario ya abre públicamente según lo confirmado por el usuario, no se necesita otra instancia. Registra el callback con la dirección pública que uses para abrir la web.
 
 ## Validación
 

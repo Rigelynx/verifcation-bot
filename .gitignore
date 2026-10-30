@@ -1,5 +1,8 @@
 node_modules/
 .env
+.env.*
+!.env.*.example
+!.env.example
 database.sqlite
 database.sqlite-journal
 database.sqlite-shm

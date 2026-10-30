@@ -12,7 +12,7 @@ Documento para el propietario y los administradores del despliegue. La guía par
 
 ## 2. Comprobar la dirección pública y los accesos
 
-`WEB_URL` debe ser el origen público que abrirán los usuarios, con su dominio, HTTPS y puerto si corresponde; no debe terminar en `/admin` o `/patrullas`. En la aplicación de Discord del **bot oficial**, el retorno OAuth debe coincidir exactamente con:
+`WEB_URL` debe ser el origen público que abrirán los usuarios: HTTP o HTTPS, host y puerto si corresponde; no debe terminar en `/admin` o `/patrullas`. Se admite la dirección proporcionada por el alojamiento. En la aplicación de Discord del **bot oficial**, el retorno OAuth debe coincidir exactamente con:
 
 ```text
 TU_WEB/auth/discord/callback
