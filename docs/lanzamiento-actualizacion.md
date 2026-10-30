@@ -12,6 +12,10 @@ Documento para el propietario y los administradores del despliegue. La guía par
 
 ## 2. Comprobar la dirección pública y los accesos
 
+En el arranque Node.js predeterminado de HolyHosting, el campo **Bot js file** debe ser `startup.js` para usar el actualizador de este proyecto. `src/index.js` inicia el bot directamente y omite `start.sh`. Conserva **Install Branch = main**; el script también reconoce `GIT_BRANCH` cuando se define expresamente. El inicio muestra `[BOOTSTRAP]`, `[STARTUP] Actualizador activo` y el commit del código activo. Si GitHub no se descarga, el actualizador se detiene y muestra el error.
+
+Al cambiar desde un despliegue que no recibe archivos nuevos, copia una vez `startup.js` y `start.sh` a `/home/container` con el gestor de archivos de Holy, además de subir ambos a GitHub. Después cambia **Bot js file**, reinicia y consulta el commit que muestra la consola. Los siguientes arranques descargarán los commits publicados. Conserva los archivos de datos y la configuración del host.
+
 `WEB_URL` debe ser el origen público que abrirán los usuarios: HTTP o HTTPS, host y puerto si corresponde; no debe terminar en `/admin` o `/patrullas`. Se admite la dirección proporcionada por el alojamiento. En la aplicación de Discord del **bot oficial**, el retorno OAuth debe coincidir exactamente con:
 
 ```text
