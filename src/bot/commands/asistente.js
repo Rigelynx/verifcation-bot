@@ -3,7 +3,8 @@ const { getAssistant } = require('../../assistant/service');
 module.exports = {
     data: new SlashCommandBuilder().setName('asistente').setDescription('Asistente privado para consultar y gestionar el servidor')
         .addSubcommand(sub => sub.setName('preguntar').setDescription('Conversa, consulta actividad y gestiona canales, roles y permisos')
-            .addStringOption(option => option.setName('peticion').setDescription('Qué necesitas que haga el asistente').setRequired(true).setMaxLength(4000)))
+            .addStringOption(option => option.setName('peticion').setDescription('Qué necesitas que haga el asistente').setRequired(true).setMaxLength(4000))
+            .addAttachmentOption(option => option.setName('imagen').setDescription('Imagen PNG, JPG o WebP de hasta 2 MB para compartir en un canal')))
         .addSubcommand(sub => sub.setName('web').setDescription('Abre tu chat privado con el asistente en la web'))
         .addSubcommand(sub => sub.setName('nuevo').setDescription('Empieza un chat sin el contexto anterior; conserva tus otras conversaciones')),
     async execute(interaction) {
@@ -21,8 +22,11 @@ module.exports = {
                     components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setStyle(ButtonStyle.Link).setLabel('Abrir asistente').setURL(`${base}/asistente?guild=${interaction.guildId}`))] });
             }
             await interaction.editReply({ content: '🧠 Consultando el asistente… El proveedor puede tardar en responder. Te avisaré aquí al terminar.', allowedMentions: { parse: [] } });
+            const file = interaction.options.getAttachment?.('imagen');
+            const uploaded = file ? await assistant.uploadDiscord(interaction.guildId, interaction.user.id, file) : null;
             const result = await assistant.run({ guildId: interaction.guildId, userId: interaction.user.id,
-                prompt: interaction.options.getString('peticion'), requestId: interaction.id });
+                prompt: interaction.options.getString('peticion'), requestId: interaction.id,
+                ...(uploaded ? { conversationId: uploaded.conversation_id, attachmentIds: [uploaded.attachment.id] } : {}) });
             const summary = result.trace.length ? `\n\nHerramientas: ${result.trace.length} · Cambios: ${result.trace.filter(row => row.changed || row.created).length} · Creaciones: ${result.trace.filter(row => row.created).length} · Borrados: ${result.trace.filter(row => row.deleted).length}.` : '';
             return interaction.editReply({ content: result.answer.slice(0, 1750) + (result.answer.length > 1750 ? '\nRespuesta completa en el archivo adjunto.' : '') + summary,
                 allowedMentions: { parse: [] }, files: result.answer.length > 1750 ? [new AttachmentBuilder(Buffer.from(result.answer), { name: 'respuesta-asistente.txt' })] : [] });

@@ -29,6 +29,7 @@ El usuario y el bot deben tener los permisos nativos de Discord que exige cada a
 | `read_channel` | Hasta 50 mensajes recientes de un canal de texto o anuncios accesible; texto acotado, fechas y enlaces |
 | `channel_usage` | Hasta 8 canales y 30 mensajes recientes por canal; muestra explícita, sin afirmar inactividad histórica ni medir voz |
 | `event_summary` | Un evento por ID o los últimos 10 visibles según sus canales: estado, asistencia y datos guardados del AAR |
+| `send_message` | Envía texto con formato de Discord y hasta 10 embeds a un canal de texto o anuncios accesible; devuelve ID y enlace del mensaje y deja auditoría |
 | `propose_creations` | Guarda una propuesta concreta cuando se piden ideas o planificación; no modifica Discord |
 | `create_channel` | Texto, voz o categoría; con categoría hereda permisos, sin categoría queda privado para solicitante y bot |
 | `create_role` | Rol nuevo sin permisos, sin asignación a miembros ni mención masiva |
@@ -58,7 +59,21 @@ Los cambios se registran con autor, ID de petición y motivo en Discord. Las her
 
 La API comprueba permisos y jerarquía: no se borran `@everyone` ni roles de integraciones; los roles deben quedar por debajo del bot y del usuario, salvo la excepción del dueño del servidor para su propia jerarquía. No se conceden permisos que no tenga el usuario o el bot. La categoría de destino y los canales deben pertenecer a la comunidad actual y ser accesibles. Los borrados son irreversibles y requieren que el encargo incluya eliminar o limpiar; crear u organizar por sí solo no autoriza borrar. Los canales obligatorios de una comunidad no pueden eliminarse. Estas reglas siguen la [jerarquía y permisos de Discord](https://docs.discord.com/developers/topics/permissions) y las [operaciones de canales](https://docs.discord.com/developers/resources/channel).
 
-Desde `/owner → Configurar IA` hay ocho capacidades separadas: crear canales; editar/mover/ordenar canales; borrar canales; crear roles; editar/ordenar roles; borrar roles; asignar/retirar roles; y gestionar permisos. Al actualizar una base antigua, las capacidades nuevas heredan inicialmente el permiso de creación de canales o roles correspondiente. Se guardan por comunidad; una nueva instalación sigue necesitando que el propietario habilite su IA. El asistente no puede cambiar sus propias capacidades de `/owner`.
+Desde `/owner → Configurar IA` hay nueve capacidades separadas: crear canales; editar/mover/ordenar canales; borrar canales; crear roles; editar/ordenar roles; borrar roles; asignar/retirar roles; gestionar permisos; y **Enviar mensajes y embeds a canales**. Esta última empieza desactivada y debe habilitarla el propietario para cada comunidad. Las capacidades anteriores conservan su migración desde los permisos de creación correspondientes. Se guardan por comunidad; una nueva instalación sigue necesitando que el propietario habilite su IA. El asistente no puede cambiar sus propias capacidades de `/owner`.
+
+## Publicar mensajes con formato
+
+Después de desplegar la actualización y habilitar **Enviar mensajes y embeds a canales** en Owner, pide, por ejemplo: «Redacta y envía un anuncio de patrulla a #operaciones, con título, lista del equipo y la ubicación como spoiler». Funciona desde `/asistente preguntar` y desde la web. Pedir solo un borrador no autoriza publicarlo. Si delegas redactar y enviar, el asistente compone el mensaje y lo publica usando sus herramientas, sin otro paso de confirmación.
+
+El texto conserva spoilers `||texto||`, negritas, cursivas, subrayado, tachado, encabezados, subtexto, listas, citas, enlaces y código. Discord no interpreta spoilers dentro de bloques de código. También admite embeds con título, descripción, color, campos, autor, pie, imagen y miniatura mediante URL o una imagen adjunta del usuario. Se respetan 2000 caracteres por mensaje, hasta 10 embeds y 6000 caracteres sumados en sus textos; el asistente puede dividir una publicación larga en varios mensajes completos. Las menciones no generan avisos.
+
+En el chat web, usa **Adjuntar imagen**; desde Discord, selecciona la opción **imagen** de `/asistente preguntar`. Se admiten PNG, JPG y WebP de hasta 2 MB. Ejemplo: «Envía esta imagen a #anuncios con un título en negrita y oculta la imagen como spoiler». Debes habilitar **Enviar mensajes y embeds a canales** en Owner y tanto tú como el bot debéis poder **Adjuntar archivos** en el canal. Puedes volver a referirte a esa imagen dentro de la misma conversación.
+
+Las imágenes se guardan en la base SQLite del bot, aisladas por cuenta, comunidad y conversación. La vista previa exige sesión de Discord y acceso al asistente; los archivos no tienen una ruta pública. La publicación en Discord es una acción explícita del usuario. Hasta 20 imágenes por cuenta y comunidad se conservan durante 30 días; copias idénticas en el mismo chat comparten archivo. El modelo recibe solo sus nombres e identificadores, nunca sus bytes: esta integración no analiza visualmente las imágenes. La herramienta `read_channel` consulta mensajes y enlaces/metadatos de adjuntos accesibles, y `server_inventory` muestra canales y roles visibles.
+
+El usuario y el bot necesitan **Ver canal** y **Enviar mensajes** en el destino; para embeds, también **Insertar enlaces**. Se comprueban de nuevo después de interpretar la orden. La auditoría registra actor, canal, contenido e ID del envío. Un fallo del modelo posterior al envío conserva el recibo; repetir la misma petición no reenvía el mensaje. Una orden nueva con otro identificador sí se considera otro envío. Las pruebas usan Discord y DeepSeek simulados; el despliegue real se comprueba en el servidor.
+
+Referencia del formato: [Markdown de Discord](https://support.discord.com/hc/es/articles/210298617-Marcado-de-texto-101-Formato-de-chat-negrita-cursiva-subrayado).
 
 El motor no ejecuta comandos slash arbitrarios, terminal, SQL, navegación externa, expulsiones ni publicaciones en canales. Los mensajes leídos son datos y no pueden autorizar acciones de gestión. Las protecciones se aplican aunque el modelo solicite una herramienta indebida.
 

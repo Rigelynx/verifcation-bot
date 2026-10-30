@@ -231,7 +231,7 @@ Como propietario del bot:
 1. Abre `/owner` e inicia sesión con tu cuenta autorizada.
 2. Busca la instalación de USMC o UKAF y pulsa **Configurar IA**.
 3. Habilita el asistente y añade los IDs de quienes podrán usarlo, hasta diez por comunidad. Si la lista queda vacía, el acceso se limita al propietario de ese servidor.
-4. Elige sus capacidades: crear, editar/mover u ordenar y borrar canales; crear, editar u ordenar y borrar roles; asignarlos/retirarlos; y configurar permisos de roles o canales.
+4. Elige sus capacidades: crear, editar/mover u ordenar y borrar canales; crear, editar u ordenar y borrar roles; asignarlos/retirarlos; configurar permisos de roles o canales; y **Enviar mensajes y embeds a canales**. El envío comienza desactivado hasta que lo habilites para esa comunidad.
 5. Guarda **Consultas por persona / 24 h = 0** si quieres quitar el cupo diario del bot, o un número positivo si prefieres establecerlo para esa comunidad.
 6. La clave de DeepSeek se guarda en el alojamiento o `.env`; no se pega en el chat ni en este formulario.
 
@@ -241,11 +241,15 @@ En Discord:
 /asistente preguntar peticion:Resume los eventos recientes.
 /asistente preguntar peticion:Organiza tú los canales de soporte del bot; elige los nombres y crea la estructura.
 /asistente preguntar peticion:Continúa con lo que falta.
+/asistente preguntar peticion:Redacta y envía a #operaciones un anuncio de patrulla con negritas y la ubicación en spoiler.
+/asistente preguntar peticion:Publica esta imagen en #anuncios como spoiler. imagen:[adjunta tu archivo]
 /asistente web
 /asistente nuevo
 ```
 
 Para continuar, vuelve a usar `/asistente preguntar`; la respuesta privada del bot no es un chat de mensajes normales. En la web puedes escribir mensajes seguidos cómodamente. Ambos accesos usan la conversación activa de tu cuenta dentro de ese servidor.
+
+En la web, **Adjuntar imagen** permite añadir PNG, JPG o WebP de hasta 2 MB y pedir que se publique en un canal. Las imágenes son privadas hasta que solicites enviarlas a Discord; puedes pedir que se publiquen como spoiler. DeepSeek recibe sus metadatos para compartirlas, sin interpretar su contenido visual. Para consultar el servidor puedes pedir «Muéstrame los canales y roles» o «Lee los últimos mensajes de #operaciones y dime qué adjuntos tienen».
 
 Para cambiar de tema sin arrastrar todo el historial, pulsa **＋ Nuevo chat**, arriba en la web, o usa `/asistente nuevo`. Empieza con el contexto vacío y conserva los chats anteriores. El selector **Tus conversaciones** permite volver a abrirlos y continuar donde estabas. El cambio se comparte con Discord; por ejemplo, puedes separar una conversación para tienda y otra para reorganizar canales.
 

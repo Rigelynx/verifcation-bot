@@ -50,3 +50,8 @@
 .assistant-page :focus-visible { outline: 2px solid #c0d2ab; outline-offset: 3px; }
 @media (max-width: 850px) { .assistant-layout { grid-template-columns: 240px minmax(0, 1fr); } .assistant-sidebar { padding: 22px; } .assistant-scene { width: calc(100% + 44px); margin: -22px -22px 24px; } .assistant-sidebar h1 { font-size: 36px; } .assistant-chat { padding: 24px; } }
 @media (max-width: 620px) { .assistant-shell { width: calc(100% - 20px); margin: 10px auto; border-radius: 16px; } .assistant-topbar { padding: 15px; } .assistant-topbar > div { flex-direction: column; gap: 6px; align-items: end; } .assistant-layout { grid-template-columns: minmax(0, 1fr); } .assistant-sidebar { border: 0; padding: 22px; } .assistant-scene { height: 130px; } .assistant-sidebar h1 { font-size: 32px; line-height: 1.12; } .assistant-sidebar h1 br { display: initial; } .assistant-capabilities { margin: 18px 0; display: flex; flex-wrap: wrap; gap: 6px; } .assistant-capabilities h2 { width: 100%; margin: 0; } .assistant-capabilities button { width: auto; margin: 0; padding: 10px; } .assistant-chat { padding: 22px 16px; } .assistant-message { padding: 15px; } .assistant-message.user { margin-left: 20px; } .assistant-composer { display: block; } .assistant-composer button { width: 100%; } }
+/* Imágenes privadas del chat */
+.assistant-image-upload{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin:12px 0;font-size:12px}
+.assistant-image-upload label{display:grid;gap:8px}.assistant-image-upload input{max-width:100%}
+.assistant-image-upload button{padding:8px;border-radius:8px;cursor:pointer}
+.assistant-upload-preview{display:block;max-width:100%;max-height:240px;object-fit:contain;border-radius:10px;margin-top:12px}

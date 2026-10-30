@@ -16,7 +16,7 @@ for (const [key, source] of Object.entries(policySeeds)) {
     const column = `assistant_${key}`;
     if (profileColumns.has(column)) continue;
     db.transaction(() => {
-        db.exec(`ALTER TABLE community_profiles ADD COLUMN ${column} INTEGER NOT NULL DEFAULT 1`);
+        db.exec(`ALTER TABLE community_profiles ADD COLUMN ${column} INTEGER NOT NULL DEFAULT ${source === '0' ? 0 : 1}`);
         db.exec(`UPDATE community_profiles SET ${column}=${source}`);
     })();
 }

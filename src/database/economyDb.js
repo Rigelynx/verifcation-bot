@@ -589,6 +589,12 @@ function deleteEconomyAccount(discordId) {
 // =========================================================================
 
 function getCommandPermissions() {
+    // Añadir protocolos nuevos también en comunidades existentes, sin cambiar
+    // los roles ni la activación que ya haya guardado cada administrador.
+    const insert = db.prepare('INSERT OR IGNORE INTO economy_command_permissions (guild_id, command_name, is_enabled, allowed_roles) VALUES (current_guild_id(), ?, 1, ?)');
+    db.transaction(() => {
+        for (const name of require('./commandCatalog')) insert.run(name, '[]');
+    })();
     const rows = db.prepare('SELECT * FROM (SELECT * FROM economy_command_permissions WHERE guild_id = current_guild_id()) AS economy_command_permissions ORDER BY command_name ASC').all();
     return rows.map(r => ({
         command_name: r.command_name,

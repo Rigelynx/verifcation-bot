@@ -45,7 +45,8 @@ const assistantFetch = async (url, init) => {
 const text = content => ({ role: 'assistant', content });
 const scope = (channel = 'none', role = 'none') => text(JSON.stringify({ create_channel: channel, create_role: role }));
 const tool = (name, args, id = 'call_1') => ({ role: 'assistant', content: null, tool_calls: [{ id, type: 'function', function: { name, arguments: JSON.stringify(args) } }] });
-const service = getAssistant(client, { assistantFetch });
+const imageContent = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jYV8AAAAASUVORK5CYII=';
+const service = getAssistant(client, { assistantFetch, attachmentFetch: async () => new Response(Buffer.from(imageContent, 'base64')) });
 let sequence = 0;
 const run = (prompt, userId = ownerId, requestId) => service.run({ guildId, userId, prompt, requestId: requestId || `assistant-turn-${++sequence}` });
 let server, base;
@@ -407,6 +408,90 @@ test('approved management plans delete through the shared service and replays pr
     const count = requests.length, replay = await run(prompt, ownerId, requestId);
     assert.equal(replay.replayed, true); assert.equal(replay.trace[0].deleted, true);
     assert.equal(requests.length, count); assert.equal(mutations.length, before + 1);
+});
+
+test('sending through the shared service keeps its receipt on retry and on a later provider failure', async () => {
+    const channelId = '555555555555555519', sent = [];
+    const target = makeChannel(channelId);
+    target.send = async payload => { sent.push(payload); return { id: '777777777777777719', url: `https://discord.com/channels/${guildId}/${channelId}/777777777777777719` }; };
+    channels.set(channelId, target);
+    db.db.prepare('UPDATE community_profiles SET assistant_send_messages=1 WHERE guild_id=?').run(guildId);
+    const args = { channel_id: channelId, content: '**Operación** ||ubicación||' }, prompt = 'Publica el anuncio en operaciones', requestId = 'send-message-replay-001';
+    try {
+        queue.push(tool('send_message', args), text(JSON.stringify({ send_message: 'request' })), { error: 'Model unavailable after sending' });
+        const result = await run(prompt, ownerId, requestId);
+        assert.equal(result.failed, true); assert.equal(result.trace[0].sent, true);
+        assert.equal(result.trace[0].channel_id, channelId); assert.match(result.trace[0].url, /777777777777777719$/);
+        assert.equal(sent.length, 1); assert.equal(sent[0].content, args.content);
+        const requestCount = requests.length;
+        const replay = await run(prompt, ownerId, requestId);
+        assert.equal(replay.replayed, true); assert.equal(replay.trace[0].sent, true);
+        assert.equal(sent.length, 1); assert.equal(requests.length, requestCount);
+        assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM admin_audit_logs WHERE action='IA_ENVIAR_MENSAJE' AND guild_id=?").get(guildId).n, 1);
+    } finally {
+        db.db.prepare('UPDATE community_profiles SET assistant_send_messages=0 WHERE guild_id=?').run(guildId);
+        channels.delete(channelId);
+    }
+});
+
+test('web image upload is private, CSRF-protected and persists only metadata in the model and history', async () => {
+    const headers = session(ownerId), reader = session(readerId);
+    const chat = service.activeChat(guildId, ownerId);
+    const content = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jYV8AAAAASUVORK5CYII=';
+    const body = JSON.stringify({ content, name: 'imagen.png', conversation_id: chat.id });
+    assert.equal((await fetch(base + '/api/assistant/attachments', { method: 'POST', headers: { ...headers, 'X-CSRF-Token': '' }, body })).status, 403);
+    const uploaded = await fetch(base + '/api/assistant/attachments', { method: 'POST', headers, body });
+    assert.equal(uploaded.status, 200); const { attachment } = await uploaded.json();
+    const imageUrl = `${base}/api/assistant/attachments/${attachment.id}?conversation_id=${chat.id}`;
+    assert.equal((await fetch(imageUrl)).status, 401);
+    assert.equal((await fetch(imageUrl, { headers: reader })).status, 404);
+    const preview = await fetch(imageUrl, { headers });
+    assert.equal(preview.headers.get('content-type'), 'image/png');
+    assert.deepEqual(Buffer.from(await preview.arrayBuffer()), Buffer.from(content, 'base64'));
+    const prompt = 'Guarda esta imagen para enviarla después', requestId = 'image-upload-test-001';
+    queue.push(text('Imagen disponible en este chat.'));
+    const result = await service.run({ guildId, userId: ownerId, prompt, requestId, conversationId: chat.id, attachmentIds: [attachment.id] });
+    assert.equal(result.failed, undefined);
+    assert.ok(JSON.stringify(requests.at(-1)).includes(attachment.id));
+    assert.ok(!JSON.stringify(requests.at(-1)).includes(content));
+    assert.equal(service.history(guildId, ownerId, chat.id).at(-1).attachments[0].id, attachment.id);
+    await assert.rejects(service.run({ guildId, userId: ownerId, prompt, requestId, attachmentIds: [] }), /otras imágenes/);
+    const deliveries = [], targetId = '555555555555555518';
+    const target = makeChannel(targetId);
+    target.send = async payload => { deliveries.push(payload); return { id: '777777777777777718', url: `https://discord.com/channels/${guildId}/${targetId}/777777777777777718` }; };
+    channels.set(targetId, target);
+    db.db.prepare('UPDATE community_profiles SET assistant_send_messages=1 WHERE guild_id=?').run(guildId);
+    try {
+        queue.push(tool('send_message', { channel_id: targetId, attachment_ids: [attachment.id], spoiler_attachments: true }), text(JSON.stringify({ send_message: 'request' })), text('Imagen enviada como spoiler.'));
+        const sent = await service.run({ guildId, userId: ownerId, prompt: 'Ahora envía esa imagen como spoiler al canal indicado', requestId: 'image-send-test-001', conversationId: chat.id });
+        assert.equal(sent.trace[0].sent, true); assert.equal(sent.trace[0].attachment_count, 1);
+        assert.deepEqual(deliveries[0].files[0].attachment, Buffer.from(content, 'base64'));
+        assert.match(deliveries[0].files[0].name, /^SPOILER_/);
+        const replay = await service.run({ guildId, userId: ownerId, prompt: 'Ahora envía esa imagen como spoiler al canal indicado', requestId: 'image-send-test-001', conversationId: chat.id });
+        assert.equal(replay.replayed, true); assert.equal(deliveries.length, 1);
+    } finally {
+        db.db.prepare('UPDATE community_profiles SET assistant_send_messages=0 WHERE guild_id=?').run(guildId);
+        channels.delete(targetId);
+    }
+    const otherChat = await service.newChat(guildId, ownerId);
+    await assert.rejects(service.run({ guildId, userId: ownerId, prompt, requestId: 'image-cross-chat-001', conversationId: otherChat.id, attachmentIds: [attachment.id] }), /no encontrada/);
+    await service.selectChat(guildId, ownerId, chat.id);
+});
+
+test('slash attachment is downloaded, associated with the active chat and passed as private metadata', async () => {
+    const replies = [];
+    queue.push(text('Imagen adjunta disponible en este chat.'));
+    await command.execute({ client, guildId, user: { id: ownerId }, id: 'slash-image-request-001', deferred: true,
+        options: { getSubcommand: () => 'preguntar', getString: () => 'Conserva esta imagen para después', getAttachment: () => ({
+            url: 'https://cdn.discordapp.com/attachments/123/456/image.png', name: 'desde-discord.png', size: Buffer.from(imageContent, 'base64').length
+        }) }, editReply: async payload => replies.push(payload) });
+    const last = service.history(guildId, ownerId).at(-1);
+    assert.equal(last.attachments.length, 1);
+    assert.equal(last.attachments[0].mime, 'image/png');
+    const stored = await service.attachment(guildId, ownerId, service.activeChat(guildId, ownerId).id, last.attachments[0].id);
+    assert.deepEqual(Buffer.from(stored.data), Buffer.from(imageContent, 'base64'));
+    assert.match(replies.at(-1).content, /Imagen adjunta/);
+    assert.ok(!JSON.stringify(requests.at(-1)).includes(imageContent));
 });
 
 test('a provider failure after deletion reports the completed action and does not reexecute it', async () => {

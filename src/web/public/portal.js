@@ -1,7 +1,7 @@
 (() => {
     'use strict';
     const assistantPolicies = { create_channels: 'Crear canales y categorías', edit_channels: 'Editar, mover y ordenar canales', delete_channels: 'Borrar canales y categorías',
-        create_roles: 'Crear roles', edit_roles: 'Editar y ordenar roles', delete_roles: 'Borrar roles', assign_roles: 'Asignar y retirar roles a miembros', manage_permissions: 'Configurar permisos de roles y canales' };
+        create_roles: 'Crear roles', edit_roles: 'Editar y ordenar roles', delete_roles: 'Borrar roles', assign_roles: 'Asignar y retirar roles a miembros', manage_permissions: 'Configurar permisos de roles y canales', send_messages: 'Enviar mensajes y embeds a canales' };
     const page = document.body.dataset.page;
     let csrf = '', installations = [], filter = 'all';
     const $ = selector => document.querySelector(selector);

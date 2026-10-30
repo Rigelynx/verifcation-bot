@@ -24,6 +24,7 @@ function createWebServer(discordClient, options = {}) {
 
     app.use(cors());
     app.use('/api/admin/branding/image', express.json({ limit: '3mb' }));
+    app.use('/api/assistant/attachments', express.json({ limit: '3mb' }));
     app.use(express.json());
     app.use(express.urlencoded({ extended: true }));
 

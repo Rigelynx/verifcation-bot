@@ -10,7 +10,7 @@
     "test:tactical": "node --test test/tactical.test.js test/discord-web.test.js test/assistant.test.js",
     "test:portal": "node --test test/portal-owner.test.js test/discord-web.test.js",
     "backup": "node scripts/backup.js",
-    "test:multiserver": "node --test test/multiserver.test.js test/portal-owner.test.js test/discord-web.test.js test/tactical.test.js test/assistant.test.js test/assistant-transport.test.js test/assistant-management.test.js test/assistant-conversations.test.js"
+    "test:multiserver": "node --test test/multiserver.test.js test/portal-owner.test.js test/discord-web.test.js test/tactical.test.js test/assistant.test.js test/assistant-transport.test.js test/assistant-management.test.js test/assistant-conversations.test.js test/protocol-catalog.test.js test/assistant-attachments.test.js"
   },
   "keywords": [
     "discord",

@@ -42,7 +42,8 @@ async function executeTool(name, args, context) {
         if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type) || !allowedChannel(channel, member, bot, [P.ViewChannel, P.ReadMessageHistory])) error('No hay acceso al historial de ese canal de texto.');
         const messages = values(await channel.messages.fetch({ limit })).sort((a, b) => a.createdTimestamp - b.createdTimestamp);
         return messages.map(message => ({ id: message.id, author_id: message.author?.id, author: message.author?.username || 'Usuario', bot: Boolean(message.author?.bot),
-            at: new Date(message.createdTimestamp).toISOString(), text: String(message.content || '').slice(0, 600), url: message.url }));
+            at: new Date(message.createdTimestamp).toISOString(), text: String(message.content || '').slice(0, 600), url: message.url,
+            attachments: [...(message.attachments?.values() || [])].slice(0, 10).map(file => ({ name: file.name, url: file.url, content_type: file.contentType, size: file.size })) }));
     }
     if (name === 'server_inventory') {
         const roles = await guild.roles.fetch();
@@ -54,7 +55,7 @@ async function executeTool(name, args, context) {
         const limit = args.limit ?? 30;
         if (!Number.isInteger(limit) || limit < 1 || limit > 50) error('La muestra debe contener entre 1 y 50 mensajes.');
         const channel = channelById(args.channel_id);
-        return { channel_id: channel.id, channel: channel.name, sample_limit: limit, messages: await sample(channel, limit), scope: 'Solo los mensajes más recientes disponibles. Contenido truncado a 600 caracteres por mensaje; no incluye hilos ni adjuntos.' };
+        return { channel_id: channel.id, channel: channel.name, sample_limit: limit, messages: await sample(channel, limit), scope: 'Mensajes recientes; texto truncado a 600 caracteres. Incluye nombres y enlaces de adjuntos, no su contenido visual ni hilos.' };
     }
     if (name === 'channel_usage') {
         const ids = args.channel_ids;

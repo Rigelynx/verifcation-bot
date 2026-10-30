@@ -126,10 +126,38 @@ test('only the owner can disable the daily AI quota per community and zero survi
 });
 
 test('all slash definitions serialize with neutral faction-independent names and descriptions', () => {
+    const catalog = new Set(require('../src/database/commandCatalog'));
+    const registered = new Set();
+    const check = (node, prefix = []) => {
+        const names = [...prefix, node.name];
+        const subcommands = (node.options || []).filter(option => option.type === 1 || option.type === 2);
+        if (subcommands.length) subcommands.forEach(child => check(child, names));
+        else {
+            registered.add(names.join(':'));
+            assert.ok(catalog.has(names.join(':')), `Falta /${names.join(' ')} en Protocolos`);
+        }
+    };
     for (const file of fs.readdirSync(path.join(__dirname, '../src/bot/commands')).filter(name => name.endsWith('.js'))) {
         const command = require('../src/bot/commands/' + file).data.toJSON();
         assert.equal(/USMC|UKAF|Ronograd|BRM ?5/i.test(JSON.stringify(command)), false, file);
+        check(command);
     }
+    assert.deepEqual([...catalog].sort(), [...registered].sort(), 'El catálogo debe corresponder exactamente a los comandos registrados');
+    assert.equal(require('../src/database/commandCatalog').length, catalog.size, 'El catálogo no debe contener duplicados');
+});
+
+test('Protocolos adds patrol to existing communities without resetting saved permissions', () => {
+    withGuild(B, () => {
+        db.db.prepare('DELETE FROM economy_command_permissions WHERE guild_id=? AND command_name=?').run(B, 'patrulla');
+        eco.updateCommandPermission('evento:lista', false, ['officer-role']);
+        assert.ok(eco.getCommandPermissions().some(row => row.command_name === 'patrulla'));
+        assert.equal(eco.isCommandAllowed('evento:lista').allowed, false);
+        eco.updateCommandPermission('patrulla', false, ['patrol-role']);
+        const saved = eco.getCommandPermissions().find(row => row.command_name === 'patrulla');
+        assert.deepEqual(saved, { command_name: 'patrulla', is_enabled: false, allowed_roles: ['patrol-role'] });
+        assert.equal(eco.isCommandAllowed('patrulla').reason, 'DISABLED');
+    });
+    assert.equal(withGuild(A, () => eco.getCommandPermissions().find(row => row.command_name === 'patrulla')).is_enabled, true);
 });
 test('SQLite refuses attendance rows pointing into a different guild', () => {
     const event = eco.createEvent({ guild_id: B, name: 'Constraint', event_type: 'REGISTRATION', base_reward: 0 }).event;
@@ -158,17 +186,21 @@ test('legacy provider settings migrate to DeepSeek without altering access and r
 
 test('management capabilities are configurable only by the owner, remain guild scoped and preserve omitted settings', async () => {
     const originalA = communities.ensureCommunity(A);
-    const flags = { edit_channels: true, delete_channels: false, edit_roles: true, delete_roles: false, assign_roles: true, manage_permissions: false };
+    assert.equal(originalA.assistant_send_messages, 0);
+    const flags = { edit_channels: true, delete_channels: false, edit_roles: true, delete_roles: false, assign_roles: true, manage_permissions: false, send_messages: true };
     const body = { enabled: true, daily_limit: 0, allowed_ids: [user], create_channels: true, create_roles: true, ...flags };
     assert.equal((await api(B, `/api/owner/installations/${B}/assistant`, 'PUT', body)).status, 403);
     assert.equal((await api(B, `/api/owner/installations/${B}/assistant`, 'PUT', body, owner)).status, 200);
     const identity = await getAssistant(client).access(B, user);
     assert.equal(identity.assistantPolicy.update_channel, true); assert.equal(identity.assistantPolicy.delete_channel, false);
     assert.equal(identity.assistantPolicy.assign_role, true); assert.equal(identity.assistantPolicy.set_channel_permissions, false);
+    assert.equal(identity.assistantPolicy.send_message, true);
+    assert.equal(communities.ensureCommunity(A).assistant_send_messages, 0);
     assert.equal(communities.ensureCommunity(A).assistant_delete_channels, originalA.assistant_delete_channels);
     const legacyBody = { enabled: true, daily_limit: 0, allowed_ids: [user], create_channels: true, create_roles: true };
     assert.equal((await api(B, `/api/owner/installations/${B}/assistant`, 'PUT', legacyBody, owner)).status, 200);
     assert.equal(communities.ensureCommunity(B).assistant_delete_channels, 0);
+    assert.equal(communities.ensureCommunity(B).assistant_send_messages, 1);
     assert.equal((await api(B, `/api/owner/installations/${B}/assistant`, 'PUT', { ...body, manage_permissions: 'yes' }, owner)).status, 400);
     const log = db.db.prepare("SELECT * FROM admin_audit_logs WHERE guild_id=? AND action='CONFIGURAR_IA' ORDER BY id DESC").get(B);
     assert.equal(JSON.parse(log.details).tools.set_channel_permissions, false);
@@ -182,6 +214,7 @@ test('legacy management capability migration inherits existing creation policy a
     const migrated = reload().ensureCommunity(A);
     assert.equal(migrated.assistant_edit_channels, 0); assert.equal(migrated.assistant_delete_channels, 0);
     assert.equal(migrated.assistant_edit_roles, 1); assert.equal(migrated.assistant_manage_permissions, 1);
+    assert.equal(migrated.assistant_send_messages, 0);
     db.db.prepare('UPDATE community_profiles SET assistant_manage_permissions=0 WHERE guild_id=?').run(A);
     assert.equal(reload().ensureCommunity(A).assistant_manage_permissions, 0);
 });

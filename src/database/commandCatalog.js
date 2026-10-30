@@ -9,7 +9,7 @@ const defaultCmds = [
         'asistente:preguntar', 'asistente:web', 'asistente:nuevo',
         'help',
         'mod:ban', 'mod:kick', 'mod:timeout', 'mod:purge',
-        'panel-verificacion',
+        'panel-verificacion', 'patrulla',
         'tienda:panel', 'tienda:comprar', 'tienda:inventario'
     ];
 module.exports = defaultCmds;

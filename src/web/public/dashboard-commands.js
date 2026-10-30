@@ -44,12 +44,26 @@ const COMMAND_METAS = {
     'bono:estado': { label: '/bono estado', desc: 'Consulta la vigencia y cooldown de tu próxima asignación de bono.', category: 'bono', catName: 'BONOS', catColor: '#ffbb00' },
 
     // ⚔️ OPERACIONES Y EVENTOS
+    'patrulla': { label: '/patrulla', desc: 'Abre el portal web de operaciones, participantes y reportes AAR.', category: 'evento', catName: 'EVENTOS', catColor: '#00b4d8' },
     'evento:convocar': { label: '/evento convocar', desc: 'Abre la lista de alistamiento previo y publica el panel de inscripción.', category: 'evento', catName: 'EVENTOS', catColor: '#00b4d8' },
     'evento:entrenamiento': { label: '/evento entrenamiento', desc: 'Abre un entrenamiento y entrega el rol configurado a quienes permanezcan aprobados.', category: 'evento', catName: 'EVENTOS', catColor: '#00b4d8' },
     'evento:lista': { label: '/evento lista', desc: 'Valida la asistencia: revisa el roster y retira ausentes antes del pago.', category: 'evento', catName: 'EVENTOS', catColor: '#00b4d8' },
     'evento:iniciar': { label: '/evento iniciar', desc: 'Inicia el monitoreo automático de permanencia en canales de voz o chat.', category: 'evento', catName: 'EVENTOS', catColor: '#00b4d8' },
     'evento:finalizar': { label: '/evento finalizar', desc: 'Concluye la operación y paga inmediatamente a todos los asistentes aprobados.', category: 'evento', catName: 'EVENTOS', catColor: '#00b4d8' },
     'evento:estado': { label: '/evento estado', desc: 'Verifica los soldados presentes y estado en vivo de la operación activa.', category: 'evento', catName: 'EVENTOS', catColor: '#00b4d8' },
+    'evento:editar-reporte': { label: '/evento editar-reporte', desc: 'Reabre un reporte finalizado para corregir el mensaje original sin duplicar pagos.', category: 'evento', catName: 'EVENTOS', catColor: '#00b4d8' },
+
+    // 🖥️ SERVIDORES PRIVADOS
+    'servidor:lista': { label: '/servidor lista', desc: 'Muestra la pizarra de servidores privados y permite fijar el panel.', category: 'servidor', catName: 'SERVIDORES', catColor: '#4bb7aa' },
+    'servidor:ocupar': { label: '/servidor ocupar', desc: 'Reserva un servidor privado e indica la misión que lo utiliza.', category: 'servidor', catName: 'SERVIDORES', catColor: '#4bb7aa' },
+    'servidor:liberar': { label: '/servidor liberar', desc: 'Marca un servidor privado como disponible.', category: 'servidor', catName: 'SERVIDORES', catColor: '#4bb7aa' },
+    'servidor:agregar': { label: '/servidor agregar', desc: 'Registra un servidor privado con sus datos de acceso.', category: 'servidor', catName: 'SERVIDORES', catColor: '#4bb7aa' },
+    'servidor:eliminar': { label: '/servidor eliminar', desc: 'Da de baja un servidor privado de la pizarra.', category: 'servidor', catName: 'SERVIDORES', catColor: '#4bb7aa' },
+
+    // 🧠 ASISTENTE PRIVADO
+    'asistente:preguntar': { label: '/asistente preguntar', desc: 'Conversa con la IA y ejecuta las herramientas habilitadas para la comunidad.', category: 'asistente', catName: 'ASISTENTE', catColor: '#ad94dc' },
+    'asistente:web': { label: '/asistente web', desc: 'Abre el chat privado del asistente en la web.', category: 'asistente', catName: 'ASISTENTE', catColor: '#ad94dc' },
+    'asistente:nuevo': { label: '/asistente nuevo', desc: 'Empieza una conversación nueva sin arrastrar el contexto anterior.', category: 'asistente', catName: 'ASISTENTE', catColor: '#ad94dc' },
 
     // 🛒 ARMERÍA Y SUMINISTROS
     'tienda:panel': { label: '/tienda panel', desc: 'Abre el panel táctico con catálogo de ítems y selector de compra instantánea.', category: 'shop', catName: 'ARMERÍA', catColor: '#9d4edd' },
@@ -100,6 +114,13 @@ function updateCommandStats() {
     if (enabledEl) enabledEl.innerText = enabled;
     if (disabledEl) disabledEl.innerText = disabled;
     if (restrictedEl) restrictedEl.innerText = restricted;
+    const categories = document.getElementById('cmd-filter-category');
+    if (categories) for (const option of categories.options) {
+        const count = option.value === 'ALL' ? total : allCommandPerms.filter(cmd => COMMAND_METAS[cmd.command_name]?.category === option.value).length;
+        const label = option.dataset.label || option.textContent.replace(/\s*\(\d+\)/g, '').trim();
+        option.dataset.label = label;
+        option.textContent = `${label} (${count})`;
+    }
 }
 
 function getFilteredCommands() {

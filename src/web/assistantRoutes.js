@@ -27,9 +27,17 @@ function installAssistantRoutes(app, client, auth, options = {}) {
     }));
     app.get('/api/assistant/usage', route(async (req, res) => res.json({ success: true,
         usage: assistant.usage(req.discordIdentity.guildId, req.discordIdentity.id) })));
+    app.post('/api/assistant/attachments', route(async (req, res) => {
+        const result = await assistant.upload(req.discordIdentity.guildId, req.discordIdentity.id, req.body.conversation_id, req.body);
+        res.json({ success: true, ...result });
+    }));
+    app.get('/api/assistant/attachments/:id', route(async (req, res) => {
+        const image = await assistant.attachment(req.discordIdentity.guildId, req.discordIdentity.id, req.query.conversation_id, req.params.id);
+        res.set({ 'Content-Type': image.mime, 'X-Content-Type-Options': 'nosniff' }).send(Buffer.from(image.data));
+    }));
     app.post('/api/assistant/ask', route(async (req, res) => {
         const result = await assistant.run({ guildId: req.discordIdentity.guildId, userId: req.discordIdentity.id,
-            prompt: req.body.prompt, requestId: req.body.request_id, conversationId: req.body.conversation_id });
+            prompt: req.body.prompt, requestId: req.body.request_id, conversationId: req.body.conversation_id, attachmentIds: req.body.attachment_ids });
         res.json({ success: true, ...result });
     }));
 }

@@ -1,12 +1,27 @@
-const { ChannelType, PermissionFlagsBits: P, PermissionsBitField, OverwriteType } = require('discord.js');
+const { ChannelType, PermissionFlagsBits: P, PermissionsBitField, OverwriteType, AttachmentBuilder } = require('discord.js');
 const { actionPolicies } = require('./capabilities');
 const id = { type: 'string', pattern: '^\\d{17,20}$' };
 const text = maxLength => ({ type: 'string', maxLength });
+const url = { type: 'string', minLength: 1, maxLength: 1000 };
+const embedSchema = { type: 'object', additionalProperties: false, properties: {
+    title: text(256), description: text(4096), color: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' }, url,
+    image_url: url, thumbnail_url: url,
+    author: { type: 'object', additionalProperties: false, required: ['name'], properties: { name: { type: 'string', minLength: 1, maxLength: 256 }, url, icon_url: url } },
+    footer: { type: 'object', additionalProperties: false, required: ['text'], properties: { text: { type: 'string', minLength: 1, maxLength: 2048 }, icon_url: url } },
+    fields: { type: 'array', maxItems: 25, items: { type: 'object', additionalProperties: false, required: ['name', 'value'], properties: {
+        name: { type: 'string', minLength: 1, maxLength: 256 }, value: { type: 'string', minLength: 1, maxLength: 1024 }, inline: { type: 'boolean' }
+    } } }
+} };
 const permissionNames = Object.keys(P);
 const permissionList = { type: 'array', items: { type: 'string', enum: permissionNames }, uniqueItems: true };
 const definition = (name, description, properties = {}, required = []) => ({ type: 'function', function: { name, description,
     parameters: { type: 'object', properties, required, additionalProperties: false } } });
 const managementTools = [
+    definition('send_message', 'Publica un mensaje real en un canal de texto o anuncios de esta comunidad cuando el usuario lo solicita. content conserva el Markdown de Discord: spoilers ||texto||, encabezados, negritas, cursivas, subrayado, tachado, listas, citas, enlaces y código. Admite hasta 10 embeds con color, campos, imágenes y miniaturas. Las menciones no notifican. Para textos largos reparte en mensajes completos, sin cortar código ni spoilers.', {
+        channel_id: id, content: text(2000), embeds: { type: 'array', maxItems: 10, items: embedSchema },
+        attachment_ids: { type: 'array', maxItems: 4, uniqueItems: true, items: { type: 'string', pattern: '^[a-f0-9-]{36}$' } },
+        spoiler_attachments: { type: 'boolean' }
+    }, ['channel_id']),
     definition('permission_catalog', 'Lista los nombres técnicos de permisos admitidos y ejemplos de su significado. Consulta antes de configurar permisos desconocidos.'),
     definition('inspect_channel', 'Consulta configuración, categoría y excepciones de permisos de un canal visible.', { channel_id: id }, ['channel_id']),
     definition('inspect_role', 'Consulta posición, permisos y miembros de un rol. fetch_members=true consulta todos los miembros para comprobar si realmente está sin asignar.', { role_id: id, fetch_members: { type: 'boolean' } }, ['role_id']),
@@ -120,6 +135,41 @@ async function executeManagement(name, args, context) {
         return { id: found.id, name: found.displayName, username: found.user.username, roles: entries(found.roles.cache).map(role => ({ id: role.id, name: role.name })) };
     }
     await authorize();
+    if (name === 'send_message') {
+        const channel = await channelFor(args.channel_id);
+        if (![ChannelType.GuildText, ChannelType.GuildAnnouncement].includes(channel.type)) fail('Elige un canal de texto o anuncios para publicar el mensaje.');
+        const attachmentIds = args.attachment_ids || [];
+        if (attachmentIds.length && !context.getAttachments) fail('No hay acceso a las imágenes de esta conversación.');
+        const attachments = attachmentIds.length ? context.getAttachments(attachmentIds) : [];
+        const files = attachments.map(image => new AttachmentBuilder(Buffer.from(image.data), { name: image.name }).setSpoiler(args.spoiler_attachments === true));
+        const fileNames = files.map(file => file.name);
+        const embeds = (args.embeds || []).map(embed => {
+            for (const [value, attachmentAllowed] of [[embed.url, false], [embed.image_url, true], [embed.thumbnail_url, true], [embed.author?.url, false], [embed.author?.icon_url, false], [embed.footer?.icon_url, false]]) {
+                if (!value) continue;
+                if (attachmentAllowed && value.startsWith('attachment://') && fileNames.includes(value.slice('attachment://'.length))) continue;
+                let parsed;
+                try { parsed = new URL(value); } catch { fail('Los enlaces e imágenes del embed deben ser URLs HTTP o HTTPS válidas.'); }
+                if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) fail('Los enlaces e imágenes del embed deben ser URLs HTTP o HTTPS sin credenciales.');
+            }
+            if (![embed.title, embed.description, embed.image_url, embed.thumbnail_url, embed.author?.name, embed.footer?.text].some(value => value?.trim()) && !embed.fields?.length) fail('El embed está vacío.');
+            const { color, image_url, thumbnail_url, ...rest } = embed;
+            return { ...rest, ...(color ? { color: parseInt(color.slice(1), 16) } : {}),
+                ...(image_url ? { image: { url: image_url } } : {}), ...(thumbnail_url ? { thumbnail: { url: thumbnail_url } } : {}) };
+        });
+        if (!args.content?.trim() && !embeds.length && !files.length) fail('Incluye texto, una imagen o al menos un embed para enviar.');
+        const embedLength = embeds.reduce((sum, embed) => sum + (embed.title?.length || 0) + (embed.description?.length || 0)
+            + (embed.author?.name.length || 0) + (embed.footer?.text.length || 0)
+            + (embed.fields || []).reduce((total, field) => total + field.name.length + field.value.length, 0), 0);
+        if (embedLength > 6000) fail('Los embeds de un mismo mensaje no pueden superar 6000 caracteres de texto en total.');
+        const permissions = [P.ViewChannel, P.SendMessages, ...(embeds.length ? [P.EmbedLinks] : []), ...(files.length ? [P.AttachFiles] : [])];
+        if (!channel.permissionsFor(member)?.has(permissions) || !channel.permissionsFor(bot)?.has(permissions)) fail('Tú y el bot necesitáis Ver canal, Enviar mensajes y, para embeds o imágenes, Insertar enlaces o Adjuntar archivos en el canal de destino.');
+        const message = await channel.send({ ...(args.content ? { content: args.content } : {}), ...(embeds.length ? { embeds } : {}),
+            ...(files.length ? { files } : {}), allowedMentions: { parse: [], users: [], roles: [], repliedUser: false } });
+        context.writeCount = (context.writeCount || 0) + 1;
+        return finish('IA_ENVIAR_MENSAJE', { id: message.id, name: channel.name }, null,
+            { channel_id: channel.id, content: args.content || '', embeds, attachments: attachments.map(image => ({ id: image.id, name: image.name, mime: image.mime })), spoiler_attachments: Boolean(args.spoiler_attachments), url: message.url },
+            { sent: true, channel_id: channel.id, url: message.url, attachment_count: files.length });
+    }
     if (['update_channel', 'move_channel', 'reorder_channel', 'delete_channel', 'set_channel_permissions', 'sync_channel_permissions'].includes(name)) {
         const channel = await channelFor(args.channel_id);
         const permissionAction = ['set_channel_permissions', 'sync_channel_permissions'].includes(name);

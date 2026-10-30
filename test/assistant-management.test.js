@@ -273,3 +273,74 @@ test('live loss of native permissions after intent interpretation blocks a role 
     await assert.rejects(run('set_role_permissions', { role_id: ROLE, grant: ['SendMessages'] }), /Gestionar roles/);
     assert.equal(calls.length, 0); assert.equal(audits.length, 0);
 });
+
+function captureMessages() {
+    channels.get(CHANNEL).send = async options => {
+        calls.push({ method: 'message.send', options });
+        return { id: '500000000000000001', url: `https://discord.com/channels/${G}/${CHANNEL}/500000000000000001` };
+    };
+}
+test('messages preserve Discord formatting, suppress pings and audit the actual destination and receipt', async () => {
+    captureMessages();
+    const content = '# Operación\n**Atención** __equipo__ ~~cancelado~~\n> Informe\n- Punto uno\n||Ubicación secreta||\n```js\nconst x = 1;\n```\n@everyone <@100000000000000004>';
+    const result = await run('send_message', { channel_id: CHANNEL, content, embeds: [{ title: 'Briefing', description: '**Listos** ||dato||', color: '#123456',
+        image_url: 'https://example.org/image.png', thumbnail_url: 'https://example.org/logo.png', fields: [{ name: 'AO', value: 'Sector uno', inline: true }], footer: { text: 'Mando' } }] });
+    assert.equal(result.sent, true); assert.equal(result.changed, true); assert.equal(result.channel_id, CHANNEL);
+    assert.equal(calls.length, 1); assert.equal(calls[0].options.content, content);
+    assert.deepEqual(calls[0].options.allowedMentions, { parse: [], users: [], roles: [], repliedUser: false });
+    assert.equal(calls[0].options.embeds[0].color, 0x123456);
+    assert.deepEqual(calls[0].options.embeds[0].image, { url: 'https://example.org/image.png' });
+    assert.equal(audits[0].action, 'IA_ENVIAR_MENSAJE'); assert.equal(audits[0].target, result.id);
+    assert.equal(audits[0].details.after.channel_id, CHANNEL); assert.equal(audits[0].details.after.content, content);
+});
+test('message policy, human intent, target isolation and live permissions are enforced before sending', async () => {
+    captureMessages(); const args = { channel_id: CHANNEL, content: 'Anuncio' };
+    context.assistantPolicy.send_message = false;
+    await assert.rejects(run('send_message', args), /deshabilit/);
+    context.assistantPolicy.send_message = true; context.authorizeAction = async () => false;
+    await assert.rejects(run('send_message', args), /solicitaste/);
+    context.authorizeAction = async () => true; context.member = members.get(OFFICER);
+    await assert.rejects(run('send_message', { ...args, channel_id: HIDDEN }), /sin acceso/);
+    await assert.rejects(run('send_message', { ...args, channel_id: FOREIGN }), /esta comunidad/);
+    await assert.rejects(run('send_message', { ...args, channel_id: CATEGORY }), /texto o anuncios/);
+    await assert.rejects(run('send_message', { ...args, embeds: [{ title: 'Embebido' }] }), /Insertar enlaces/);
+    context.bot.permissions = bits([P.ViewChannel]);
+    await assert.rejects(run('send_message', args), /Enviar mensajes/);
+    context.bot.permissions = bits([P.Administrator]);
+    context.refreshIdentity = async () => { context.member.permissions = bits([P.ViewChannel]); return context; };
+    await assert.rejects(run('send_message', args), /Enviar mensajes/);
+    assert.equal(calls.length, 0); assert.equal(audits.length, 0);
+});
+test('invalid message payloads and combined embed limits are rejected without a Discord write', async () => {
+    captureMessages();
+    for (const payload of [{}, { content: '  ' }, { content: 'x'.repeat(2001) }, { embeds: [{}] }, { embeds: Array(11).fill({ title: 'x' }) },
+        { embeds: [{ description: 'x'.repeat(4000) }, { description: 'x'.repeat(2001) }] },
+        { embeds: [{ title: 'x', image_url: 'javascript:alert(1)' }] }, { embeds: [{ title: 'x', url: 'https://name:pass@example.org/' }] },
+        { embeds: [{ title: 'x', color: '#zzzzzz' }] }, { content: 'x', allowedMentions: { parse: ['everyone'] } }]) {
+        await assert.rejects(run('send_message', { channel_id: CHANNEL, ...payload }));
+    }
+    assert.equal(calls.length, 0); assert.equal(audits.length, 0);
+});
+test('failed Discord delivery is not audited as sent; failed audit preserves a successful delivery receipt', async () => {
+    channels.get(CHANNEL).send = async () => { throw new Error('Discord unavailable'); };
+    await assert.rejects(run('send_message', { channel_id: CHANNEL, content: 'Hola' }), /Discord unavailable/);
+    assert.equal(audits.length, 0);
+    captureMessages(); context.audit = () => { throw new Error('Storage unavailable'); };
+    const result = await run('send_message', { channel_id: CHANNEL, embeds: [{ description: 'Solo embed' }] });
+    assert.equal(result.sent, true); assert.match(result.audit_warning, /falló/); assert.equal(calls.length, 1);
+});
+
+test('user image attachments can be sent as spoilers and need current AttachFiles permission', async () => {
+    captureMessages();
+    const id = '12345678-1234-1234-1234-123456789abc', data = Buffer.from('image-test');
+    context.getAttachments = ids => ids.map(value => { assert.equal(value, id); return { id, data, name: 'imagen.png', mime: 'image/png' }; });
+    const result = await run('send_message', { channel_id: CHANNEL, attachment_ids: [id], spoiler_attachments: true });
+    assert.equal(result.sent, true); assert.equal(result.attachment_count, 1);
+    assert.equal(calls[0].options.files[0].name, 'SPOILER_imagen.png');
+    assert.deepEqual(calls[0].options.files[0].attachment, data);
+    assert.equal(audits[0].details.after.attachments[0].id, id);
+    assert.equal(JSON.stringify(audits).includes('image-test'), false);
+    calls.length = 0; context.member = members.get(OFFICER);
+    await assert.rejects(run('send_message', { channel_id: CHANNEL, attachment_ids: [id] }), /Adjuntar archivos/);
+    assert.equal(calls.length, 0);
+});
