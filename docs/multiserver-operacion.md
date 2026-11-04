@@ -43,7 +43,7 @@ Antes de un listado público, configurar el enlace `SUPPORT_URL`, revisar la pá
 
 ## Esperas del asistente
 
-El comando `/asistente` reconoce la interacción antes de inicializar la comunidad o comprobar permisos. La consulta muestra un mensaje privado de espera y edita ese mismo mensaje al terminar. El proveedor dispone de 90 segundos por petición y de un presupuesto total de 180 segundos para los pasos de la consulta. Los límites se ajustan mediante `ASSISTANT_REQUEST_TIMEOUT_SECONDS` (5–180) y `ASSISTANT_TOTAL_TIMEOUT_SECONDS` (10–600, nunca menor que una petición). Un timeout no inicia reintentos automáticos ni repite creaciones de canales o roles.
+El comando `/asistente` reconoce la interacción antes de inicializar la comunidad o comprobar permisos. La consulta muestra un mensaje privado de espera y edita ese mismo mensaje al terminar. El proveedor dispone de 180 segundos por petición y de un presupuesto total de 600 segundos para los pasos de la consulta. Los límites se ajustan mediante `ASSISTANT_REQUEST_TIMEOUT_SECONDS` (5–300) y `ASSISTANT_TOTAL_TIMEOUT_SECONDS` (10–900, nunca menor que una petición). Un timeout no inicia reintentos automáticos ni repite creaciones de canales o roles.
 
 Los errores distinguen espera agotada, conexión, credencial rechazada, modelo no disponible y cuota. El diagnóstico de consola incluye proveedor, código y tiempo transcurrido; omite claves, preguntas y cuerpos de respuestas. Si vuelve a aparecer `[Late interaction]`, el campo `receivedAgeMs` se mide antes de preparar la comunidad: puede reflejar retraso de entrega, carga del proceso o diferencia entre el reloj local y Discord. Ampliar la espera del proveedor no cambia el plazo inicial que establece Discord.
 

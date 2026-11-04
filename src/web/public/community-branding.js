@@ -12,7 +12,7 @@
             const caption = node.querySelector('span'); node.replaceChildren(document.createTextNode(profile.short_name || profile.display_name)); if (caption) node.append(caption);
         }
         document.querySelectorAll('[data-community-label]').forEach(node => { node.textContent = `${profile.short_name || profile.display_name} / OPERACIONES`; });
-        const logo = profile.logo_url || (profile.theme === 'ukaf' ? '/media/ukaf-crest.svg' : '/media/unit-crest.svg');
+        const logo = profile.logo_url || (profile.theme === 'paf' ? '/media/paf-crest.svg' : profile.theme === 'ukaf' ? '/media/ukaf-crest.svg' : '/media/unit-crest.svg');
         document.documentElement.style.setProperty('--community-mark', `url("${logo.replace(/["\\]/g, '')}")`);
         document.querySelectorAll('img[src="/media/unit-crest.svg"]').forEach(img => { img.src = logo; img.alt = profile.display_name; });
         if (profile.banner_url) document.querySelectorAll('.hero-scene,.login-visual>img:first-child').forEach(img => { img.src = profile.banner_url; });
@@ -23,12 +23,12 @@
         const form = document.createElement('form'); form.id = 'community-branding-form'; form.className = 'community-branding-form';
         form.innerHTML = `<p class="journal-eyebrow">IDENTIDAD DE TU COMUNIDAD</p><h3>Un espacio con tu nombre.</h3><p>El tema, las imágenes y los colores pertenecen únicamente a este servidor.</p><div class="branding-fields">
             <label>Nombre visible<input name="display_name" maxlength="100" required></label><label>Siglas<input name="short_name" maxlength="16"></label>
-            <label>Estilo<select name="theme"><option value="neutral">Neutro</option><option value="usmc">USMC · Clásico</option><option value="ukaf">UKAF · Azul y rojo</option><option value="custom">Personalizado</option></select></label><label>Color principal<input type="color" name="accent"></label>
+            <label>Estilo<select name="theme"><option value="neutral">Neutro</option><option value="usmc">USMC · Clásico</option><option value="ukaf">UKAF · Azul y rojo</option><option value="paf">P.A.F. · Polish Armed Forces</option><option value="custom">Personalizado</option></select></label><label>Color principal<input type="color" name="accent"></label>
             <label>Logo · URL HTTPS<input name="logo_url" type="text"><input type="file" data-image="logo" accept="image/png,image/jpeg,image/webp" aria-label="Subir logo"></label>
             <label>Portada · URL HTTPS<input name="banner_url" type="text"><input type="file" data-image="banner" accept="image/png,image/jpeg,image/webp" aria-label="Subir portada"></label></div><button type="submit" class="btn-retro">Guardar identidad</button><p class="branding-feedback" role="status"></p>`;
         config.parentElement.insertBefore(form, config);
         for (const key of ['display_name', 'short_name', 'theme', 'accent', 'logo_url', 'banner_url']) form.elements.namedItem(key).value = profile[key] || '';
-        form.elements.theme.addEventListener('change', () => { const colors = { neutral: '#b8cba6', usmc: '#ddc9a2', ukaf: '#b84048' }; if (colors[form.elements.theme.value]) form.elements.accent.value = colors[form.elements.theme.value]; });
+        form.elements.theme.addEventListener('change', () => { const colors = { neutral: '#b8cba6', usmc: '#ddc9a2', ukaf: '#b84048',paf:'#df5266' }; if (colors[form.elements.theme.value]) form.elements.accent.value = colors[form.elements.theme.value]; if(form.elements.theme.value==='paf'){form.elements.display_name.value='Polish Armed Forces';form.elements.short_name.value='P.A.F.';form.elements.logo_url.value='/media/paf-crest.svg';form.elements.banner_url.value='/media/paf-banner.svg';} });
         const feedback = form.querySelector('[role=status]');
         async function csrf() { const res = await fetch('/api/auth/session'); if (!res.ok) throw new Error('Inicia sesión con Discord para editar la identidad.'); return (await res.json()).csrf_token; }
         form.addEventListener('submit', async event => {

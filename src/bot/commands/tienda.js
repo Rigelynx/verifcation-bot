@@ -4,10 +4,11 @@ const {
     ActionRowBuilder, 
     ButtonBuilder, 
     ButtonStyle, 
-    StringSelectMenuBuilder, 
     MessageFlags 
 } = require('discord.js');
 const economyDb = require('../../database/economyDb');
+const community = require('../../database/communityDb');
+const {renderShopPanel,buildPurchasePreview,identity}=require('../utils/shopPresentation');
 
 /**
  * Función central de procesamiento de compra para comandos, botones y select menus
@@ -27,13 +28,12 @@ async function processShopPurchase(interaction, itemId, confirmed = false, expec
     const sym = settings.currency_symbol || '$';
     if (!confirmed || (expectedPrice !== null && item.price !== expectedPrice)) {
         const acc = economyDb.getAccount(interaction.user.id, guildId);
-        return interaction.reply({ flags: MessageFlags.Ephemeral, embeds: [new EmbedBuilder().setColor(0xdcb96c)
-            .setTitle('🛒 CONFIRMAR ADQUISICIÓN')
-            .setDescription(`**${item.name}**\n${String(item.description || 'Suministro de intendencia.').slice(0, 600)}\n\n**Precio:** ${sym}${item.price.toLocaleString()}\n**Tu saldo:** ${sym}${acc.wallet.toLocaleString()}\n**Stock:** ${item.stock === -1 ? 'Ilimitado' : item.stock}${item.required_roles.length ? `\n**Requiere:** ${formatRoleMentions(item.required_roles)}` : ''}`)
-            .setFooter({ text: 'Confirma para descontar el importe y entregar el artículo.' })],
-            components: [new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId(`shop_confirm_${item.id}_${interaction.user.id}_${item.price}`).setLabel('Confirmar compra').setStyle(ButtonStyle.Success).setDisabled(item.stock === 0),
-                new ButtonBuilder().setCustomId('shop_cancel_purchase').setLabel('Cancelar').setStyle(ButtonStyle.Secondary))], allowedMentions: { parse: [] } });
+        const owned=economyDb.getUserInventory(interaction.user.id).filter(row=>row.item_id===item.id).reduce((sum,row)=>sum+row.quantity,0);
+        const preview=buildPurchasePreview(item,acc,settings,community.ensureCommunity(guildId),owned,confirmed);
+        return interaction.reply({flags:MessageFlags.Ephemeral,embeds:[preview.embed],
+            components:[new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId(`shop_confirm_${item.id}_${interaction.user.id}_${item.price}`).setLabel('Confirmar compra').setStyle(ButtonStyle.Success).setDisabled(!preview.canPurchase),
+                new ButtonBuilder().setCustomId('shop_cancel_purchase').setLabel('Cerrar ficha').setStyle(ButtonStyle.Secondary))],allowedMentions:{parse:[]}});
     }
     const key = `${interaction.user.id}:${itemId}`;
     if (pendingPurchases.has(key)) return interaction.reply({ content: 'Tu compra se está procesando.', flags: MessageFlags.Ephemeral });
@@ -60,9 +60,9 @@ async function processShopPurchase(interaction, itemId, confirmed = false, expec
         delivered = true;
         const account = economyDb.getAccount(interaction.user.id, guildId);
         return interaction.editReply({ content: '', embeds: [new EmbedBuilder().setColor(0x59c9a5)
-            .setTitle('✅ ADQUISICIÓN COMPLETADA')
+            .setTitle('✅ Compra completada')
             .setDescription(`**${item.name}**\n${result.customReply}\n\n**Pagado:** ${sym}${item.price.toLocaleString()}\n**Saldo:** ${sym}${account.wallet.toLocaleString()}`)
-            .setFooter({ text: `Comunidad · Intendencia · Pedido #${result.orderId}` })], components: [], allowedMentions: { parse: [] } });
+            .setFooter({ text: `${identity(community.ensureCommunity(guildId)).name} · Pedido #${result.orderId}` })], components: [], allowedMentions: { parse: [] } });
     } catch (error) {
         if (delivered) {
             console.error('[Shop receipt]', { orderId: result.orderId, error: error.message });
@@ -89,170 +89,9 @@ function formatRoleMentions(roles) {
     return valid.map(r => `<@&${r}>`).join(' ');
 }
 
-/**
- * Genera el panel visual táctico interactivo de la tienda
- */
-/**
- * Genera el panel visual táctico interactivo de la tienda con paginación
- */
+/** Catálogo compacto con identidad de la comunidad, filtros y paginación. */
 function buildShopPanel(guildId, page = 1, category = 'all') {
-    const allItems = economyDb.getShopItems(guildId, true);
-    const items = allItems.filter(item => category === 'all' || (category === 'ranks' ? item.roles_to_give.length > 0 : item.roles_to_give.length === 0));
-    const settings = economyDb.getEconomySettings(guildId);
-    const sym = settings.currency_symbol || '$';
-
-    if (items.length === 0) {
-        const emptyEmbed = new EmbedBuilder()
-            .setColor(0xffb000)
-            .setTitle('🛒 [ARMERÍA Y TIENDA MILITAR // Comunidad LOGISTICS]')
-            .setDescription(`
-**La armería táctica se encuentra en inventario cero.**
-El Administración no ha suministrado equipamiento ni rangos activos en este momento.
-
-*Visita el panel web para registrar nuevos pertrechos comunitarios.*
-            `)
-            .setFooter({ text: 'Intendencia Militar Comunidad' })
-            .setTimestamp();
-
-        const emptyRow = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('btn_view_my_inventory')
-                .setLabel('🎒 Mi Inventario')
-                .setStyle(ButtonStyle.Secondary),
-            new ButtonBuilder()
-                .setCustomId('btn_view_shop_balance')
-                .setLabel('💵 Ver Saldo')
-                .setStyle(ButtonStyle.Success),
-            new ButtonBuilder()
-                .setCustomId('btn_refresh_shop')
-                .setLabel('🔄 Actualizar')
-                .setStyle(ButtonStyle.Secondary)
-        );
-
-        if (allItems.length) emptyRow.addComponents(new ButtonBuilder().setCustomId('shop_page_1_all').setLabel('Todo el catálogo').setStyle(ButtonStyle.Primary));
-        return { embeds: [emptyEmbed], components: [emptyRow] };
-    }
-
-    const ITEMS_PER_PAGE = 4;
-    const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
-    const currentPage = Math.min(Math.max(1, page), totalPages);
-    const pageItems = items.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
-
-    const embed = new EmbedBuilder()
-        .setColor(0x38e54d)
-        .setTitle('📦 INTENDENCIA · Comunidad LOGISTICS')
-        .setDescription(`
-**BIENVENIDO AL ALMACÉN MILITAR DEL BATALLÓN**
-*Adquiere rangos responsables, insignias de servicio y pertrechos de intendencia.*
-
-Selecciona un artículo para ver su ficha y confirmar la compra. Consulta tu saldo e inventario desde los botones inferiores.
-        `)
-        .setFooter({ text: `Página ${currentPage}/${totalPages} • Total: ${items.length} artículos en armería • Comunidad Logistics` })
-        .setTimestamp();
-
-    for (const item of pageItems) {
-        let roleInfo = '';
-        const giveRoles = formatRoleMentions(item.roles_to_give);
-        const remRoles = formatRoleMentions(item.roles_to_remove);
-        const reqRoles = formatRoleMentions(item.required_roles);
-        const blkRoles = formatRoleMentions(item.blocked_roles);
-
-        if (giveRoles) roleInfo += `\n> ➕ **Otorga Rol:** ${giveRoles}`;
-        if (remRoles) roleInfo += `\n> ➖ **Reemplaza Rol:** ${remRoles}`;
-        if (reqRoles) roleInfo += `\n> 🔒 **Requiere Rango:** ${reqRoles}`;
-        if (blkRoles) roleInfo += `\n> ⛔ **Incompatible con:** ${blkRoles}`;
-
-        let statusBadge = '🟢 `DISPONIBLE`';
-        if (item.stock === 0) {
-            statusBadge = '🔴 `AGOTADO`';
-        } else if (item.stock > 0 && item.stock <= 3) {
-            statusBadge = `🟡 \`ÚLTIMAS ${item.stock} UNIDADES\``;
-        }
-
-        const stockText = item.stock === -1 ? 'Ilimitado' : `${item.stock} u.`;
-        const maxUserText = item.max_per_user === -1 ? 'Sin límite' : `${item.max_per_user}/soldado`;
-
-        embed.addFields({
-            name: `${item.icon || '🎖️'} ${item.name} ── \`${sym}${item.price.toLocaleString()}\`  ${statusBadge}`,
-            value: `${item.description ? `*${item.description}*\n` : ''}> 📦 **Stock:** \`${stockText}\` │ 👤 **Límite:** \`${maxUserText}\`${roleInfo}`,
-            inline: false
-        });
-    }
-
-    const components = [];
-
-    components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
-        .setCustomId('shop_category').setPlaceholder('Filtrar catálogo…').addOptions([
-            { label: 'Todo el catálogo', value: 'all', default: category === 'all' },
-            { label: 'Rangos y acreditaciones', value: 'ranks', default: category === 'ranks' },
-            { label: 'Suministros', value: 'supplies', default: category === 'supplies' }])));
-    // 1. Selector táctico desplegable para comprar ítems de la página actual
-    const selectOptions = pageItems.map(item => {
-        let desc = `${sym}${item.price.toLocaleString()}`;
-        if (item.roles_to_give && item.roles_to_give.length > 0) {
-            desc += ' • Otorga Rol Militar';
-        } else {
-            desc += ' • Suministro Táctico';
-        }
-        if (item.stock !== -1) {
-            desc += ` (${item.stock} disp.)`;
-        }
-
-        return {
-            label: item.name.slice(0, 100),
-            description: desc.slice(0, 100),
-            value: String(item.id),
-            emoji: item.icon && item.icon.length <= 4 ? item.icon : '🎖️'
-        };
-    });
-
-    if (selectOptions.length > 0) {
-        const selectMenu = new StringSelectMenuBuilder()
-            .setCustomId('select_buy_shop')
-            .setPlaceholder(`🛒 Ver artículo de esta página (${currentPage}/${totalPages})...`)
-            .addOptions(selectOptions);
-
-        components.push(new ActionRowBuilder().addComponents(selectMenu));
-    }
-
-    // 2. Fila de botones de navegación por páginas
-    const navRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`shop_page_${currentPage - 1}_${category}`)
-            .setLabel('◀️ Anterior')
-            .setStyle(ButtonStyle.Primary)
-            .setDisabled(currentPage <= 1),
-        new ButtonBuilder()
-            .setCustomId('shop_indicator')
-            .setLabel(`Página ${currentPage} / ${totalPages}`)
-            .setStyle(ButtonStyle.Secondary)
-            .setDisabled(true),
-        new ButtonBuilder()
-            .setCustomId(`shop_page_${currentPage + 1}_${category}`)
-            .setLabel('Siguiente ▶️')
-            .setStyle(ButtonStyle.Primary)
-            .setDisabled(currentPage >= totalPages)
-    );
-    components.push(navRow);
-
-    // 3. Fila de botones utilitarios limpios y compactos
-    const actionRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('btn_view_my_inventory')
-            .setLabel('🎒 Mi Inventario')
-            .setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder()
-            .setCustomId('btn_view_shop_balance')
-            .setLabel('💵 Ver Mi Saldo')
-            .setStyle(ButtonStyle.Success),
-        new ButtonBuilder()
-            .setCustomId(`shop_refresh_${currentPage}`)
-            .setLabel('🔄 Actualizar')
-            .setStyle(ButtonStyle.Secondary)
-    );
-    components.push(actionRow);
-
-    return { embeds: [embed], components };
+    return renderShopPanel(economyDb.getShopItems(guildId,true),economyDb.getEconomySettings(guildId),community.ensureCommunity(guildId),page,category);
 }
 
 module.exports = {
@@ -261,7 +100,7 @@ module.exports = {
         .setDescription('Panel interactivo de la Armería y Compra de Rangos Militares')
         .addSubcommand(sub =>
             sub.setName('panel')
-                .setDescription('Abre el panel táctico de la tienda con selector interactivo de compra instantánea')
+                .setDescription('Abre el panel táctico de la tienda con fichas de artículo y confirmación de compra')
         )
         .addSubcommand(sub =>
             sub.setName('comprar')
@@ -340,7 +179,7 @@ module.exports = {
                 .setTitle(`🎒 [EQUIPAMIENTO E INVENTARIO // ${targetUser.tag.toUpperCase()}]`)
                 .setThumbnail(targetUser.displayAvatarURL())
                 .setDescription(`Lista de pertrechos, suministros e insignias en posesión:`)
-                .setFooter({ text: 'Logística Comunidad' })
+                .setFooter({ text: `${identity(community.ensureCommunity(guildId)).name} · Inventario` })
                 .setTimestamp();
 
             for (const row of inventory) {

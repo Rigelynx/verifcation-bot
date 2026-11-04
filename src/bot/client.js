@@ -54,6 +54,7 @@ function createDiscordBot() {
 
         // Iniciar logger de auditoría y transacciones contables
         initEconomyLogger(client);
+        require('../database/weeklyBudget').start(client);
 
         // Registrar Comandos Slash
         try {

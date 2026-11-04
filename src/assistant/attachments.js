@@ -1,11 +1,17 @@
 const { randomUUID, createHash } = require('node:crypto');
 const MAX_BYTES = 2 * 1024 * 1024;
 const fail = (status, message) => { const error = new Error(message); error.status = status; throw error; };
-function imageType(bytes) {
+function imageType(bytes, name = '') {
     if (bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return ['png', 'image/png'];
     if (bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255) return ['jpg', 'image/jpeg'];
     if (bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP') return ['webp', 'image/webp'];
-    fail(400, 'Solo se admiten imágenes PNG, JPG o WebP de hasta 2 MB.');
+    const extension=String(name).toLowerCase().split('.').pop();
+    if(['txt','md','csv','json','log'].includes(extension)) {
+        const text=bytes.toString('utf8');
+        if(text.includes('\uFFFD')||/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(text)) fail(400,'El archivo debe contener texto UTF-8 legible.');
+        return [extension,extension==='json'?'application/json':'text/plain'];
+    }
+    fail(400, 'Admite PNG, JPG, WebP, TXT, MD, CSV, JSON y LOG de hasta 2 MB.');
 }
 function attachmentStore(db) {
     db.exec(`CREATE TABLE IF NOT EXISTS assistant_attachments (
@@ -24,7 +30,7 @@ function attachmentStore(db) {
         if (typeof content !== 'string' || content.length > 2800000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(content)) fail(400, 'La imagen debe pesar como máximo 2 MB.');
         const bytes = Buffer.from(content, 'base64');
         if (!bytes.length || bytes.length > MAX_BYTES) fail(400, 'La imagen debe pesar como máximo 2 MB.');
-        const [extension, mime] = imageType(bytes), digest = createHash('sha256').update(bytes).digest('hex');
+        const [extension, mime] = imageType(bytes,name), digest = createHash('sha256').update(bytes).digest('hex');
         return db.transaction(() => {
             db.prepare('DELETE FROM assistant_attachments WHERE created_at<?').run(Date.now() - 30 * 86400000);
             const existing = db.prepare('SELECT * FROM assistant_attachments WHERE guild_id=? AND user_id=? AND conversation_id=? AND digest=?').get(guildId, userId, conversationId, digest);

@@ -8,6 +8,7 @@ let economyAccountsTotal = 0;
 const economyAccountsPageSize = 25;
 
 async function loadEconomyData() {
+    window.loadWeeklyBudget?.();
     try {
         // 1. Cargar Settings
         const resSettings = await fetch('/api/admin/economy/settings', {

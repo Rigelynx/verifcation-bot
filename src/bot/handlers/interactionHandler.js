@@ -15,6 +15,8 @@ const { handleStatusChange } = require('./verificationHandler');
 const { hasOfficerPermission, hasAdminPermission, grantConfiguredCommandPermission } = require('./permissionHandler');
 const { hasAnyRole } = require('../utils/roleUtils');
 const { processShopPurchase, buildShopPanel } = require('../commands/tienda');
+const {identity:shopIdentity}=require('../utils/shopPresentation');
+const community=require('../../database/communityDb');
 const {
     buildEventRosterPanel,
     buildEventFinalizationPanel,
@@ -81,7 +83,7 @@ async function handleInteraction(interaction, client, commands) {
                 grantConfiguredCommandPermission(interaction);
             }
 
-            await command.execute(interaction);
+            await require('../commandExecution').executeCommand(command, interaction);
         } catch (error) {
             console.error(`[Comando Error: ${interaction.commandName}]`, { code: error.code, message: error.message, ageMs: Date.now() - interaction.createdTimestamp });
             const msg = { content: '❌ Error en la ejecución del protocolo militar.', flags: MessageFlags.Ephemeral };
@@ -611,7 +613,7 @@ Para formalizar tu ingreso a la base militar:
         }
 
         // =====================================================
-        // BOTONES DE TIENDA: Compra directa con 1 clic
+        // BOTONES DE TIENDA: Ficha y confirmación de compra
         // =====================================================
         if (customId.startsWith('buy_shop_')) {
             const itemId = parseInt(customId.replace('buy_shop_', ''), 10);
@@ -637,7 +639,7 @@ Para formalizar tu ingreso a la base militar:
                 .setTitle(`🎒 [EQUIPAMIENTO E INVENTARIO // ${interaction.user.tag.toUpperCase()}]`)
                 .setThumbnail(interaction.user.displayAvatarURL())
                 .setDescription('Lista de pertrechos, suministros e insignias en posesión:')
-                .setFooter({ text: 'Logística USMC' })
+                .setFooter({ text: `${shopIdentity(community.ensureCommunity(guildId)).name} · Inventario` })
                 .setTimestamp();
 
             for (const row of inventory) {
@@ -670,7 +672,7 @@ Para formalizar tu ingreso a la base militar:
 > 🏦 **Caja Fuerte (Banco):** \`${sym}${acc.bank.toLocaleString()}\`
 > 💎 **Patrimonio Neto:** \`${sym}${(acc.wallet + acc.bank).toLocaleString()}\`
                 `)
-                .setFooter({ text: 'Tesorería Militar USMC' });
+                .setFooter({ text: `${shopIdentity(community.ensureCommunity(guildId)).name} · Tesorería` });
 
             return interaction.reply({ embeds: [balEmbed], flags: MessageFlags.Ephemeral });
         }

@@ -12,7 +12,7 @@ function installAssistantRoutes(app, client, auth, options = {}) {
     app.get('/api/assistant/config', route(async (req, res) => {
         const config = assistant.config();
         res.json({ success: true, ready: config.ready, provider: config.provider, model: config.model, daily_limit: config.dailyLimit,
-            max_output_tokens: config.maxOutputTokens });
+            max_output_tokens: config.maxOutputTokens, total_timeout_seconds: require('../assistant/providerTransport').timeouts().totalMs / 1000 });
     }));
     app.get('/api/assistant/conversations', route(async (req, res) => res.json({ success: true,
         ...assistant.conversations(req.discordIdentity.guildId, req.discordIdentity.id) })));

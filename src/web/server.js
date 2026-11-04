@@ -35,6 +35,7 @@ function createWebServer(discordClient, options = {}) {
     require('./communityRoutes').installCommunityRoutes(app, discordAuth);
     installPatrolRoutes(app, discordClient, discordAuth);
     installAssistantRoutes(app, discordClient, discordAuth, options);
+    require('./weeklyBudgetRoutes').installWeeklyBudgetRoutes(app,discordClient,requireAdmin);
 
     for (const route of ['/api/verify-data/:token', '/api/verify/:token']) app.use(route, (req, _res, next) => {
         const token = db.getVerificationToken(req.params.token);

@@ -1,0 +1,65 @@
+const {test,after}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+const directory=fs.mkdtempSync(path.join(os.tmpdir(),'on-demand-web-'));
+Object.assign(process.env,{USMC_DB_PATH:path.join(directory,'db.sqlite'),GUILD_ID:'900000000000000001'});
+const db=require('../src/database/db'),community=require('../src/database/communityDb');
+const {withGuild}=require('../src/database/guildContext');
+const budget=require('../src/database/weeklyBudget');
+const {executeTool}=require('../src/assistant/tools');
+const {validatePlan}=require('../src/assistant/creationPlan');
+const {publicAddress}=require('../src/assistant/research');
+const {PermissionsBitField}=require('discord.js');
+const guildId=process.env.GUILD_ID,userId='100000000000000001',channelId='200000000000000001';
+let sent=0;
+const channel={guildId,isTextBased:()=>true,permissionsFor:()=>new PermissionsBitField(8n),send:async()=>{sent++;return{id:'300000000000000001'};}};
+const guild={id:guildId,ownerId:userId,channels:{fetch:async()=>channel}};
+const context={guild,member:{id:userId,permissions:new PermissionsBitField(8n)},bot:{id:'100000000000000002'},assistantPolicy:{configure_branding:true,configure_question:true,configure_budget_item:true,configure_budget_schedule:true},authorizeAction:async()=>true,audit:()=>{},requestId:'test'};
+after(()=>{db.db.close();if(!path.resolve(directory).startsWith(path.join(os.tmpdir(),'on-demand-web-')))throw new Error('Unexpected temporary path');fs.rmSync(directory,{recursive:true,force:true});});
+test('PAF branding and questionnaire edits preserve unrelated fields and isolate guild IDs',async()=>withGuild(guildId,async()=>{
+    const original=community.ensureCommunity(guildId);
+    await executeTool('configure_branding',{fields:{theme:'paf',short_name:'P.A.F.',accent:'#df5266'}},context);
+    assert.equal(community.ensureCommunity(guildId).theme,'paf');assert.equal(community.ensureCommunity(guildId).display_name,original.display_name);
+    assert.equal(community.ensureCommunity(guildId).logo_url,'/media/paf-crest.svg');assert.equal(community.ensureCommunity(guildId).banner_url,'/media/paf-banner.svg');
+    const question=db.getQuestions()[0];
+    await executeTool('configure_question',{question_id:question.id,fields:{description:'Nuevo contexto'}},context);
+    assert.equal(db.getQuestions()[0].label,question.label);
+    const other='900000000000000002';community.ensureCommunity(other);
+    const otherQuestion=withGuild(other,()=>db.getQuestions()[0]);
+    await assert.rejects(executeTool('configure_question',{question_id:otherQuestion.id,fields:{label:'Fuera del servidor'}},context),/no encontrada/);
+    assert.notEqual(community.ensureCommunity(other).theme,'paf');
+}));
+test('revoked capability and denied intent prevent configuration writes; plans retain nested fields',async()=>withGuild(guildId,async()=>{
+    const args={fields:{theme:'paf'}};
+    await assert.rejects(executeTool('configure_branding',args,{...context,assistantPolicy:{}}));
+    await assert.rejects(executeTool('configure_branding',args,{...context,authorizeAction:async()=>false}));
+    await assert.rejects(executeTool('configure_branding',args,{...context,refreshIdentity:async()=>{context.assistantPolicy.configure_branding=false;}}));
+    context.assistantPolicy.configure_branding=true;
+    assert.deepEqual(validatePlan([{tool:'configure_branding',args}]),[{tool:'configure_branding',args}]);
+}));
+test('budget reports are claimed once, isolated per community and keep historic snapshots',async()=>withGuild(guildId,async()=>{
+    const id=budget.saveItem({category:'armamento',name:'Equipo',planned:100,actual:70}).id;
+    const schedule=budget.saveSchedule({channel_id:channelId,enabled:true,next_at:Date.now()+60000});
+    const client={guilds:{cache:new Map([[guildId,guild]])}};
+    await budget.tick(client,schedule.next_at);await budget.tick(client,schedule.next_at);
+    assert.equal(sent,1);assert.equal(budget.snapshot().reports[0].snapshot.totals.planned,100);
+    budget.saveItem({id,category:'armamento',name:'Equipo',planned:200,actual:80});
+    assert.equal(budget.snapshot().reports[0].snapshot.totals.planned,100);
+    assert.equal(withGuild('900000000000000002',()=>budget.snapshot().reports.length),0);
+    channel.send=async()=>{throw new Error('Entrega incierta');};
+    await budget.tick(client,schedule.next_at+7*86400000);await budget.tick(client,schedule.next_at+7*86400000);
+    assert.equal(budget.snapshot().reports[0].status,'ERROR');
+    assert.equal(budget.snapshot().reports.length,2);
+}));
+test('web reading rejects private network ranges, including IPv6 mapped IPv4',()=>{
+    for(const ip of ['127.0.0.1','10.0.0.1','192.168.1.2','169.254.169.254','100.64.0.1','::1','::ffff:127.0.0.1','fd00::1'])assert.equal(publicAddress(ip),false,ip);
+    assert.equal(publicAddress('8.8.8.8'),true);assert.equal(publicAddress('2606:4700:4700::1111'),true);
+});
+test('text uploads are readable as data and image inspection requires a submitted attachment',async()=>{
+    const {attachmentStore}=require('../src/assistant/attachments');const store=attachmentStore(db.db);
+    const file=store.save(guildId,userId,'chat',{name:'gastos.csv',content:Buffer.from('categoria,importe\ninfanteria,100').toString('base64')});
+    assert.equal(file.mime,'text/plain');
+    const result=await executeTool('read_attachment',{attachment_id:file.id},{getAttachments:ids=>ids.map(id=>store.get(guildId,userId,'chat',id))});
+    assert.match(result.text,/infanteria,100/);
+    await assert.rejects(executeTool('read_attachment',{attachment_id:file.id},{getAttachments:()=>{throw new Error('Otro chat');}}),/Otro chat/);
+});

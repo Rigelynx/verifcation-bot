@@ -1,10 +1,12 @@
 (() => {
     const el = id => document.getElementById(id);
     let session, activeConversation = null, ready = false, pending = false, changingChat = false, retry = null, newChatRequest = null;
-    let selectedImage = null, uploadingImage = false;
-    function clearImage() { selectedImage = null; el('assistant-image').value = ''; el('assistant-image-name').textContent = ''; el('assistant-image-clear').hidden = true; }
+    let selectedImages = [], uploadingImage = false;
+    function clearImage() { selectedImages = []; el('assistant-image').value = ''; el('assistant-image-name').textContent = ''; el('assistant-image-clear').hidden = true; }
     function imageUrl(id) { return `/api/assistant/attachments/${encodeURIComponent(id)}?conversation_id=${encodeURIComponent(activeConversation)}&guild=${encodeURIComponent(session.guild.id)}`; }
     const names = { server_inventory: 'Consultó canales y roles', read_channel: 'Leyó una muestra de mensajes', channel_usage: 'Analizó actividad reciente', event_summary: 'Consultó eventos', create_channel: 'Creación de canal', create_role: 'Creación de rol',
+        web_configuration:'Consultó la web',configure_branding:'Editó identidad',configure_question:'Editó el cuestionario',delete_question:'Eliminó una pregunta',configure_economy:'Configuró economía',configure_command:'Configuró un comando',verification_submissions:'Consultó expedientes',configure_budget_item:'Guardó una partida',configure_budget_schedule:'Programó informes',web_search:'Buscó fuentes',web_open:'Leyó una página',bot_command_catalog: 'Consultó los comandos del bot', run_bot_command: 'Invocó un comando del bot',
+        shop_configuration: 'Consultó la configuración de tienda y bonos', configure_shop_item: 'Configuró un producto', configure_bonus_panel: 'Configuró un panel de bonos', publish_panel: 'Publicó o editó un panel',
         propose_creations: 'Preparó una propuesta', propose_actions: 'Preparó un plan de gestión', permission_catalog: 'Consultó el catálogo de permisos', inspect_channel: 'Consultó configuración del canal', inspect_role: 'Consultó el rol y sus miembros', find_members: 'Buscó miembros', member_info: 'Consultó un miembro',
         update_channel: 'Edición de canal', move_channel: 'Traslado de canal', reorder_channel: 'Orden de canal', delete_channel: 'Eliminación de canal', update_role: 'Edición de rol', reorder_role: 'Orden de rol', delete_role: 'Eliminación de rol', assign_role: 'Asignación de rol', remove_role: 'Retirada de rol',
         set_role_permissions: 'Permisos del rol', set_channel_permissions: 'Permisos del canal', sync_channel_permissions: 'Sincronización de permisos', send_message: 'Envío de mensaje a Discord' };
@@ -14,9 +16,11 @@
         const paragraph = document.createElement('p'); paragraph.textContent = content;
         article.append(heading, paragraph);
         for (const image of attachments) {
-            const preview = document.createElement('img'); preview.className = 'assistant-upload-preview'; preview.src = imageUrl(image.id); preview.alt = image.name; preview.loading = 'lazy';
             const caption = document.createElement('p'); caption.textContent = `📎 ${image.name}`;
-            article.append(preview, caption);
+            if (image.mime?.startsWith('image/')) {
+                const preview = document.createElement('img'); preview.className = 'assistant-upload-preview'; preview.src = imageUrl(image.id); preview.alt = image.name; preview.loading = 'lazy';
+                article.append(preview, caption);
+            }else {const link=document.createElement('a');link.href=imageUrl(image.id);link.download=image.name;link.textContent=caption.textContent;article.append(link);}
         }
         if (trace.length) {
             const details = document.createElement('details'); details.className = 'assistant-tools';
@@ -31,6 +35,17 @@
                     }
                 }
                 details.append(line);
+                if (row.command) {
+                    const receipt = document.createElement('p');
+                    receipt.textContent = row.execution_status === 'UNCERTAIN' ? 'Resultado incierto. Revisa antes de repetir.' : 'Respuesta del comando (puede contener un error o un panel pendiente):';
+                    details.append(receipt);
+                    for (const response of row.responses || []) {
+                        const body = document.createElement('p');
+                        body.textContent = [response.content, ...(response.embeds || []).flatMap(embed => [embed.title, embed.description,
+                            ...(embed.fields || []).map(field => `${field.name}: ${field.value}`)])].filter(Boolean).join('\n');
+                        details.append(body);
+                    }
+                }
             }
             article.append(details);
         }
@@ -124,10 +139,12 @@
         if (pending || changingChat || uploadingImage || !ready || !activeConversation || !prompt) return;
         pending = true; lockControls();
         // Un reintento de transporte usa el mismo ID para no duplicar creaciones.
-        if (!retry || retry.prompt !== prompt || retry.conversation_id !== activeConversation || JSON.stringify(retry.attachment_ids) !== JSON.stringify(selectedImage ? [selectedImage.id] : [])) {
-            retry = { prompt, request_id: crypto.randomUUID(), conversation_id: activeConversation, attachment_ids: selectedImage ? [selectedImage.id] : [] }; message('user', prompt, [], selectedImage ? [selectedImage] : []);
+        if (!retry || retry.prompt !== prompt || retry.conversation_id !== activeConversation || JSON.stringify(retry.attachment_ids) !== JSON.stringify(selectedImages.map(file => file.id))) {
+            retry = { prompt, request_id: crypto.randomUUID(), conversation_id: activeConversation, attachment_ids: selectedImages.map(file => file.id) }; message('user', prompt, [], selectedImages);
         }
-        el('assistant-feedback').textContent = 'Consultando Discord y preparando la respuesta…';
+        const started=Date.now();
+        const progress=setInterval(()=>{el('assistant-feedback').textContent=`Procesando tu petición · ${Math.floor((Date.now()-started)/1000)} s. Puedes mantener esta pestaña abierta.`;},5000);
+        el('assistant-feedback').textContent = 'Preparando tu respuesta…';
         try {
             const result = await api('/ask', { method: 'POST', body: JSON.stringify(retry) });
             message('assistant', result.answer, result.trace); el('assistant-prompt').value = ''; retry = null; clearImage();
@@ -144,7 +161,7 @@
                 } catch { /* Conserva el error y el identificador para reintentar. */ }
             }
         }
-        finally { pending = false; lockControls(); await refreshUsage(); }
+        finally { clearInterval(progress); pending = false; lockControls(); await refreshUsage(); }
     };
     el('assistant-prompt').addEventListener('keydown', event => {
         if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); if (!el('assistant-form').hidden) el('assistant-form').requestSubmit(); }
@@ -152,17 +169,18 @@
     el('assistant-new-chat').onclick = () => changeConversation();
     el('assistant-image-clear').onclick = () => { clearImage(); retry = null; };
     el('assistant-image').onchange = async () => {
-        const file = el('assistant-image').files[0]; if (!file) return;
+        const files = [...el('assistant-image').files]; if (!files.length) return;
         clearImage(); retry = null;
-        if (file.size > 2 * 1024 * 1024) { el('assistant-feedback').textContent = 'La imagen debe pesar como máximo 2 MB.'; return; }
+        if (files.length > 4 || files.some(file => file.size > 2 * 1024 * 1024)) { el('assistant-feedback').textContent = 'Adjunta hasta cuatro archivos de 2 MB cada uno.'; return; }
         uploadingImage = true; lockControls();
         try {
+            for (const file of files) {
             const content = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result).split(',')[1]); reader.onerror = reject; reader.readAsDataURL(file); });
             const result = await api('/attachments', { method: 'POST', body: JSON.stringify({ conversation_id: activeConversation, name: file.name, content }) });
-            selectedImage = result.attachment; retry = null;
-            el('assistant-image-name').textContent = selectedImage.name; el('assistant-image-clear').hidden = false;
-            el('assistant-feedback').textContent = 'Imagen lista. Dime en qué canal quieres publicarla o úsala más adelante en este chat.';
-        } catch (error) { el('assistant-feedback').textContent = error.message; }
+            if(!selectedImages.some(file=>file.id===result.attachment.id)) selectedImages.push(result.attachment); } retry = null;
+            el('assistant-image-name').textContent = selectedImages.map(file => file.name).join(', '); el('assistant-image-clear').hidden = false;
+            el('assistant-feedback').textContent = 'Archivos listos para analizar o publicar. Admite imágenes y TXT, MD, CSV, JSON y LOG.';
+        } catch (error) { clearImage(); el('assistant-feedback').textContent = error.message; }
         finally { uploadingImage = false; lockControls(); }
     };
     el('assistant-conversation-select').onchange = event => changeConversation(event.target.value);

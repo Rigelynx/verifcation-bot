@@ -25,6 +25,14 @@ module.exports = {
         const targetChannel = interaction.options.getChannel('canal') || interaction.channel;
         const config = db.getConfig(interaction.guildId);
 
+        await targetChannel.send(buildVerificationPanel(interaction.guild, config));
+        await interaction.reply({ content: `✅ **Panel táctico de verificación desplegado exitosamente en** <#${targetChannel.id}>.`, flags: MessageFlags.Ephemeral });
+    },
+    buildVerificationPanel
+};
+
+function buildVerificationPanel(guild, config) {
+
         const embed = new EmbedBuilder()
             .setColor(0x1a3320)
             .setTitle(`🎖️ ${config.comunitarioy_base_name || 'Comunidad CLASSIFIED ACCESS TERMINAL'}`)
@@ -44,7 +52,7 @@ Bienvenido a las instalaciones. Para obtener acceso completo a la base, ver cana
                 { name: '📡 Modo Operativo', value: `\`${config.verification_mode === 'auto' ? 'AUTÓNOMO (INMEDIATO)' : 'REVISIÓN DE ESTADO MAYOR'}\``, inline: true }
             )
             .setImage('https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1000&q=80')
-            .setFooter({ text: 'Sistema Autónomo de Verificación Táctica • Comunidad Defense', iconURL: interaction.guild.iconURL() });
+            .setFooter({ text: 'Sistema Autónomo de Verificación Táctica • Comunidad Defense', iconURL: guild.iconURL() });
 
         const row = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
@@ -54,11 +62,5 @@ Bienvenido a las instalaciones. Para obtener acceso completo a la base, ver cana
                 .setEmoji('🛡️')
         );
 
-        await targetChannel.send({ embeds: [embed], components: [row] });
-
-        await interaction.reply({
-            content: `✅ **Panel táctico de verificación desplegado exitosamente en** <#${targetChannel.id}>.`,
-            flags: MessageFlags.Ephemeral
-        });
-    }
-};
+        return { embeds: [embed], components: [row] };
+}

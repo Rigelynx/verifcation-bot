@@ -25,3 +25,15 @@ body.field-journal[data-community-theme="ukaf"] .ops-dialog,body.field-journal[d
 body.field-journal[data-community-theme="ukaf"] .hero-seal span{white-space:normal}
 
 body.field-journal[data-community-theme="ukaf"] .branding-fields input,body.field-journal[data-community-theme="ukaf"] .branding-fields select{background:#1a2b45;border-color:#4c6181}
+body[data-community-theme="paf"]{--bg-base:#17191e;--bg-deep:#17191e;--bg-panel:#25272e;--bg-panel-dark:#1b1d23;--bg-header:#2c2e35;--border-light:#55545e;--border-bevel:#393a44;--text-main:#f4f1ea;--usmc-green:#e4dce0;--usmc-gold:var(--community-accent);--usmc-amber:#efca91;background:radial-gradient(ellipse at 90% 0,#8e233a44,transparent 50%),#17191e}
+body[data-community-theme="paf"] .window-titlebar,body[data-community-theme="paf"] .military-header{background:#25272e;border-top:3px solid #e8e4df;border-bottom:3px solid #b82e43}
+body.field-journal[data-community-theme="paf"] .admin-nav{background:linear-gradient(165deg,#2b2c33,#191b21)}
+body.field-journal[data-community-theme="paf"] .admin-nav::after{content:'P.A.F. / POLISH ARMED FORCES';background-image:var(--community-mark)}
+body.field-journal[data-community-theme="paf"] :is(.dashboard-shell,.dossier-body,.ops-dialog,.community-branding-form){background:#22242b}
+body.field-journal[data-community-theme="paf"] :is(.telemetry-card,.ops-card){background:#2b2d35}
+body.field-journal[data-community-theme="paf"] .retro-table th{background:#3b2932}
+body.field-journal[data-community-theme="paf"] .retro-table td{background:#25272e}
+body.field-journal[data-community-theme="paf"] .retro-table tr:hover td{background:#3b2932}
+body[data-community-theme="paf"] .hero-scene{object-position:center}
+body[data-community-theme="paf"] .branding-fields :is(input,select){background:#202228;border-color:#65525c}
+.weekly-budget{margin:28px 0;padding:24px;border:1px solid var(--border-light,#53604e);border-radius:12px}.weekly-budget h3{font-size:24px}.weekly-budget p{line-height:1.6}.weekly-budget form{margin:20px 0}.weekly-budget button{margin:6px}.weekly-budget hr{border:0;border-top:1px solid var(--border-light,#53604e)}

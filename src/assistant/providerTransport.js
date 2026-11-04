@@ -6,8 +6,8 @@ function seconds(value, fallback, min, max) {
     return Number.isFinite(parsed) && parsed > 0 ? Math.min(max, Math.max(min, parsed)) : fallback;
 }
 function timeouts(env = process.env) {
-    const requestMs = seconds(env.ASSISTANT_REQUEST_TIMEOUT_SECONDS, 90, 5, 180) * 1000;
-    const totalMs = Math.max(requestMs, seconds(env.ASSISTANT_TOTAL_TIMEOUT_SECONDS, 180, 10, 600) * 1000);
+    const requestMs = seconds(env.ASSISTANT_REQUEST_TIMEOUT_SECONDS, 180, 5, 300) * 1000;
+    const totalMs = Math.max(requestMs, seconds(env.ASSISTANT_TOTAL_TIMEOUT_SECONDS, 600, 10, 900) * 1000);
     return { requestMs, totalMs };
 }
 function normalizeUsage(usage) {

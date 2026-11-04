@@ -9,8 +9,8 @@ function delay(signal, ms) {
         if (signal.aborted) abort(); else signal.addEventListener('abort', abort, { once: true });
     });
 }
-test('provider budget allows 90-second requests, bounds configuration and preserves total time', () => {
-    assert.deepEqual(timeouts({}), { requestMs: 90000, totalMs: 180000 });
+test('provider budget allows longer on-demand requests, bounds configuration and preserves total time', () => {
+    assert.deepEqual(timeouts({}), { requestMs: 180000, totalMs: 600000 });
     assert.deepEqual(timeouts({ ASSISTANT_REQUEST_TIMEOUT_SECONDS: '150', ASSISTANT_TOTAL_TIMEOUT_SECONDS: '20' }), { requestMs: 150000, totalMs: 150000 });
     assert.deepEqual(timeouts({ ASSISTANT_REQUEST_TIMEOUT_SECONDS: 'NaN', ASSISTANT_TOTAL_TIMEOUT_SECONDS: '-4' }), timeouts({}));
 });

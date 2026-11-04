@@ -305,7 +305,7 @@ test('DeepSeek preserves static prefixes, reports cache usage privately and stil
         assert.deepEqual(firstPayload.tools, secondPayload.tools);
         assert.ok(!/\d{4}-\d{2}-\d{2}T/.test(firstPayload.messages[0].content));
         assert.ok(firstPayload.messages.at(-2).content.includes('Hora UTC'));
-        assert.equal(firstPayload.max_tokens, 1536);
+        assert.equal(firstPayload.max_tokens, 3072);
         assert.deepEqual(firstPayload.thinking, { type: 'disabled' });
         const replay = await run('Consulta económica de prueba', ownerId, 'cached-prefix-test-001');
         assert.equal(replay.replayed, true); assert.equal(replay.usage.provider_calls, 1); assert.equal(requests.length, start + 2);
@@ -434,7 +434,7 @@ test('sending through the shared service keeps its receipt on retry and on a lat
     }
 });
 
-test('web image upload is private, CSRF-protected and persists only metadata in the model and history', async () => {
+test('web image upload is private, CSRF-protected, sends vision input and keeps bytes out of history', async () => {
     const headers = session(ownerId), reader = session(readerId);
     const chat = service.activeChat(guildId, ownerId);
     const content = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jYV8AAAAASUVORK5CYII=';
@@ -453,7 +453,9 @@ test('web image upload is private, CSRF-protected and persists only metadata in 
     const result = await service.run({ guildId, userId: ownerId, prompt, requestId, conversationId: chat.id, attachmentIds: [attachment.id] });
     assert.equal(result.failed, undefined);
     assert.ok(JSON.stringify(requests.at(-1)).includes(attachment.id));
-    assert.ok(!JSON.stringify(requests.at(-1)).includes(content));
+    assert.ok(JSON.stringify(requests.at(-1)).includes(content));
+    assert.equal(requests.at(-1).body.messages.at(-1).content[1].image_url.url,`data:image/png;base64,${content}`);
+    assert.ok(!JSON.stringify(service.history(guildId,ownerId,chat.id)).includes(content));
     assert.equal(service.history(guildId, ownerId, chat.id).at(-1).attachments[0].id, attachment.id);
     await assert.rejects(service.run({ guildId, userId: ownerId, prompt, requestId, attachmentIds: [] }), /otras imágenes/);
     const deliveries = [], targetId = '555555555555555518';
@@ -478,7 +480,7 @@ test('web image upload is private, CSRF-protected and persists only metadata in 
     await service.selectChat(guildId, ownerId, chat.id);
 });
 
-test('slash attachment is downloaded, associated with the active chat and passed as private metadata', async () => {
+test('slash attachment is downloaded, associated with the active chat and passed to vision', async () => {
     const replies = [];
     queue.push(text('Imagen adjunta disponible en este chat.'));
     await command.execute({ client, guildId, user: { id: ownerId }, id: 'slash-image-request-001', deferred: true,
@@ -491,7 +493,7 @@ test('slash attachment is downloaded, associated with the active chat and passed
     const stored = await service.attachment(guildId, ownerId, service.activeChat(guildId, ownerId).id, last.attachments[0].id);
     assert.deepEqual(Buffer.from(stored.data), Buffer.from(imageContent, 'base64'));
     assert.match(replies.at(-1).content, /Imagen adjunta/);
-    assert.ok(!JSON.stringify(requests.at(-1)).includes(imageContent));
+    assert.ok(JSON.stringify(requests.at(-1)).includes(imageContent));
 });
 
 test('a provider failure after deletion reports the completed action and does not reexecute it', async () => {

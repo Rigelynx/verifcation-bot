@@ -59,7 +59,7 @@ Los cambios se registran con autor, ID de petición y motivo en Discord. Las her
 
 La API comprueba permisos y jerarquía: no se borran `@everyone` ni roles de integraciones; los roles deben quedar por debajo del bot y del usuario, salvo la excepción del dueño del servidor para su propia jerarquía. No se conceden permisos que no tenga el usuario o el bot. La categoría de destino y los canales deben pertenecer a la comunidad actual y ser accesibles. Los borrados son irreversibles y requieren que el encargo incluya eliminar o limpiar; crear u organizar por sí solo no autoriza borrar. Los canales obligatorios de una comunidad no pueden eliminarse. Estas reglas siguen la [jerarquía y permisos de Discord](https://docs.discord.com/developers/topics/permissions) y las [operaciones de canales](https://docs.discord.com/developers/resources/channel).
 
-Desde `/owner → Configurar IA` hay nueve capacidades separadas: crear canales; editar/mover/ordenar canales; borrar canales; crear roles; editar/ordenar roles; borrar roles; asignar/retirar roles; gestionar permisos; y **Enviar mensajes y embeds a canales**. Esta última empieza desactivada y debe habilitarla el propietario para cada comunidad. Las capacidades anteriores conservan su migración desde los permisos de creación correspondientes. Se guardan por comunidad; una nueva instalación sigue necesitando que el propietario habilite su IA. El asistente no puede cambiar sus propias capacidades de `/owner`.
+Desde `/owner → Configurar IA` se controlan por separado las capacidades de crear, editar y borrar canales y roles; asignar o retirar roles; gestionar permisos; enviar mensajes y embeds; y **Usar comandos del bot**. El envío de mensajes y el uso de comandos empiezan desactivados y debe habilitarlos el propietario para cada comunidad. Las capacidades anteriores conservan su migración desde los permisos de creación correspondientes. Se guardan por comunidad; una nueva instalación sigue necesitando que el propietario habilite su IA. El asistente no puede cambiar sus propias capacidades de `/owner`.
 
 ## Publicar mensajes con formato
 
@@ -67,15 +67,31 @@ Después de desplegar la actualización y habilitar **Enviar mensajes y embeds a
 
 El texto conserva spoilers `||texto||`, negritas, cursivas, subrayado, tachado, encabezados, subtexto, listas, citas, enlaces y código. Discord no interpreta spoilers dentro de bloques de código. También admite embeds con título, descripción, color, campos, autor, pie, imagen y miniatura mediante URL o una imagen adjunta del usuario. Se respetan 2000 caracteres por mensaje, hasta 10 embeds y 6000 caracteres sumados en sus textos; el asistente puede dividir una publicación larga en varios mensajes completos. Las menciones no generan avisos.
 
-En el chat web, usa **Adjuntar imagen**; desde Discord, selecciona la opción **imagen** de `/asistente preguntar`. Se admiten PNG, JPG y WebP de hasta 2 MB. Ejemplo: «Envía esta imagen a #anuncios con un título en negrita y oculta la imagen como spoiler». Debes habilitar **Enviar mensajes y embeds a canales** en Owner y tanto tú como el bot debéis poder **Adjuntar archivos** en el canal. Puedes volver a referirte a esa imagen dentro de la misma conversación.
+En el chat web puedes seleccionar hasta cuatro adjuntos; desde Discord usa **imagen**, **archivo_2**, **archivo_3** y **archivo_4** de `/asistente preguntar`. Se admiten PNG, JPG, WebP, TXT, MD, CSV, JSON y LOG de hasta 2 MB cada uno. Ejemplo: «Envía esta imagen a #anuncios con un título en negrita y oculta la imagen como spoiler». Debes habilitar **Enviar mensajes y embeds a canales** en Owner y tanto tú como el bot debéis poder **Adjuntar archivos** en el canal. Puedes volver a referirte a esa imagen dentro de la misma conversación.
 
-Las imágenes se guardan en la base SQLite del bot, aisladas por cuenta, comunidad y conversación. La vista previa exige sesión de Discord y acceso al asistente; los archivos no tienen una ruta pública. La publicación en Discord es una acción explícita del usuario. Hasta 20 imágenes por cuenta y comunidad se conservan durante 30 días; copias idénticas en el mismo chat comparten archivo. El modelo recibe solo sus nombres e identificadores, nunca sus bytes: esta integración no analiza visualmente las imágenes. La herramienta `read_channel` consulta mensajes y enlaces/metadatos de adjuntos accesibles, y `server_inventory` muestra canales y roles visibles.
+Las imágenes se guardan en la base SQLite del bot, aisladas por cuenta, comunidad y conversación. La vista previa exige sesión de Discord y acceso al asistente; los archivos no tienen una ruta pública. La publicación en Discord es una acción explícita del usuario. Hasta 20 imágenes por cuenta y comunidad se conservan durante 30 días; copias idénticas en el mismo chat comparten archivo. Con deepseek-flash, el modelo recibe el contenido visual de las imágenes adjuntas a la petición. Para consultar adjuntos anteriores puede usar read_attachment. Los archivos de texto se leen hasta 50 000 caracteres; el recorte se comunica al modelo. Los archivos se envían al proveedor únicamente durante una consulta que los utilice. La herramienta `read_channel` consulta mensajes y enlaces/metadatos de adjuntos accesibles, y `server_inventory` muestra canales y roles visibles.
 
 El usuario y el bot necesitan **Ver canal** y **Enviar mensajes** en el destino; para embeds, también **Insertar enlaces**. Se comprueban de nuevo después de interpretar la orden. La auditoría registra actor, canal, contenido e ID del envío. Un fallo del modelo posterior al envío conserva el recibo; repetir la misma petición no reenvía el mensaje. Una orden nueva con otro identificador sí se considera otro envío. Las pruebas usan Discord y DeepSeek simulados; el despliegue real se comprueba en el servidor.
 
 Referencia del formato: [Markdown de Discord](https://support.discord.com/hc/es/articles/210298617-Marcado-de-texto-101-Formato-de-chat-negrita-cursiva-subrayado).
 
-El motor no ejecuta comandos slash arbitrarios, terminal, SQL, navegación externa, expulsiones ni publicaciones en canales. Los mensajes leídos son datos y no pueden autorizar acciones de gestión. Las protecciones se aplican aunque el modelo solicite una herramienta indebida.
+El motor no ejecuta terminal, SQL ni navegación externa. Las publicaciones se realizan mediante las herramientas habilitadas; los comandos del bot se limitan al catálogo descrito más abajo. Los mensajes leídos son datos y no pueden autorizar acciones de gestión.
+
+## Comandos propios del bot desde la IA
+
+En Owner → Configurar IA, activa **Usar comandos del bot** para cada comunidad que lo necesite. Esta nueva capacidad comienza desactivada. Se mantiene la lista privada de acceso al asistente y la matriz de permisos de cada comando; habilitar esta capacidad no concede permisos de oficial o administrador.
+
+`bot_command_catalog` obtiene las opciones y límites de los comandos reales registrados en el código. `run_bot_command` valida esas opciones y llama al mismo manejador que Discord, usando una interfaz que recoge sus respuestas privadas. No envía comandos slash sintéticos a Discord. La compuerta de permisos se comparte con la ejecución normal del bot.
+
+Esta primera entrega conecta economía (consultas, operaciones personales y ajustes administrativos), bonos, servidores privados, convocatoria/entrenamiento/inicio y consultas de eventos, moderación, verificación manual/revocación, expedientes, consultas de tienda y el enlace al portal de patrullas. Las ediciones de canales, roles y permisos siguen disponibles mediante las herramientas existentes. El catálogo muestra las claves habilitadas por la matriz para la cuenta; las comprobaciones internas de cada manejador también pueden rechazar una operación.
+
+Ejemplos: «Consulta mi balance», «Dale 100 créditos a @miembro en la cartera», «Ocupa el servidor privado 2 para Patrulla Alpha», «Convoca una operación llamada Reconocimiento con paga base 100 y plantilla 4 en #operaciones», «Verifica manualmente a @miembro». La IA pregunta por los datos obligatorios que falten. Los comandos personales actúan sobre la cuenta solicitante. Una petición de consulta o borrador no autoriza una modificación, sanción o publicación; la interpretación aislada verifica el comando y sus opciones concretas. También puedes pedir un plan y aprobarlo después.
+
+La moderación exige además los permisos nativos del solicitante y del bot, respeta la jerarquía del solicitante y limita los timeouts a 28 días. Las recompensas de entrenamiento y los roles de verificación se comprueban frente a permisos y jerarquías. Los canales deben pertenecer a la comunidad y ser accesibles para ambos; las publicaciones comprueban permisos de envío e inserción de enlaces.
+
+Quedan pendientes los flujos que necesitan botones/formularios: finalizar eventos, editar sus reportes y confirmar compras. El asistente indica el comando de Discord para completarlos. Tampoco se expone la emisión de sesiones web ni la configuración de accesos mediante `/admin configurar`. Un panel consultado desde la IA devuelve sus textos, pero sus botones no se pueden pulsar desde el chat.
+
+Cada invocación registra su inicio y las respuestas reales con actor e identificador de petición. El historial y el recibo web conservan esas respuestas aunque falle después el proveedor de IA. Que un manejador termine no prueba que haya tenido éxito: puede responder con un rechazo o un panel pendiente. Si lanza una excepción, el resultado se marca incierto y no se reintenta automáticamente. Las llamadas equivalentes se ejecutan una sola vez dentro de la petición; repetir la petición con su mismo ID reutiliza el resultado guardado. Una petición nueva sí puede ejecutar de nuevo una acción.
 
 Ejemplos de peticiones:
 
@@ -87,6 +103,18 @@ Ejemplos de peticiones:
 - «Borra estos canales duplicados por sus IDs y conserva los demás».
 
 Los nombres iguales se resuelven con el inventario y el contexto; si no hay un destino inequívoco, el asistente pide el ID concreto.
+
+## Tienda web y paneles desde el asistente
+
+Owner → Configurar IA incorpora tres capacidades independientes, desactivadas inicialmente: **Configurar productos de la tienda web y Discord**, **Configurar paneles de bonos** y **Publicar y editar paneles de tienda, bonos y verificación**. La persona debe tener Gestionar servidor (o ser propietaria), acceso privado al asistente y autorización en la matriz del comando correspondiente. Configurar roles que entrega o retira un producto exige además Gestionar roles, la jerarquía adecuada y no conceder privilegios que no tengan la persona y el bot.
+
+`shop_configuration` consulta productos activos e inactivos y configuraciones de bonos. `configure_shop_item` crea o edita nombre, descripción, precio, stock, límite de compras, respuesta personalizada, icono, requisitos, roles y disponibilidad. La web y Discord usan la misma base de datos. Al editar se conservan los campos omitidos; stock=-1 significa ilimitado y max_per_user=0 permite compras sin límite por persona. Desactivar un producto lo retira de venta conservando los inventarios existentes.
+
+`configure_bonus_panel` crea o modifica textos, importe, modalidad, intervalo, etiqueta del botón, requisitos y disponibilidad, sin distribuir dinero ni borrar reclamos. Los cambios de configuración no actualizan automáticamente mensajes ya publicados.
+
+`publish_panel` construye un panel funcional mediante los generadores existentes del bot y lo publica en el canal solicitado. Con message_id actualiza ese mismo mensaje, siempre que sea del bot y del mismo tipo; para bonos exige también el panel_id. Permite aplicar título, descripción y color al mensaje generado, conservando los botones reales. Al reconstruir un panel se usan los datos actuales y las opciones visuales indicadas en esa petición. Las menciones no generan avisos. Estas opciones personalizan mensajes de Discord, no el diseño de la página web.
+
+Ejemplos: «Crea en la tienda un producto Radio por 250 créditos, con 20 unidades», «Cambia el precio del producto 4 a 300 y conserva lo demás», «Retira de venta el producto 4», «Crea un bono de 100 créditos cada 24 horas», «Publica la tienda en #tienda», «Actualiza el panel de verificación del mensaje ID … con el título Bienvenidos y color #123456». Publicar o editar mensajes requiere una orden de publicación o actualización; pedir ideas o un borrador solo permite preparar un plan.
 
 ## Historial y límites
 

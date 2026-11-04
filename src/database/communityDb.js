@@ -59,12 +59,14 @@ function ensureCommunity(guildId, name = 'Comunidad') {
 }
 function updateBranding(guildId, data) {
     ensureCommunity(guildId);
-    if (!['neutral', 'usmc', 'ukaf', 'custom'].includes(data.theme)) throw new Error('Tema inválido.');
+    if (!['neutral', 'usmc', 'ukaf', 'paf', 'custom'].includes(data.theme)) throw new Error('Tema inválido.');
     if (!/^#[0-9a-f]{6}$/i.test(data.accent || '')) throw new Error('El color debe tener formato #RRGGBB.');
     const name = String(data.display_name || '').trim().slice(0, 100);
     if (!name) throw new Error('El nombre de la comunidad es obligatorio.');
+    const logo=data.theme==='paf'&&!data.logo_url?'/media/paf-crest.svg':data.logo_url;
+    const banner=data.theme==='paf'&&(!data.banner_url||data.banner_url==='/media/coastal-command.png')?'/media/paf-banner.svg':data.banner_url;
     db.prepare(`UPDATE community_profiles SET display_name=?, short_name=?, theme=?, accent=?, logo_url=?, banner_url=?, updated_at=CURRENT_TIMESTAMP WHERE guild_id=?`)
-        .run(name, String(data.short_name || '').trim().slice(0, 16), data.theme, data.accent, safeImage(data.logo_url), safeImage(data.banner_url), guildId);
+        .run(name, String(data.short_name || '').trim().slice(0, 16), data.theme, data.accent, safeImage(logo), safeImage(banner), guildId);
     return ensureCommunity(guildId);
 }
 function updateAssistant(guildId, data) {

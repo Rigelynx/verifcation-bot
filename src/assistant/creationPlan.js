@@ -1,13 +1,20 @@
 const { actionPolicies } = require('./capabilities');
 const { managementTools } = require('./management');
+const { shopTools } = require('./shop');
+const {webTools}=require('./webTools');
 const { validateArguments } = require('./schema');
 function validatePlan(actions) {
     if (!Array.isArray(actions) || !actions.length) throw new Error('Incluye los elementos de la propuesta.');
     return actions.map(action => {
         if (!action || !Object.hasOwn(actionPolicies, action.tool) || !action.args || typeof action.args !== 'object' || Array.isArray(action.args)) throw new Error('Propuesta de gestión inválida.');
         if (Object.keys(action).some(key => !['tool', 'args'].includes(key))) throw new Error('Parámetros de propuesta no permitidos.');
+        if (action.tool === 'run_bot_command') {
+            validateArguments({ type: 'object', properties: { command: { type: 'string' }, channel_id: { type: 'string', pattern: '^\\d{17,20}$' }, options: { type: 'object' } }, required: ['command', 'channel_id', 'options'], additionalProperties: false }, action.args);
+            require('./botCommands').validateCommand(action.args);
+            return { tool: action.tool, args: action.args };
+        }
         if (!['create_channel', 'create_role'].includes(action.tool)) {
-            const spec = managementTools.find(tool => tool.function.name === action.tool).function;
+            const spec = [...managementTools, ...shopTools,...webTools].find(tool => tool.function.name === action.tool).function;
             validateArguments(spec.parameters, action.args);
             return { tool: action.tool, args: action.args };
         }

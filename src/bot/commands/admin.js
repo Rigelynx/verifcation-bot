@@ -79,7 +79,7 @@ module.exports = {
                 targetUser.id,
                 targetUser.tag,
                 targetUser.displayAvatarURL(),
-                { 'Acreditación': 'Verificación manual directa por Administración' },
+                db.getVerificationByDiscordId(targetUser.id)?.answers || { 'Acreditación': 'Verificación manual directa por Administración' },
                 'APROBADO'
             );
             db.updateVerificationStatus(targetUser.id, 'APROBADO', interaction.user.id, reason, interaction.user.tag);

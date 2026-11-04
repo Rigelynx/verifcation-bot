@@ -4,7 +4,7 @@
 
 El `.env` real selecciona `ASSISTANT_PROVIDER=deepseek`. El modelo automático es `deepseek-flash`. Completar `DEEPSEEK_API_KEY` en el editor local y reiniciar el bot. El asistente utiliza exclusivamente la API directa de DeepSeek. No hay selector ni cambio automático a otro proveedor.
 
-`ASSISTANT_MAX_OUTPUT_TOKENS=1536` limita la salida de cada paso del modelo y puede ajustarse en el alojamiento. Una petición que use herramientas puede requerir varios pasos; se eliminaron los cortes fijos de rondas, herramientas y creaciones. `ASSISTANT_DAILY_LIMIT=0` desactiva el cupo diario del bot, salvo que la comunidad tenga un cupo propio. Se mantiene un tiempo máximo configurable por tarea. El modo de razonamiento de la API directa continúa desactivado para las consultas del asistente.
+`ASSISTANT_MAX_OUTPUT_TOKENS=3072` limita la salida de cada paso del modelo y puede ajustarse en el alojamiento. Una petición que use herramientas puede requerir varios pasos; se eliminaron los cortes fijos de rondas, herramientas y creaciones. `ASSISTANT_DAILY_LIMIT=0` desactiva el cupo diario del bot, salvo que la comunidad tenga un cupo propio. Se mantiene un tiempo máximo configurable por tarea. El modo de razonamiento de la API directa continúa desactivado para las consultas del asistente.
 
 ## Qué se optimizó
 
