@@ -13,42 +13,20 @@ const { hasOfficerPermission, hasAdminPermission } = require('../handlers/permis
 /**
  * Construye el mensaje completo del Panel Táctico de Bono Militar con Embed y Botón interactivo
  */
-function buildBonusPanelMessage(panel, settings = null) {
-    const sym = settings ? settings.currency_symbol : '$';
-    const amount = panel.amount || 500;
-    const modeText = panel.claim_mode === 'ONCE' 
-        ? '🔒 Reclamo Único (1 vez por combatiente)' 
-        : `⏱️ Periódico (Cooldown de ${Math.round((panel.cooldown_seconds || 86400) / 3600)} horas)`;
-
-    const embed = new EmbedBuilder()
-        .setColor(0xd4af37) // Comunidad Gold
-        .setTitle(panel.title || '🎖️ [BONO MILITAR EXTRAORDINARIO // ASIGNACIÓN DE MANDO]')
-        .setDescription(`
-${panel.description || 'El Administración de la Base Comunidad ha autorizado una asignación financiera especial para el personal comunitario en servicio activo.'}
-
-> 💰 **Asignación Financiera:** \`${sym}${amount.toLocaleString()}\`
-> 📡 **Modalidad de Concesión:** \`${modeText}\`
-> 🛡️ **Estado:** \`${panel.is_active ? 'AUTORIZADO Y DISPONIBLE' : 'SUSPENDIDO'}\`
-
-Pulsa el botón táctico inferior para formalizar el cobro inmediato a tu cartera comunitario.
-        `)
-        .addFields(
-            { name: '🎖️ Fondo de la comunidad', value: `\`${sym}${amount.toLocaleString()}\``, inline: true },
-            { name: '📋 Modalidad', value: `\`${panel.claim_mode === 'ONCE' ? 'ÚNICA VEZ' : 'FRECUENCIA RECURRENTE'}\``, inline: true }
-        )
-        .setFooter({ text: 'Tesorería Militar y Mando de Fuerzas Especiales Comunidad' })
-        .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`claim_bonus_panel_${panel.id}`)
-            .setLabel(panel.button_label || 'RECLAMAR BONO MILITAR')
-            .setStyle(ButtonStyle.Success)
-            .setEmoji(panel.button_emoji || '🎁')
-            .setDisabled(!panel.is_active)
-    );
-
-    return { embeds: [embed], components: [row] };
+function buildBonusPanelMessage(panel, settings = null, presentation={}) {
+    const {nativePanel}=require('../utils/neutralPanels');
+    const amount=panel.amount??500,sym=settings?.currency_symbol||'$';
+    const seconds=panel.cooldown_seconds||86400;
+    const interval=require('../utils/neutralPanels').durationText(seconds);
+    const description=panel.description==='El Estado Mayor de la Base USMC ha autorizado una asignación financiera especial para el personal militar en servicio activo.'?'Una recompensa de la comunidad para quienes cumplan los requisitos del bono.':panel.description;
+    const frequency=panel.claim_mode==='ONCE'?'Una vez por persona':`Cada ${interval}`;
+    return nativePanel({guildId:panel.guild_id,kind:'bonus',hero:true,
+        title:presentation.title||panel.title||'Bono de la comunidad',description:presentation.description??description??'Una recompensa disponible para quienes cumplan los requisitos.',
+        color:presentation.color?parseInt(presentation.color.replace('#',''),16):undefined,
+        cards:[{title:`${sym}${Number(amount).toLocaleString('es-CO')} por persona`,text:`**Frecuencia:** ${frequency}\n**Estado del panel:** ${panel.is_active?'Activo':'Suspendido'}\n**Destino:** Tu cartera`}],
+        footer:'El sistema comprueba tus requisitos y el próximo reclamo antes de acreditar el bono.',
+        rows:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`claim_bonus_panel_${panel.id}`).setLabel(panel.button_label||'Reclamar bono').setStyle(ButtonStyle.Success).setEmoji('🎁').setDisabled(!panel.is_active),
+            new ButtonBuilder().setCustomId(`bonus_info_${panel.id}`).setLabel('Ver condiciones').setStyle(ButtonStyle.Secondary))]});
 }
 
 module.exports = {

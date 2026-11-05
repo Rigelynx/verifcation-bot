@@ -1,3 +1,4 @@
+const {installPanelTransport,nativePanel,receipt}=require('../utils/neutralPanels');
 const { withGuild } = require('../../database/guildContext');
 const { 
     EmbedBuilder, 
@@ -14,9 +15,7 @@ const economyDb = require('../../database/economyDb');
 const { handleStatusChange } = require('./verificationHandler');
 const { hasOfficerPermission, hasAdminPermission, grantConfiguredCommandPermission } = require('./permissionHandler');
 const { hasAnyRole } = require('../utils/roleUtils');
-const { processShopPurchase, buildShopPanel } = require('../commands/tienda');
-const {identity:shopIdentity}=require('../utils/shopPresentation');
-const community=require('../../database/communityDb');
+const { processShopPurchase, buildShopPanel, asShopUpdate } = require('../commands/tienda');
 const {
     buildEventRosterPanel,
     buildEventFinalizationPanel,
@@ -43,6 +42,46 @@ function getFinalizationContext(interaction, eventId) {
 function saveFinalizationPanel(interaction, event, draft) {
     economyDb.saveEventFinalizationDraft(event.id, draft);
     return interaction.update(buildEventFinalizationPanel(event, draft));
+}
+
+async function managePrivateServer(interaction,serverId) {
+            if (!hasOfficerPermission(interaction)) {
+                return interaction.reply({ content: '❌ Solo oficiales pueden gestionar servidores privados.', flags: MessageFlags.Ephemeral });
+            }
+
+            const srv = db.getPrivateServerById(serverId, interaction.guildId || 'GLOBAL');
+            if (!srv) {
+                return interaction.reply({ content: '❌ Servidor no encontrado.', flags: MessageFlags.Ephemeral });
+            }
+
+            if (srv.status === 'EN_USO') {
+                if (srv.current_officer_id && srv.current_officer_id !== interaction.user.id && !hasAdminPermission(interaction)) {
+                    return interaction.reply({
+                        content: `🔴 **${srv.server_name}** está siendo usado por <@${srv.current_officer_id}> (*${srv.current_mission}*). Solo ese oficial o un Administrador puede liberarlo.`,
+                        flags: MessageFlags.Ephemeral
+                    });
+                }
+                db.releasePrivateServer(serverId, interaction.guildId || 'GLOBAL');
+                await interaction.deferUpdate();
+                await refreshPublicServerBoard(interaction.client, interaction.guildId || 'GLOBAL');
+                const panel = buildPrivateServersPanel(interaction.guildId || 'GLOBAL');
+                return interaction.editReply(panel);
+            }
+
+            const modal = new ModalBuilder()
+                .setCustomId(`srv_occupy_modal_${serverId}`)
+                .setTitle(`OCUPAR: ${srv.server_name}`.slice(0, 45));
+
+            const missionInput = new TextInputBuilder()
+                .setCustomId('mission_name')
+                .setLabel('OPERACIÓN / PATRULLAJE A REALIZAR:')
+                .setStyle(TextInputStyle.Short)
+                .setPlaceholder('Ej: Patrullaje Sector Ronograd / Entrenamiento CQB')
+                .setValue('Operación / Patrullaje BRM 5')
+                .setRequired(true);
+
+            modal.addComponents(new ActionRowBuilder().addComponents(missionInput));
+            return interaction.showModal(modal);
 }
 
 async function handleInteraction(interaction, client, commands) {
@@ -101,6 +140,52 @@ async function handleInteraction(interaction, client, commands) {
     // 2. Manejo de Botones Interactivos
     if (interaction.isButton()) {
         const customId = interaction.customId;
+        const inventoryPage=customId.match(/^inv_page_(\d{17,20})_(-?\d+)$/),inventoryDetail=customId.match(/^inv_detail_(\d{17,20})_(\d+)$/);
+        if(inventoryPage||inventoryDetail){
+            if(!economyDb.isCommandAllowed('tienda:inventario',interaction.member).allowed)return interaction.reply({content:'No tienes acceso al inventario.',flags:MessageFlags.Ephemeral});
+            const match=inventoryPage||inventoryDetail,userId=match[1];
+            if(inventoryPage)return interaction.update(require('../utils/personalPanels').inventoryPanel({id:userId,username:userId===interaction.user.id?interaction.user.username:userId},interaction.guildId,Number(match[2])));
+            const item=economyDb.getUserInventory(userId).find(row=>row.item_id===Number(match[2]));
+            if(!item)return interaction.reply({content:'Artículo no encontrado en este inventario.',flags:MessageFlags.Ephemeral});
+            return interaction.reply({flags:MessageFlags.Ephemeral,embeds:[receipt(item.name,[{name:'Cantidad',value:String(item.quantity)},{name:'Descripción',value:item.description||'Sin descripción',inline:false},{name:'Roles asociados',value:item.roles_to_give?.length?item.roles_to_give.map(id=>'<@&'+id+'>').join(' '):'Sin roles',inline:false}],interaction.guildId)],allowedMentions:{parse:[]}});
+        }
+        if(['finance_deposit','finance_withdraw','finance_history'].includes(customId)){
+            const key=customId==='finance_deposit'?'economia:depositar':customId==='finance_withdraw'?'economia:retirar':'economia:balance';
+            if(!economyDb.isCommandAllowed(key,interaction.member).allowed)return interaction.reply({content:'Esta función está deshabilitada para tu cuenta.',flags:MessageFlags.Ephemeral});
+            if(customId==='finance_history'){
+                const rows=economyDb.getRecentTransactions(interaction.user.id,10);
+                return interaction.reply({flags:MessageFlags.Ephemeral,embeds:[new EmbedBuilder().setColor(0x87a6ab).setTitle('Tus últimos movimientos').setDescription(rows.map(row=>`${row.amount>=0?'+':''}${row.amount} · ${String(row.details||row.type).slice(0,100)}`).join('\n')||'Todavía no hay movimientos en este servidor.')],allowedMentions:{parse:[]}});
+            }
+            const modal=new ModalBuilder().setCustomId(customId+'_modal').setTitle(customId==='finance_deposit'?'Depositar en el banco':'Retirar del banco');
+            modal.addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('amount').setLabel('Cantidad o all para el máximo disponible').setStyle(TextInputStyle.Short).setMaxLength(16).setRequired(true)));
+            return interaction.showModal(modal);
+        }
+        const verificationPage=customId.match(/^(verification|dossier)_page_(\d{17,20})_(-?\d+)$/);
+        if(verificationPage){
+            if(!hasOfficerPermission(interaction))return interaction.reply({content:'Solo responsables pueden revisar expedientes.',flags:MessageFlags.Ephemeral});
+            const record=db.getVerificationByDiscordId(verificationPage[2]);
+            if(!record)return interaction.reply({content:'Expediente no encontrado.',flags:MessageFlags.Ephemeral});
+            return interaction.update(require('../utils/verificationReview').buildVerificationReview(record,interaction.guild,Number(verificationPage[3]),verificationPage[1]==='dossier'));
+        }
+
+        const serverManage=customId.match(/^srv_manage_(\d+)$/);
+        if(serverManage)return managePrivateServer(interaction,Number(serverManage[1]));
+        const serverDetails=customId.match(/^srv_details_(\d+)$/);
+        if(serverDetails){
+            if(!hasOfficerPermission(interaction))return interaction.reply({content:'Solo responsables pueden consultar el acceso a servidores.',flags:MessageFlags.Ephemeral});
+            const server=db.getPrivateServerById(Number(serverDetails[1]),interaction.guildId);
+            if(!server)return interaction.reply({content:'Servidor no encontrado.',flags:MessageFlags.Ephemeral});
+            const busy=server.status==='EN_USO',canManage=!busy||!server.current_officer_id||server.current_officer_id===interaction.user.id||hasAdminPermission(interaction);
+            return interaction.reply({flags:MessageFlags.Ephemeral,embeds:[receipt(server.server_name,[{name:'Código de acceso',value:'`'+String(server.server_code||'Sin configurar').replace(/`/g,'')+'`'},{name:'Estado',value:busy?'En uso':'Disponible'},{name:'Misión',value:server.current_mission||'Sin asignar',inline:false}],interaction.guildId)],components:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`srv_manage_${server.id}`).setLabel(busy?'Liberar servidor':'Ocupar servidor').setStyle(ButtonStyle.Primary).setDisabled(!canManage))],allowedMentions:{parse:[]}});
+        }
+        const bonusInfo=customId.match(/^bonus_info_(\d+)$/);
+        if(bonusInfo){
+            const panel=economyDb.getBonusPanelById(Number(bonusInfo[1]));
+            if(!panel)return interaction.reply({content:'Bono no encontrado.',flags:MessageFlags.Ephemeral});
+            const required=Array.isArray(panel.required_roles)?panel.required_roles:[];
+            return interaction.reply({flags:MessageFlags.Ephemeral,embeds:[receipt('Condiciones del bono',[{name:'Frecuencia',value:panel.claim_mode==='ONCE'?'Una vez por persona':`Cada ${require('../utils/neutralPanels').durationText(panel.cooldown_seconds||86400)}`},{name:'Estado',value:panel.is_active?'Activo':'Suspendido'},{name:'Roles admitidos',value:required.length?required.map(id=>'<@&'+id+'>').join(' '):'Sin requisito de rol',inline:false}],interaction.guildId)],allowedMentions:{parse:[]}});
+        }
+
         const serverPage = customId.match(/^srv_page_(-?\d+)$/);
         if (serverPage) return interaction.update(buildPrivateServersPanel(interaction.guildId || 'GLOBAL', Number(serverPage[1])));
         const shopConfirm = customId.match(/^shop_confirm_(\d+)_(\d+)_(\d+)$/);
@@ -313,7 +398,7 @@ async function handleInteraction(interaction, client, commands) {
 
 *No es necesario que vuelvas a llenar el cuestionario ni que abras la terminal.*
                     `)
-                    .setFooter({ text: 'Sistema Autónomo de Verificación Táctica • USMC Defense', iconURL: guild.iconURL() });
+                    .setFooter({ text: 'Sistema Autónomo de Verificación Táctica • Comunidad Defense', iconURL: guild.iconURL() });
 
                 return interaction.reply({
                     embeds: [verifiedEmbed],
@@ -332,7 +417,7 @@ async function handleInteraction(interaction, client, commands) {
 > 🔹 **Estado actual:** \`PENDIENTE DE DICTAMEN DE MANDO\`
 > 🔹 **Aviso:** No reenvíes solicitudes duplicadas. Recibirás un mensaje privado (MD) cuando se apruebe.
                     `)
-                    .setFooter({ text: 'USMC Defense • No reenvíes formularios duplicados.', iconURL: guild.iconURL() });
+                    .setFooter({ text: 'Acceso a la comunidad · Solicitud en revisión', iconURL: guild.iconURL() });
 
                 return interaction.reply({
                     embeds: [pendingEmbed],
@@ -347,9 +432,9 @@ async function handleInteraction(interaction, client, commands) {
 
             const embed = new EmbedBuilder()
                 .setColor(0x38e54d)
-                .setTitle('📟 [TERMINAL TÁCTICA DE VERIFICACIÓN ASIGNADA]')
+                .setTitle('📟 [TU ENLACE DE VERIFICACIÓN]')
                 .setDescription(`
-Se ha generado un canal de enlace cifrado de **30 minutos de vigencia**.
+Se ha generado un enlace personal de **30 minutos de vigencia**.
 
 Para formalizar tu ingreso a la base militar:
 1. Haz clic en el botón de abajo **\`[ INGRESAR A LA TERMINAL ]\`**.
@@ -359,13 +444,13 @@ Para formalizar tu ingreso a la base militar:
                 .addFields(
                     { name: '👤 Aspirante', value: `${user.tag}`, inline: true },
                     { name: '⏱️ Caducidad de Enlace', value: '30 Minutos', inline: true },
-                    { name: '🛡️ Estado de Seguridad', value: '`ENCRIPTACIÓN SHA-256 ACTIVA`', inline: false }
+                    { name: 'Acceso', value: 'Enlace personal de verificación', inline: false }
                 )
                 .setFooter({ text: 'No compartas este enlace con otros usuarios.' });
 
             const row = new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
-                    .setLabel('INGRESAR A LA TERMINAL MILITAR')
+                    .setLabel('Abrir formulario')
                     .setStyle(ButtonStyle.Link)
                     .setURL(verifyLink)
                     .setEmoji('🌐')
@@ -405,7 +490,7 @@ Para formalizar tu ingreso a la base militar:
 
 *${res.event?.event_type === 'TRAINING' ? 'Si apruebas y permaneces en la lista final, recibirás el rol configurado.' : 'Si permaneces en la lista final, recibirás tu paga automáticamente al cerrar la operación.'}*
                 `)
-                .setFooter({ text: `Operación ID: #${eventId} • USMC Roster System` })
+                .setFooter({ text: `Operación ID: #${eventId} • Comunidad Roster System` })
                 .setTimestamp();
 
             return interaction.reply({
@@ -454,7 +539,7 @@ Para formalizar tu ingreso a la base militar:
 
 *Podrás formalizar tu cobro tan pronto se libere la nómina militar.*
                 `)
-                .setFooter({ text: `Operación ID: #${eventId} • USMC Attendance System` })
+                .setFooter({ text: `Operación ID: #${eventId} • Comunidad Attendance System` })
                 .setTimestamp();
 
             return interaction.reply({
@@ -479,32 +564,14 @@ Para formalizar tu ingreso a la base militar:
             const settings = economyDb.getEconomySettings(interaction.guildId);
             const sym = settings ? settings.currency_symbol : '$';
 
-            const claimEmbed = new EmbedBuilder()
-                .setColor(0x38e54d)
-                .setTitle('🎖️ [PAGA MILITAR ACREDITADA EXITOSAMENTE]')
-                .setDescription(`
-¡Enhorabuena, combatiente! Tu asistencia a la operación militar ha sido verificada y acreditada.
-
-> 💰 **Paga Base:** \`${sym}${res.baseReward.toLocaleString()}\`
-> 🎖️ **Escalafón Aplicado:** \`${res.bonusRole}\` (Multiplicador: x${res.multiplier})
-> 💵 **Total Cobrado:** \`${sym}${res.amount.toLocaleString()}\`
-> 💼 **Nuevo Saldo en Cartera:** \`${sym}${res.account.wallet.toLocaleString()}\`
-
-*El registro de haberes ha sido archivado en la tesorería militar.*
-                `)
-                .setFooter({ text: 'Sistema Autónomo de Pagos de Operaciones USMC' })
-                .setTimestamp();
-
-            return interaction.reply({
-                embeds: [claimEmbed],
-                flags: MessageFlags.Ephemeral
-            });
+            return interaction.reply({flags:MessageFlags.Ephemeral,embeds:[receipt('Recompensa acreditada',[{name:'Recibiste',value:`${sym}${res.amount.toLocaleString('es-CO')}`},{name:'Cartera actual',value:`${sym}${res.account.wallet.toLocaleString('es-CO')}`},{name:'Bonificación',value:`${res.bonusRole} · ×${res.multiplier}`,inline:false}],interaction.guildId)],allowedMentions:{parse:[]}});
         }
 
         // =====================================================
         // BOTÓN: Paginación de Roster de Operación Convocada
         // =====================================================
         if (customId.startsWith('event_roster_page_')) {
+            if(!hasOfficerPermission(interaction))return interaction.reply({content:'Solo responsables pueden consultar participantes.',flags:MessageFlags.Ephemeral});
             const parts = customId.replace('event_roster_page_', '').split('_');
             const eventId = parseInt(parts[0], 10);
             const page = parseInt(parts[1], 10) || 1;
@@ -521,6 +588,7 @@ Para formalizar tu ingreso a la base militar:
         // BOTÓN: Actualizar Roster de Operación Convocada
         // =====================================================
         if (customId.startsWith('event_roster_refresh_')) {
+            if(!hasOfficerPermission(interaction))return interaction.reply({content:'Solo responsables pueden consultar participantes.',flags:MessageFlags.Ephemeral});
             const parts = customId.replace('event_roster_refresh_', '').split('_');
             const eventId = parseInt(parts[0], 10);
             const page = parseInt(parts[1], 10) || 1;
@@ -589,27 +657,7 @@ Para formalizar tu ingreso a la base militar:
             const settings = economyDb.getEconomySettings(interaction.guildId || 'GLOBAL');
             const sym = settings ? settings.currency_symbol : '$';
 
-            const claimEmbed = new EmbedBuilder()
-                .setColor(0x38e54d)
-                .setTitle('🎖️ [ASIGNACIÓN DE BONO MILITAR ACREDITADA]')
-                .setDescription(`
-¡Enhorabuena, combatiente! Tu solicitud de cobro ha sido validada y transferida.
-
-> 💰 **Asignación Acreditada:** \`${sym}${res.amount.toLocaleString()}\`
-> 💼 **Nuevo Saldo en Cartera:** \`${sym}${res.account.wallet.toLocaleString()}\`
-> 🏦 **Patrimonio Total:** \`${sym}${(res.account.wallet + res.account.bank).toLocaleString()}\`
-> 📜 **Panel Militar:** \`${res.panel.title}\`
-> ⏱️ **Modalidad:** \`${res.panel.claim_mode === 'ONCE' ? 'Asignación Única' : 'Concesión Periódica'}\`
-
-*Firma de auditoría contable USMC generada.*
-                `)
-                .setFooter({ text: 'Tesorería Militar USMC • Asignaciones Extraordinarias' })
-                .setTimestamp();
-
-            return interaction.reply({
-                embeds: [claimEmbed],
-                flags: MessageFlags.Ephemeral
-            });
+            return interaction.reply({flags:MessageFlags.Ephemeral,embeds:[receipt('Bono acreditado',[{name:'Recibiste',value:`${sym}${res.amount.toLocaleString('es-CO')}`},{name:'Cartera actual',value:`${sym}${res.account.wallet.toLocaleString('es-CO')}`},{name:'Bono',value:res.panel.title,inline:false}],interaction.guildId)],allowedMentions:{parse:[]}});
         }
 
         // =====================================================
@@ -621,60 +669,13 @@ Para formalizar tu ingreso a la base militar:
         }
 
         // BOTÓN: Ver Mi Inventario desde el panel de la tienda
-        if (customId === 'btn_view_my_inventory') {
-            const guildId = interaction.guildId || 'GLOBAL';
-            const settings = economyDb.getEconomySettings(guildId);
-            const sym = settings.currency_symbol || '$';
-            const inventory = economyDb.getUserInventory(interaction.user.id);
-
-            if (inventory.length === 0) {
-                return interaction.reply({
-                    content: '🎒 Tu mochila táctica está vacía. Usa los botones o el menú desplegable de arriba para comprar equipamiento.',
-                    flags: MessageFlags.Ephemeral
-                });
-            }
-
-            const invEmbed = new EmbedBuilder()
-                .setColor(0x38e54d)
-                .setTitle(`🎒 [EQUIPAMIENTO E INVENTARIO // ${interaction.user.tag.toUpperCase()}]`)
-                .setThumbnail(interaction.user.displayAvatarURL())
-                .setDescription('Lista de pertrechos, suministros e insignias en posesión:')
-                .setFooter({ text: `${shopIdentity(community.ensureCommunity(guildId)).name} · Inventario` })
-                .setTimestamp();
-
-            for (const row of inventory) {
-                let extra = '';
-                if (row.roles_to_give && row.roles_to_give.length > 0) {
-                    extra += ` • Rango: ${row.roles_to_give.map(r => `<@&${r}>`).join(' ')}`;
-                }
-                invEmbed.addFields({
-                    name: `${row.icon || '🎖️'} ${row.name} (x${row.quantity})`,
-                    value: `*${row.description || 'Sin descripción'}*\n> 🏷️ Valor de catálogo: \`${sym}${row.price.toLocaleString()}\`${extra}`,
-                    inline: false
-                });
-            }
-
-            return interaction.reply({ embeds: [invEmbed], flags: MessageFlags.Ephemeral });
+        if(customId==='btn_view_my_inventory'){
+            if(!economyDb.isCommandAllowed('tienda:inventario',interaction.member).allowed)return interaction.reply({content:'El inventario está deshabilitado para tu cuenta.',flags:MessageFlags.Ephemeral});
+            return interaction.reply({...require('../utils/personalPanels').inventoryPanel(interaction.user,interaction.guildId),flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
         }
-
-        // BOTÓN: Ver Mi Saldo desde la tienda
-        if (customId === 'btn_view_shop_balance') {
-            const guildId = interaction.guildId || 'GLOBAL';
-            const settings = economyDb.getEconomySettings(guildId);
-            const sym = settings ? settings.currency_symbol : '$';
-            const acc = economyDb.getAccount(interaction.user.id, guildId);
-
-            const balEmbed = new EmbedBuilder()
-                .setColor(0x38e54d)
-                .setTitle(`💵 [ESTADO DE CUENTA // ${interaction.user.tag.toUpperCase()}]`)
-                .setDescription(`
-> 💵 **Cartera (Efectivo):** \`${sym}${acc.wallet.toLocaleString()}\`
-> 🏦 **Caja Fuerte (Banco):** \`${sym}${acc.bank.toLocaleString()}\`
-> 💎 **Patrimonio Neto:** \`${sym}${(acc.wallet + acc.bank).toLocaleString()}\`
-                `)
-                .setFooter({ text: `${shopIdentity(community.ensureCommunity(guildId)).name} · Tesorería` });
-
-            return interaction.reply({ embeds: [balEmbed], flags: MessageFlags.Ephemeral });
+        if(customId==='btn_view_shop_balance'){
+            if(!economyDb.isCommandAllowed('economia:balance',interaction.member).allowed)return interaction.reply({content:'La consulta de saldo está deshabilitada para tu cuenta.',flags:MessageFlags.Ephemeral});
+            return interaction.reply({...require('../utils/personalPanels').balancePanel(interaction.user,interaction.guildId),flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral});
         }
 
         // BOTÓN: Navegación de Páginas en Tienda Militar
@@ -682,7 +683,7 @@ Para formalizar tu ingreso a la base militar:
             const page = parseInt(customId.replace('shop_page_', ''), 10) || 1;
             const guildId = interaction.guildId || 'GLOBAL';
             const panel = buildShopPanel(guildId, page, customId.split('_')[3] || 'all');
-            return interaction.update(panel);
+            return interaction.update(asShopUpdate(panel));
         }
 
         // BOTÓN: Actualizar Catálogo de la Tienda
@@ -690,13 +691,13 @@ Para formalizar tu ingreso a la base militar:
             const guildId = interaction.guildId || 'GLOBAL';
             const page = customId.startsWith('shop_refresh_') ? parseInt(customId.replace('shop_refresh_', ''), 10) : 1;
             const panel = buildShopPanel(guildId, page, customId.split('_')[3] || 'all');
-            return interaction.update(panel);
+            return interaction.update(asShopUpdate(panel));
         }
 
         // BOTÓN: Paginación e Inicio de /help
         if (customId.startsWith('help_page_') || customId.startsWith('help_refresh_')) {
             const page = parseInt(customId.replace('help_page_', '').replace('help_refresh_', ''), 10) || 1;
-            const panel = buildHelpPanel(page, interaction.guildId);
+            const panel = buildHelpPanel(page, interaction.guildId,interaction.member,interaction.guild);
             return interaction.update(panel);
         }
 
@@ -710,18 +711,13 @@ Para formalizar tu ingreso a la base militar:
             }
 
             const targetDiscordId = customId.replace('approve_verify_', '');
+            const record=db.getVerificationByDiscordId(targetDiscordId);
+            if(!record||record.status!=='PENDIENTE')return interaction.reply({content:'El expediente ya fue resuelto o no existe.',flags:MessageFlags.Ephemeral});
             const updated = db.updateVerificationStatus(targetDiscordId, 'APROBADO', interaction.user.id, 'Aprobado vía Discord por oficial', interaction.user.tag);
             
             await handleStatusChange(client, interaction.guildId, updated, 'APROBADO', null, interaction.user.tag);
 
-            // Actualizar mensaje de oficiales
-            const currentEmbed = interaction.message.embeds[0];
-            const newEmbed = EmbedBuilder.from(currentEmbed)
-                .setColor(0x38e54d)
-                .setTitle(`✅ [EXPEDIENTE APROBADO] // ${updated.username.toUpperCase()}`)
-                .addFields({ name: '🎖️ Dictamen', value: `Aprobado por <@${interaction.user.id}>`, inline: false });
-
-            await interaction.update({ embeds: [newEmbed], components: [] });
+            await interaction.update(require('../utils/verificationReview').buildVerificationReview(updated,interaction.guild));
             return;
         }
 
@@ -756,7 +752,7 @@ Para formalizar tu ingreso a la base militar:
     // 2.5. Manejo de Menú Desplegable de la Tienda
     // =====================================================
     if (interaction.isStringSelectMenu()) {
-        if (interaction.customId === 'shop_category') return interaction.update(buildShopPanel(interaction.guildId || 'GLOBAL', 1, interaction.values[0]));
+        if (interaction.customId === 'shop_category') return interaction.update(asShopUpdate(buildShopPanel(interaction.guildId || 'GLOBAL', 1, interaction.values[0])));
         const finalizationSelect = interaction.customId.match(/^event_finalize_(team|members|leader)_(\d+)$/);
         if (finalizationSelect) {
             const action = finalizationSelect[1];
@@ -811,45 +807,7 @@ Para formalizar tu ingreso a la base militar:
             return saveFinalizationPanel(interaction, event, draft);
         }
 
-        if (interaction.customId === 'srv_quick_toggle_select') {
-            if (!hasOfficerPermission(interaction)) {
-                return interaction.reply({ content: '❌ Solo oficiales pueden gestionar servidores privados.', flags: MessageFlags.Ephemeral });
-            }
-            const serverId = parseInt(interaction.values[0], 10);
-            const srv = db.getPrivateServerById(serverId, interaction.guildId || 'GLOBAL');
-            if (!srv) {
-                return interaction.reply({ content: '❌ Servidor no encontrado.', flags: MessageFlags.Ephemeral });
-            }
-
-            if (srv.status === 'EN_USO') {
-                if (srv.current_officer_id && srv.current_officer_id !== interaction.user.id && !hasAdminPermission(interaction)) {
-                    return interaction.reply({
-                        content: `🔴 **${srv.server_name}** está siendo usado por <@${srv.current_officer_id}> (*${srv.current_mission}*). Solo ese oficial o un Administrador puede liberarlo.`,
-                        flags: MessageFlags.Ephemeral
-                    });
-                }
-                db.releasePrivateServer(serverId, interaction.guildId || 'GLOBAL');
-                await interaction.deferUpdate();
-                await refreshPublicServerBoard(interaction.client, interaction.guildId || 'GLOBAL');
-                const panel = buildPrivateServersPanel(interaction.guildId || 'GLOBAL');
-                return interaction.editReply(panel);
-            }
-
-            const modal = new ModalBuilder()
-                .setCustomId(`srv_occupy_modal_${serverId}`)
-                .setTitle(`OCUPAR: ${srv.server_name}`.slice(0, 45));
-
-            const missionInput = new TextInputBuilder()
-                .setCustomId('mission_name')
-                .setLabel('OPERACIÓN / PATRULLAJE A REALIZAR:')
-                .setStyle(TextInputStyle.Short)
-                .setPlaceholder('Ej: Patrullaje Sector Ronograd / Entrenamiento CQB')
-                .setValue('Operación / Patrullaje BRM 5')
-                .setRequired(true);
-
-            modal.addComponents(new ActionRowBuilder().addComponents(missionInput));
-            return interaction.showModal(modal);
-        }
+        if (interaction.customId === 'srv_quick_toggle_select') return managePrivateServer(interaction,Number(interaction.values[0]));
 
         if (interaction.customId === 'event_roster_select') {
             if (!hasOfficerPermission(interaction)) {
@@ -871,7 +829,7 @@ Para formalizar tu ingreso a la base militar:
 
         if (interaction.customId === 'help_category_select') {
             const page = parseInt(interaction.values[0], 10) || 1;
-            const panel = buildHelpPanel(page, interaction.guildId);
+            const panel = buildHelpPanel(page, interaction.guildId,interaction.member,interaction.guild);
             return interaction.update(panel);
         }
     }
@@ -906,6 +864,16 @@ Para formalizar tu ingreso a la base militar:
 
     // 3. Manejo de Respuestas de Modal
     if (interaction.isModalSubmit()) {
+        if(['finance_deposit_modal','finance_withdraw_modal'].includes(interaction.customId)){
+            const deposit=interaction.customId==='finance_deposit_modal',key=deposit?'economia:depositar':'economia:retirar';
+            if(!economyDb.isCommandAllowed(key,interaction.member).allowed)return interaction.reply({content:'Esta función está deshabilitada para tu cuenta.',flags:MessageFlags.Ephemeral});
+            const amount=interaction.fields.getTextInputValue('amount').trim().toLowerCase();
+            if(amount!=='all'&&!/^[1-9]\d{0,14}$/.test(amount))return interaction.reply({content:'Escribe una cantidad entera positiva o all.',flags:MessageFlags.Ephemeral});
+            const result=deposit?economyDb.deposit(interaction.user.id,amount):economyDb.withdraw(interaction.user.id,amount);
+            if(!result.success)return interaction.reply({content:result.message,flags:MessageFlags.Ephemeral});
+            return interaction.reply({flags:MessageFlags.Ephemeral,embeds:[receipt(deposit?'Depósito completado':'Retiro completado',[{name:'Importe',value:String(deposit?result.deposited:result.withdrawn)},{name:'Cartera',value:String(result.account.wallet)},{name:'Banco',value:String(result.account.bank)}],interaction.guildId)]});
+        }
+
         const srvOccupyModal = interaction.customId.match(/^srv_occupy_modal_(\d+)$/);
         if (srvOccupyModal) {
             const serverId = Number(srvOccupyModal[1]);
@@ -1029,33 +997,24 @@ Para formalizar tu ingreso a la base militar:
         }
 
         if (interaction.customId.startsWith('modal_reject_')) {
+            if(!hasOfficerPermission(interaction))return interaction.reply({content:'Solo responsables pueden resolver expedientes.',flags:MessageFlags.Ephemeral});
             const targetDiscordId = interaction.customId.replace('modal_reject_', '');
             const reason = interaction.fields.getTextInputValue('reject_reason');
 
+            const record=db.getVerificationByDiscordId(targetDiscordId);
+            if(!record||record.status!=='PENDIENTE')return interaction.reply({content:'El expediente ya fue resuelto o no existe.',flags:MessageFlags.Ephemeral});
             const updated = db.updateVerificationStatus(targetDiscordId, 'RECHAZADO', interaction.user.id, reason, interaction.user.tag);
 
             await handleStatusChange(client, interaction.guildId, updated, 'RECHAZADO', reason, interaction.user.tag);
 
-            // Actualizar mensaje original de oficiales si está disponible
-            if (interaction.message) {
-                const currentEmbed = interaction.message.embeds[0];
-                const newEmbed = EmbedBuilder.from(currentEmbed)
-                    .setColor(0xff3333)
-                    .setTitle(`❌ [EXPEDIENTE DENEGADO] // ${updated.username.toUpperCase()}`)
-                    .addFields(
-                        { name: '🎖️ Dictamen', value: `Denegado por <@${interaction.user.id}>`, inline: true },
-                        { name: '📋 Motivo', value: reason, inline: false }
-                    );
-
-                await interaction.update({ embeds: [newEmbed], components: [] });
-            } else {
-                await interaction.reply({ content: `❌ **Expediente de <@${targetDiscordId}> denegado.** Se notificó al usuario.`, flags: MessageFlags.Ephemeral });
-            }
+            if(interaction.message)await interaction.update(require('../utils/verificationReview').buildVerificationReview(updated,interaction.guild));
+            else await interaction.reply({content:'Solicitud rechazada. Se notificó a la persona.',flags:MessageFlags.Ephemeral});
         }
     }
 }
 
 async function dispatchInteraction(interaction, ...args) {
+    installPanelTransport(interaction);
     if (!interaction.guildId) return interaction.reply({ content: 'Usa este comando dentro de un servidor.', flags: 64 });
     const receivedAgeMs = Date.now() - interaction.createdTimestamp;
     if (receivedAgeMs > 2500) console.warn('[Late interaction]', { id: interaction.id, command: interaction.commandName,

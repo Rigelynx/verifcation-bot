@@ -154,7 +154,7 @@ function installPatrolRoutes(app, client, auth) {
             const channel = channelFor(req, event.registration_channel_id || event.target_channel_id);
             const payload = events.buildRegistrationPanel(event, eco.getEconomySettings(event.guild_id));
             const old = event.registration_message_id ? await channel.messages.fetch(event.registration_message_id).catch(() => null) : null;
-            const message = old ? await old.edit(payload) : await channel.send(payload);
+            const message = old ? await old.edit(require('../bot/utils/neutralPanels').normalizePanelUpdate(payload)) : await channel.send(payload);
             eco.setEventPhase(event.id, 'REGISTRATION', { registration_channel_id: channel.id, registration_message_id: message.id });
             actor(req, 'PUBLICAR_CONVOCATORIA_WEB', event, `Canal ${channel.id}, mensaje ${message.id}`);
             res.json({ success: true, message_id: message.id });

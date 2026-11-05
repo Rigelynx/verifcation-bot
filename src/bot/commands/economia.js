@@ -149,25 +149,7 @@ module.exports = {
         // ==========================================
         if (sub === 'balance') {
             const targetUser = interaction.options.getUser('usuario') || interaction.user;
-            const acc = economyDb.getAccount(targetUser.id, guildId);
-            const netWorth = acc.wallet + acc.bank;
-
-            const embed = new EmbedBuilder()
-                .setColor(0x38e54d)
-                .setTitle(`🎖️ [REGISTRO FINANCIERO // ${targetUser.tag.toUpperCase()}]`)
-                .setThumbnail(targetUser.displayAvatarURL())
-                .setDescription(`
-**Estado de Cuenta Oficial**
-Divisa Operativa: **${curName}** (\`${sym}\`)
-
-> 💵 **Cartera (Efectivo):** \`${sym}${acc.wallet.toLocaleString()}\`
-> 🏦 **Caja Fuerte (Banco):** \`${sym}${acc.bank.toLocaleString()}\` / \`${sym}${acc.bank_capacity.toLocaleString()}\`
-> 💎 **Patrimonio Neto Total:** \`${sym}${netWorth.toLocaleString()}\`
-                `)
-                .setFooter({ text: 'Sistema de Tesorería Comunidad • Cuartel General', iconURL: interaction.guild.iconURL() })
-                .setTimestamp();
-
-            return interaction.reply({ embeds: [embed] });
+            return interaction.reply(require('../utils/personalPanels').balancePanel(targetUser,guildId,targetUser.id===interaction.user.id));
         }
 
         // ==========================================
@@ -181,19 +163,7 @@ Divisa Operativa: **${curName}** (\`${sym}\`)
                 return interaction.reply({ content: `❌ ${res.message}`, flags: MessageFlags.Ephemeral });
             }
 
-            const embed = new EmbedBuilder()
-                .setColor(0x38e54d)
-                .setTitle('🏦 [DEPÓSITO BANCARIO CONFIRMADO]')
-                .setDescription(`
-Has resguardado **${sym}${res.deposited.toLocaleString()}** en la caja fuerte comunitario.
-Tus fondos están protegidos contra robos e incidentes.
-
-> 💵 **Efectivo Restante:** \`${sym}${res.account.wallet.toLocaleString()}\`
-> 🏦 **Nuevo Saldo Bancario:** \`${sym}${res.account.bank.toLocaleString()}\`
-                `)
-                .setFooter({ text: 'Banco Central Militar Comunidad' });
-
-            return interaction.reply({ embeds: [embed] });
+            return interaction.reply({embeds:[require('../utils/neutralPanels').receipt('Depósito completado',[{name:'Importe',value:`${sym}${res.deposited.toLocaleString('es-CO')}`},{name:'Cartera',value:`${sym}${res.account.wallet.toLocaleString('es-CO')}`},{name:'Banco',value:`${sym}${res.account.bank.toLocaleString('es-CO')}`}],guildId)],allowedMentions:{parse:[]}});
         }
 
         // ==========================================
@@ -207,18 +177,7 @@ Tus fondos están protegidos contra robos e incidentes.
                 return interaction.reply({ content: `❌ ${res.message}`, flags: MessageFlags.Ephemeral });
             }
 
-            const embed = new EmbedBuilder()
-                .setColor(0x38e54d)
-                .setTitle('💵 [RETIRO BANCARIO COMPLETADO]')
-                .setDescription(`
-Has retirado **${sym}${res.withdrawn.toLocaleString()}** de la caja fuerte a tu cartera.
-
-> 💵 **Efectivo en Mano:** \`${sym}${res.account.wallet.toLocaleString()}\`
-> 🏦 **Saldo Bancario:** \`${sym}${res.account.bank.toLocaleString()}\`
-                `)
-                .setFooter({ text: 'Banco Central Militar Comunidad' });
-
-            return interaction.reply({ embeds: [embed] });
+            return interaction.reply({embeds:[require('../utils/neutralPanels').receipt('Retiro completado',[{name:'Importe',value:`${sym}${res.withdrawn.toLocaleString('es-CO')}`},{name:'Cartera',value:`${sym}${res.account.wallet.toLocaleString('es-CO')}`},{name:'Banco',value:`${sym}${res.account.bank.toLocaleString('es-CO')}`}],guildId)],allowedMentions:{parse:[]}});
         }
 
         // ==========================================
@@ -240,17 +199,7 @@ Has retirado **${sym}${res.withdrawn.toLocaleString()}** de la caja fuerte a tu 
                 return interaction.reply({ content: `❌ ${res.message}`, flags: MessageFlags.Ephemeral });
             }
 
-            const embed = new EmbedBuilder()
-                .setColor(0x38e54d)
-                .setTitle('💸 [TRANSFERENCIA FINANCIERA COMPLETADA]')
-                .setDescription(`
-Has transferido **${sym}${amount.toLocaleString()}** en efectivo a <@${recipient.id}>.
-Transacción comunitario asentada en los registros del cuartel.
-                `)
-                .setFooter({ text: 'Tesorería Táctica Comunidad' })
-                .setTimestamp();
-
-            return interaction.reply({ embeds: [embed] });
+            return interaction.reply({embeds:[require('../utils/neutralPanels').receipt('Transferencia completada',[{name:'Destinatario',value:`<@${recipient.id}>`},{name:'Importe',value:`${sym}${amount.toLocaleString('es-CO')}`}],guildId)],allowedMentions:{parse:[]}});
         }
 
         // ==========================================
@@ -292,19 +241,8 @@ Transacción comunitario asentada en los registros del cuartel.
             ];
             const desc = workDescriptions[Math.floor(Math.random() * workDescriptions.length)];
 
-            const embed = new EmbedBuilder()
-                .setColor(0x38e54d)
-                .setTitle('🎖️ [TURNO DE SERVICIO CUMPLIDO]')
-                .setDescription(`
-${desc}
-
-> 💰 **Paga Base:** \`${sym}${baseEarn}\`
-> 🎖️ **Bono por Rango:** \`${bestRole.role_name}\` (x${bestRole.multiplier} + ${sym}${bestRole.flat_bonus})
-> 💵 **Pago Total Acreditado:** \`${sym}${totalEarn.toLocaleString()}\`
-                `)
-                .setFooter({ text: 'Paga de Servicio • Comunidad Base Defense' });
-
-            return interaction.reply({ embeds: [embed] });
+            const receipt=require('../utils/neutralPanels').receipt('Turno completado',[{name:'Pago recibido',value:`${sym}${totalEarn.toLocaleString('es-CO')}`},{name:'Paga base',value:`${sym}${baseEarn}`},{name:'Bonificación',value:`${bestRole.role_name||'Base'} · ×${bestRole.multiplier} + ${sym}${bestRole.flat_bonus}`,inline:false}],guildId).setDescription(desc);
+            return interaction.reply({embeds:[receipt],allowedMentions:{parse:[]}});
         }
 
         // ==========================================
@@ -459,8 +397,8 @@ Lograste sustraer **${sym}${stolen.toLocaleString()}** de la cartera de <@${targ
 
             const embed = new EmbedBuilder()
                 .setColor(0x38e54d)
-                .setTitle(`🏆 [ESCALAFÓN DE RIQUEZA MILITAR // TOP 10]`)
-                .setDescription(`Los 10 miembros y responsables con mayor patrimonio neto del cuartel:\n\n${lines.join('\n\n')}`)
+                .setTitle(`🏆 [CLASIFICACIÓN · PATRIMONIO]`)
+                .setDescription(`Los diez mayores patrimonios de este servidor:\n\n${lines.join('\n\n')}`)
                 .setFooter({ text: 'Tesorería Central Comunidad' })
                 .setTimestamp();
 

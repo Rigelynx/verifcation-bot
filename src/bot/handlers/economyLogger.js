@@ -40,7 +40,7 @@ async function sendAdminSecurityLog(logEntry) {
                 { name: '🎖️ Rango /Origen', value: `\`${logEntry.operator_rank || 'ALTO MANDO'}\``, inline: true },
                 { name: '🎯 Objetivo Afectado', value: logEntry.target_id ? `\`${logEntry.target_id}\`` : '`Sistema General`', inline: true }
             )
-            .setFooter({ text: `Auditoría Anti-Sabotaje USMC${logEntry.ip_address ? ` • IP: ${logEntry.ip_address}` : ''}` })
+            .setFooter({ text: `Auditoría de la comunidad${logEntry.ip_address ? ` • IP: ${logEntry.ip_address}` : ''}` })
             .setTimestamp();
 
         if (logEntry.details) {
@@ -175,7 +175,7 @@ async function sendEconomyLog({ discordId, type, amount, details = '', guildId =
             embed.setThumbnail(userAvatar);
         }
 
-        embed.setFooter({ text: 'Sistema de Tesorería y Auditoría Financiera • USMC Defense' });
+        embed.setFooter({ text: 'Tesorería · Registro financiero' });
         embed.setTimestamp();
 
         await channel.send({ embeds: [embed] }).catch(() => {});

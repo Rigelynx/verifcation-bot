@@ -28,37 +28,20 @@ function formatElapsedTime(startedAt) {
  * Construye el Panel Táctico de Servidores privados
  */
 function buildPrivateServersPanel(guildId = 'GLOBAL', page = 0) {
-    const servers = db.getPrivateServers(guildId);
-    const used = servers.filter(s => s.status === 'EN_USO').length;
-    const pages = Math.max(1, Math.ceil(servers.length / 4));
-    page = Math.min(Math.max(0, Number(page) || 0), pages - 1);
-    const visible = servers.slice(page * 4, page * 4 + 4);
-    const embed = new EmbedBuilder().setColor(used === servers.length && used ? 0xe56868 : 0x59c9a5)
-        .setTitle('🛰️ CENTRO DE DESPLIEGUE · EVENTOS')
-        .setDescription(`**${servers.length - used} disponibles**  ·  **${used} en uso**  ·  ${servers.length} registrados\nSelecciona un servidor de esta página para gestionar su despliegue.`)
-        .setFooter({ text: `Comunidad • Página ${page + 1}/${pages} • Estado registrado por los responsables` }).setTimestamp();
-    for (const srv of visible) {
-        const busy = srv.status === 'EN_USO';
-        const since = srv.started_at ? Math.floor(new Date(srv.started_at.replace(' ', 'T') + (srv.started_at.endsWith('Z') ? '' : 'Z')).getTime() / 1000) : null;
-        embed.addFields({ name: `${busy ? '🔴 EN USO' : '🟢 DISPONIBLE'}  ┃  #${srv.id} · ${srv.server_name}`.slice(0, 256),
-            value: [`**AO:** ${String(srv.sector_map || 'Sin asignar').slice(0, 120)}`,
-                `**Código VIP:** \`${String(srv.server_code || 'Sin configurar').replace(/`/g, '').slice(0, 150)}\``,
-                busy ? `**Mando:** ${srv.current_officer_id ? `<@${srv.current_officer_id}>` : srv.current_officer_name || 'Administración'}` : null,
-                busy ? `**Misión:** ${String(srv.current_mission || 'Despliegue').slice(0, 180)}` : String(srv.notes || 'Listo para desplegar.').slice(0, 160),
-                busy && since ? `**Inicio:** <t:${since}:R>${srv.current_event_id ? ` · Evento #${srv.current_event_id}` : ''}` : null].filter(Boolean).join('\n'), inline: false });
-    }
-    if (!visible.length) embed.addFields({ name: 'Sin servidores registrados', value: 'Administración puede registrar el primer servidor con `/servidor agregar` o desde la web.' });
-    const components = [];
-    if (visible.length) components.push(new ActionRowBuilder().addComponents(new StringSelectMenuBuilder()
-        .setCustomId('srv_quick_toggle_select').setPlaceholder('Gestionar servidor…')
-        .addOptions(visible.map(s => ({ label: `#${s.id} · ${s.server_name}`.slice(0, 100), value: String(s.id),
-            description: s.status === 'EN_USO' ? 'Ver ocupación / liberar con autorización' : 'Ocupar para una misión', emoji: s.status === 'EN_USO' ? '🔴' : '🟢' })))));
-    components.push(new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId(`srv_page_${page - 1}`).setLabel('Anterior').setStyle(ButtonStyle.Secondary).setDisabled(page === 0),
-        new ButtonBuilder().setCustomId('srv_board_refresh').setLabel('Actualizar').setEmoji('🔄').setStyle(ButtonStyle.Secondary),
-        new ButtonBuilder().setCustomId(`srv_page_${page + 1}`).setLabel('Siguiente').setStyle(ButtonStyle.Secondary).setDisabled(page === pages - 1),
-        new ButtonBuilder().setCustomId('srv_release_all_mine').setLabel('Liberar mis servidores').setStyle(ButtonStyle.Success)));
-    return { embeds: [embed], components, allowedMentions: { parse: [] } };
+    const {nativePanel}=require('../utils/neutralPanels');
+    const servers=db.getPrivateServers(guildId),used=servers.filter(server=>server.status==='EN_USO').length;
+    const pages=Math.max(1,Math.ceil(servers.length/3));page=Math.min(Math.max(0,Math.floor(Number(page)||0)),pages-1);
+    const visible=servers.slice(page*3,page*3+3);
+    return nativePanel({guildId,kind:'servers',hero:true,title:'Centro de despliegue',
+        description:`**${servers.length-used} disponibles** · **${used} en uso** · ${servers.length} registrados`,
+        cards:visible.length?visible.map(server=>({title:`${server.status==='EN_USO'?'🔴':'🟢'} ${String(server.server_name).slice(0,80)}`,
+            text:`**Estado:** ${server.status==='EN_USO'?'En uso':'Disponible'}\n**Zona:** ${String(server.sector_map||'Sin asignar').slice(0,100)}\n${server.status==='EN_USO'?`**Responsable:** ${server.current_officer_id?'<@'+server.current_officer_id+'>':server.current_officer_name||'Sin asignar'}\n**Misión:** ${String(server.current_mission||'Sin especificar').slice(0,160)}\n**Desde:** ${formatElapsedTime(server.started_at)}`:String(server.notes||'Listo para una nueva misión.').slice(0,160)}`,
+            button:new ButtonBuilder().setCustomId(`srv_details_${server.id}`).setLabel('Detalles').setStyle(ButtonStyle.Secondary)})):[{title:'Sin servidores registrados',text:'Administración puede registrar uno desde la web o con /servidor agregar.'}],
+        footer:`Página ${page+1}/${pages} · Los códigos de acceso se muestran de forma privada a responsables.`,
+        rows:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`srv_page_${page-1}`).setLabel('Anterior').setStyle(ButtonStyle.Secondary).setDisabled(page===0),
+            new ButtonBuilder().setCustomId('srv_board_refresh').setLabel('Actualizar').setStyle(ButtonStyle.Secondary),
+            new ButtonBuilder().setCustomId(`srv_page_${page+1}`).setLabel('Siguiente').setStyle(ButtonStyle.Secondary).setDisabled(page===pages-1)),
+            new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('srv_release_all_mine').setLabel('Liberar mis servidores').setStyle(ButtonStyle.Secondary))]});
 }
 
 /**
@@ -77,7 +60,7 @@ async function refreshPublicServerBoard(client, guildId = 'GLOBAL') {
         if (!message) return false;
 
         const panel = buildPrivateServersPanel(guildId);
-        await message.edit(panel);
+        await message.edit(require('../utils/neutralPanels').normalizePanelUpdate(panel));
         return true;
     } catch (e) {
         console.error('[Server board]', e.message);
@@ -147,7 +130,7 @@ module.exports = {
                 const ref = db.getServerBoardMessage(guildId);
                 const existing = ref?.board_channel_id === interaction.channelId
                     ? await interaction.channel.messages.fetch(ref.board_message_id).catch(() => null) : null;
-                const sent = existing ? await existing.edit(panel) : await interaction.channel.send(panel);
+                const sent = existing ? await existing.edit(require('../utils/neutralPanels').normalizePanelUpdate(panel)) : await interaction.channel.send(panel);
                 db.saveServerBoardMessage(guildId, interaction.channel.id, sent.id);
                 let pinWarning = '';
                 if (!sent.pinned) await sent.pin().catch(() => { pinWarning = '\nNo pude anclarlo; revisa mi permiso para fijar mensajes.'; });
@@ -156,7 +139,7 @@ module.exports = {
                 });
             }
 
-            return interaction.reply({ ...panel, flags: MessageFlags.Ephemeral });
+            return interaction.reply({ ...panel, flags: Number(panel.flags||0)|MessageFlags.Ephemeral });
         }
 
         if (sub === 'ocupar') {

@@ -1,0 +1,197 @@
+{
+  "flags": 32768,
+  "components": [
+    {
+      "type": 17,
+      "accent_color": 8890027,
+      "components": [
+        {
+          "type": 12,
+          "items": [
+            {
+              "media": {
+                "url": "attachment://shop-header-neutral.png"
+              },
+              "description": "Intendencia · Tu comunidad"
+            }
+          ]
+        },
+        {
+          "type": 10,
+          "content": "-# Tu comunidad  /  TODO EL CATÁLOGO\nTu próximo equipo, a un paso. Consulta la ficha antes de adquirirlo."
+        }
+      ]
+    },
+    {
+      "type": 17,
+      "accent_color": 8890027,
+      "components": [
+        {
+          "type": 9,
+          "components": [
+            {
+              "type": 10,
+              "content": "### 📝 Inscripción y acreditación\n**GRATIS**\nCompleta el cuestionario de ingreso. El equipo de Staff revisará tu solicitud.\n-# Stock ilimitado · Sin límite de compra"
+            }
+          ],
+          "accessory": {
+            "type": 2,
+            "custom_id": "buy_shop_1",
+            "label": "Ver ficha",
+            "style": 1,
+            "disabled": false
+          }
+        }
+      ]
+    },
+    {
+      "type": 17,
+      "accent_color": 8890027,
+      "components": [
+        {
+          "type": 9,
+          "components": [
+            {
+              "type": 10,
+              "content": "### 🎒 Kit de suministros · Operación\n**$800**\nVíveres, agua, munición de reserva y botiquín personal para una operación larga.\n-# Stock ilimitado · Sin límite de compra"
+            }
+          ],
+          "accessory": {
+            "type": 2,
+            "custom_id": "buy_shop_2",
+            "label": "Ver ficha",
+            "style": 1,
+            "disabled": false
+          }
+        }
+      ]
+    },
+    {
+      "type": 17,
+      "accent_color": 8890027,
+      "components": [
+        {
+          "type": 9,
+          "components": [
+            {
+              "type": 10,
+              "content": "### 🚙 Licencia de conducir · Terrestre (B)\n**$1.200**\nPermite conducir vehículos ligeros y camiones de transporte en convoyes y despliegues.\n-# Stock ilimitado · Máx. 1 por persona"
+            }
+          ],
+          "accessory": {
+            "type": 2,
+            "custom_id": "buy_shop_3",
+            "label": "Ver ficha",
+            "style": 1,
+            "disabled": false
+          }
+        }
+      ]
+    },
+    {
+      "type": 17,
+      "components": [
+        {
+          "type": 10,
+          "content": "-# 16 ARTÍCULOS  ·  PÁGINA 1 / 6  ·  CRÉDITOS"
+        },
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 3,
+              "custom_id": "shop_category",
+              "placeholder": "Explorar el almacén",
+              "options": [
+                {
+                  "label": "Todo el catálogo (16)",
+                  "value": "all",
+                  "default": true
+                },
+                {
+                  "label": "Artículos con roles (0)",
+                  "value": "ranks",
+                  "default": false
+                },
+                {
+                  "label": "Artículos sin roles (16)",
+                  "value": "supplies",
+                  "default": false
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 2,
+              "emoji": {
+                "name": "◀️",
+                "animated": false
+              },
+              "custom_id": "shop_page_0_all",
+              "label": "Anterior",
+              "style": 2,
+              "disabled": true
+            },
+            {
+              "type": 2,
+              "custom_id": "shop_indicator",
+              "label": "1 / 6",
+              "style": 2,
+              "disabled": true
+            },
+            {
+              "type": 2,
+              "emoji": {
+                "name": "▶️",
+                "animated": false
+              },
+              "custom_id": "shop_page_2_all",
+              "label": "Siguiente",
+              "style": 2,
+              "disabled": false
+            }
+          ]
+        },
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 2,
+              "emoji": {
+                "name": "💳",
+                "animated": false
+              },
+              "custom_id": "btn_view_shop_balance",
+              "label": "Mi saldo",
+              "style": 2
+            },
+            {
+              "type": 2,
+              "emoji": {
+                "name": "🎒",
+                "animated": false
+              },
+              "custom_id": "btn_view_my_inventory",
+              "label": "Mi inventario",
+              "style": 2
+            },
+            {
+              "type": 2,
+              "emoji": {
+                "name": "🔄",
+                "animated": false
+              },
+              "custom_id": "shop_refresh_1_all",
+              "label": "Actualizar",
+              "style": 2
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

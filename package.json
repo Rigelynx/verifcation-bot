@@ -13,7 +13,8 @@
     "test:shop": "node --test test/shop-presentation.test.js test/assistant-bot-commands.test.js",
     "backup": "node scripts/backup.js",
     "test:multiserver": "node --test test/multiserver.test.js test/portal-owner.test.js test/discord-web.test.js test/tactical.test.js test/assistant.test.js test/assistant-transport.test.js test/assistant-management.test.js test/assistant-conversations.test.js test/protocol-catalog.test.js test/assistant-attachments.test.js",
-    "test:assistant-web": "node --test test/on-demand-web.test.js test/assistant.test.js test/assistant-transport.test.js test/assistant-attachments.test.js"
+    "test:assistant-web": "node --test test/on-demand-web.test.js test/assistant.test.js test/assistant-transport.test.js test/assistant-attachments.test.js",
+    "test:panels": "node --test test/neutral-panels.test.js test/tactical.test.js test/discord-web.test.js test/assistant-bot-commands.test.js test/multiserver.test.js"
   },
   "keywords": [
     "discord",
@@ -28,7 +29,7 @@
   "license": "ISC",
   "dependencies": {
     "cors": "^2.8.5",
-    "discord.js": "^14.16.3",
+    "discord.js": "^14.27.0",
     "dotenv": "^16.4.5",
     "express": "^4.21.1",
     "better-sqlite3": "^11.3.0"

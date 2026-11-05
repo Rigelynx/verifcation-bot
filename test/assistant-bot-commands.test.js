@@ -36,7 +36,7 @@ test('executes the existing economy handler and returns its private response', a
     const result = await run('economia:balance');
     assert.equal(result.execution_status, 'RESPONDED', result.error);
     assert.equal(result.changed, false);
-    assert.ok(result.responses[0].embeds.length);
+    assert.match(result.responses[0].content,/Cartera/);
     assert.equal(audits.length, 2);
 });
 test('same arguments execute only once within a request, including reordered options', async () => {
@@ -211,8 +211,11 @@ test('publishing verification panel keeps real action buttons and suppresses men
     channel.send = async value => { payload = value; return { id: '300000000000000002' }; };
     const result = await shop('publish_panel', { kind: 'verification', channel_id: CHANNEL, title: 'Bienvenidos', color: '#123456' });
     assert.equal(result.sent, true);
-    assert.equal(payload.embeds[0].toJSON().title, 'Bienvenidos');
-    assert.equal(payload.components[0].toJSON().components[0].custom_id, 'btn_start_verification');
+    const walk=node=>[node,...(node.components||[]).flatMap(walk)];
+    const nodes=payload.components.map(row=>row.toJSON()).flatMap(walk);
+    assert.ok(nodes.some(node=>node.content?.includes('Bienvenidos')));
+    assert.ok(nodes.some(node=>node.custom_id==='btn_start_verification'));
+    assert.equal(payload.flags,32768);
     assert.deepEqual(payload.allowedMentions, { parse: [] });
     assert.match(result.url, /300000000000000002$/);
 });
@@ -243,4 +246,20 @@ test('shop plans preserve nested fields and audit failures retain successful mut
     assert.ok(result.audit_warning);
     const replay = await shop('configure_shop_item', actions[0].args);
     assert.equal(replay.id, result.id);
+});
+
+test('native shop panels publish and edit nested cards while preserving flags and attachment migration',async()=>{
+    let published,edited;
+    channel.send=async payload=>{published=payload;return{id:'300000000000000002'};};
+    await shop('publish_panel',{kind:'shop',channel_id:CHANNEL,title:'Almacén P.A.F.',color:'#cf3b50'});
+    assert.equal(published.flags,32768);assert.equal(published.components[0].toJSON().accent_color,0xcf3b50);
+    assert.equal(published.embeds,undefined);assert.equal(published.files.length,1);
+    channel.messages={fetch:async()=>({id:'300000000000000002',author:{id:BOT},embeds:[],components:published.components.map(component=>component.toJSON()),edit:async payload=>{edited=payload;return{id:'300000000000000002'};}})};
+    const result=await shop('publish_panel',{kind:'shop',channel_id:CHANNEL,message_id:'300000000000000002'});
+    assert.equal(result.updated,true);assert.equal(edited.flags,32768);assert.equal(edited.content,null);assert.deepEqual(edited.embeds,[]);assert.deepEqual(edited.attachments,[]);
+});
+test('command receipts include text from native shop cards without exposing uploaded file bytes',async()=>{
+    const result=await run('tienda:panel');
+    assert.equal(result.execution_status,'RESPONDED');assert.ok(result.responses[0].content.includes('CATÁLOGO'));
+    assert.equal(result.responses[0].files,undefined);
 });

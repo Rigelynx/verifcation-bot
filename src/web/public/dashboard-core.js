@@ -33,7 +33,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             localStorage.setItem('usmc_operator_id', urlOpId);
         }
         if (urlSession || urlOpName) {
-            window.history.replaceState({}, document.title, window.location.pathname);
+            params.delete('session');params.delete('op_name');params.delete('op_id');
+            window.history.replaceState({}, document.title, window.location.pathname+(params.size?'?'+params.toString():''));
         }
     } catch (e) {}
 })();

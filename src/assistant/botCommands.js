@@ -58,7 +58,9 @@ function validateCommand(args) {
 function json(value) { return value?.toJSON ? value.toJSON() : value; }
 function responseData(payload) {
     if (typeof payload === 'string') return { content: payload };
-    return { content: payload.content || '', embeds: (payload.embeds || []).map(json),
+    const text=node=>[node.content,...(node.components||[]).flatMap(text)].filter(Boolean);
+    const componentText=(payload.components||[]).map(json).flatMap(text).join('\n');
+    return { content: payload.content || componentText, embeds: (payload.embeds || []).map(json),
         controls: (payload.components || []).map(json) };
 }
 const stable = value => value && typeof value === 'object'

@@ -4,6 +4,7 @@ window.DiscordWeb = {
         const link = document.getElementById('discord-admin-login');
         try {
             const config = await fetch('/api/auth/config?next=%2Fadmin').then(res => res.json());
+            if(config.login_url)link.href=config.login_url;
             link.hidden = !config.enabled;
             document.getElementById('login-form').hidden = !config.legacy_allowed;
             const error = new URLSearchParams(location.search).get('auth_error');

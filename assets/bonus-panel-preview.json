@@ -1,0 +1,67 @@
+{
+  "flags": 32768,
+  "components": [
+    {
+      "type": 17,
+      "accent_color": 8890027,
+      "components": [
+        {
+          "type": 12,
+          "items": [
+            {
+              "media": {
+                "url": "attachment://panel-header-bonus.png"
+              },
+              "description": "Cabecera del panel"
+            }
+          ]
+        },
+        {
+          "type": 10,
+          "content": "-# Tu comunidad\n## Bono de servicio\nUna recompensa para el personal de la comunidad."
+        }
+      ]
+    },
+    {
+      "type": 17,
+      "accent_color": 8890027,
+      "components": [
+        {
+          "type": 10,
+          "content": "### $1.500 por persona\n**Frecuencia:** Cada 1 día\n**Estado del panel:** Activo\n**Destino:** Tu cartera"
+        }
+      ]
+    },
+    {
+      "type": 17,
+      "components": [
+        {
+          "type": 10,
+          "content": "-# El sistema comprueba tus requisitos y el próximo reclamo antes de acreditar el bono."
+        },
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 2,
+              "emoji": {
+                "name": "🎁",
+                "animated": false
+              },
+              "custom_id": "claim_bonus_panel_1",
+              "label": "Reclamar bono",
+              "style": 3,
+              "disabled": false
+            },
+            {
+              "type": 2,
+              "custom_id": "bonus_info_1",
+              "label": "Ver condiciones",
+              "style": 2
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

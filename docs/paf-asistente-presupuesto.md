@@ -10,7 +10,9 @@ La IA solo consulta el proveedor cuando una cuenta autorizada envía una petici�
 
 En **Configuración → Identidad de tu comunidad**, selecciona **P.A.F. · Polish Armed Forces** y guarda. El preset prepara nombre, siglas, rojo polaco, escudo ilustrado y portada propios. Puedes sustituir las imágenes por las de tu comunidad. Se guarda solo en el servidor seleccionado; el formulario de verificación también recibe esta identidad.
 
-La IA puede aplicar el mismo cambio con configure_branding si se lo pides. Puede modificar opciones y contenido compatibles con las herramientas, no reescribir código fuente del servidor ni hojas de estilo arbitrarias desde el chat.
+La tienda de Discord tiene su propio selector en Configuración > Identidad > Diseño de tienda · Discord: Neutral, USMC, BAF, PAF y UKAF. Guarda y pulsa Actualizar en el panel de tienda; la elección es independiente por servidor.
+
+La IA puede aplicar el mismo cambio con configure_branding si se lo pides (shop_theme para la tienda). Puede modificar opciones y contenido compatibles con las herramientas, no reescribir código fuente del servidor ni hojas de estilo arbitrarias desde el chat.
 
 ## Herramientas
 

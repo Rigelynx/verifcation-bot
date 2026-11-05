@@ -37,3 +37,5 @@ body.field-journal[data-community-theme="paf"] .retro-table tr:hover td{backgrou
 body[data-community-theme="paf"] .hero-scene{object-position:center}
 body[data-community-theme="paf"] .branding-fields :is(input,select){background:#202228;border-color:#65525c}
 .weekly-budget{margin:28px 0;padding:24px;border:1px solid var(--border-light,#53604e);border-radius:12px}.weekly-budget h3{font-size:24px}.weekly-budget p{line-height:1.6}.weekly-budget form{margin:20px 0}.weekly-budget button{margin:6px}.weekly-budget hr{border:0;border-top:1px solid var(--border-light,#53604e)}
+.shop-theme-preview{grid-column:1/-1;padding:12px;border:1px solid var(--border-light,#53604e);border-radius:10px;background:#171b21}.shop-theme-preview img{display:block;width:100%;max-width:720px;height:auto;border-radius:6px}.shop-theme-preview p{font-size:12px;line-height:1.6;margin:10px 0 0;color:#b7c1cb}
+.shop-theme-preview label{display:flex;flex-direction:row;align-items:center;gap:10px;margin-top:12px}.shop-theme-preview input[type=checkbox]{width:18px;flex:0 0 18px;accent-color:var(--community-accent,#87a6ab)}

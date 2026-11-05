@@ -1,17 +1,22 @@
 const store = require('./db');
+// Complete economy schema migrations before ensureCommunity opens its transaction.
+const eco = require('./economyDb');
 const { withGuild } = require('./guildContext');
 const { db } = store;
 const { policySeeds } = require('../assistant/capabilities');
+const {shopThemes}=require('../shared/shopThemes');
 db.exec(`CREATE TABLE IF NOT EXISTS community_profiles (
     guild_id TEXT PRIMARY KEY, display_name TEXT NOT NULL DEFAULT 'Comunidad', short_name TEXT NOT NULL DEFAULT '',
     theme TEXT NOT NULL DEFAULT 'neutral', accent TEXT NOT NULL DEFAULT '#b8cba6', logo_url TEXT NOT NULL DEFAULT '',
-    banner_url TEXT NOT NULL DEFAULT '/media/coastal-command.png',
+    banner_url TEXT NOT NULL DEFAULT '/media/coastal-command.png', shop_theme TEXT NOT NULL DEFAULT 'neutral', panel_theme TEXT NOT NULL DEFAULT 'neutral',
     assistant_enabled INTEGER NOT NULL DEFAULT 0, assistant_provider TEXT, assistant_model TEXT,
     assistant_daily_limit INTEGER, assistant_allowed_ids TEXT,
     assistant_create_channels INTEGER NOT NULL DEFAULT 1, assistant_create_roles INTEGER NOT NULL DEFAULT 1,
     updated_at TEXT DEFAULT CURRENT_TIMESTAMP
 )`);
 const profileColumns = new Set(db.prepare('PRAGMA table_info(community_profiles)').all().map(column => column.name));
+if(!profileColumns.has('shop_theme')) db.exec("ALTER TABLE community_profiles ADD COLUMN shop_theme TEXT NOT NULL DEFAULT 'neutral'");
+if(!profileColumns.has('panel_theme')) db.exec("ALTER TABLE community_profiles ADD COLUMN panel_theme TEXT NOT NULL DEFAULT 'neutral'");
 for (const [key, source] of Object.entries(policySeeds)) {
     const column = `assistant_${key}`;
     if (profileColumns.has(column)) continue;
@@ -39,7 +44,6 @@ function ensureCommunity(guildId, name = 'Comunidad') {
             db.prepare("INSERT INTO community_profiles(guild_id,display_name,theme,assistant_enabled,assistant_provider) VALUES (?,?,?,?,'deepseek')")
                 .run(guildId, String(name).slice(0, 100), original ? 'usmc' : 'neutral', original && process.env.ASSISTANT_ENABLED === 'true' ? 1 : 0);
             store.getConfig(guildId);
-            const eco = require('./economyDb');
             eco.getEconomySettings(guildId);
             const permissions = new Set(eco.getCommandPermissions().map(row => row.command_name));
             for (const key of require('./commandCatalog')) if (!permissions.has(key)) eco.updateCommandPermission(key, true, []);
@@ -58,15 +62,19 @@ function ensureCommunity(guildId, name = 'Comunidad') {
     });
 }
 function updateBranding(guildId, data) {
-    ensureCommunity(guildId);
+    const previous=ensureCommunity(guildId);
+    const panelTheme=data.panel_theme===undefined?previous.panel_theme:data.panel_theme;
+    if(typeof panelTheme!=='string'||!Object.hasOwn(shopThemes,panelTheme))throw new Error('Paleta de paneles inválida.');
+    const shopTheme=data.shop_theme===undefined?previous.shop_theme:data.shop_theme;
+    if(typeof shopTheme!=='string'||!Object.hasOwn(shopThemes,shopTheme))throw new Error('Diseño de tienda inválido.');
     if (!['neutral', 'usmc', 'ukaf', 'paf', 'custom'].includes(data.theme)) throw new Error('Tema inválido.');
     if (!/^#[0-9a-f]{6}$/i.test(data.accent || '')) throw new Error('El color debe tener formato #RRGGBB.');
     const name = String(data.display_name || '').trim().slice(0, 100);
     if (!name) throw new Error('El nombre de la comunidad es obligatorio.');
     const logo=data.theme==='paf'&&!data.logo_url?'/media/paf-crest.svg':data.logo_url;
     const banner=data.theme==='paf'&&(!data.banner_url||data.banner_url==='/media/coastal-command.png')?'/media/paf-banner.svg':data.banner_url;
-    db.prepare(`UPDATE community_profiles SET display_name=?, short_name=?, theme=?, accent=?, logo_url=?, banner_url=?, updated_at=CURRENT_TIMESTAMP WHERE guild_id=?`)
-        .run(name, String(data.short_name || '').trim().slice(0, 16), data.theme, data.accent, safeImage(logo), safeImage(banner), guildId);
+    db.prepare(`UPDATE community_profiles SET display_name=?, short_name=?, theme=?, accent=?, logo_url=?, banner_url=?, shop_theme=?, panel_theme=?, updated_at=CURRENT_TIMESTAMP WHERE guild_id=?`)
+        .run(name, String(data.short_name || '').trim().slice(0, 16), data.theme, data.accent, safeImage(logo), safeImage(banner),shopTheme,panelTheme, guildId);
     return ensureCommunity(guildId);
 }
 function updateAssistant(guildId, data) {
@@ -86,5 +94,5 @@ function updateAssistant(guildId, data) {
         .run(data.enabled === true ? 1 : 0, 'deepseek', model || null, limit, JSON.stringify(ids), data.create_channels === true ? 1 : 0, data.create_roles === true ? 1 : 0, ...capabilities, guildId);
     return ensureCommunity(guildId);
 }
-function publicProfile(profile) { const { display_name, short_name, theme, accent, logo_url, banner_url, guild_id } = profile; return { display_name, short_name, theme, accent, logo_url, banner_url, guild_id }; }
+function publicProfile(profile) { const { display_name, short_name, theme, accent, logo_url, banner_url, guild_id,shop_theme,panel_theme } = profile; return { display_name, short_name, theme, accent, logo_url, banner_url, guild_id,shop_theme,panel_theme }; }
 module.exports = { ensureCommunity, updateBranding, updateAssistant, publicProfile };

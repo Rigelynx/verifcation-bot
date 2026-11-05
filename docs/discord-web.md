@@ -24,7 +24,7 @@ Los enlaces no conceden permisos por sí solos. La sesión de un oficial permite
 | `/patrullas` | Oficiales / administradores según la autorización existente | Ver eventos activos y recientes, gestionar operaciones propias |
 | `/admin` | Alto Mando / administrador autorizado | Panel administrativo completo |
 
-Las sesiones duran cuatro horas. Las cookies son HttpOnly, SameSite=Lax y Secure con HTTPS. La base guarda un hash de la sesión, no el token OAuth de Discord. Los permisos se comprueban con el bot en cada solicitud protegida; las mutaciones requieren CSRF y rechazan orígenes ajenos.
+Las sesiones se recuerdan durante 30 días de inactividad por defecto, con renovación periódica al usar el sitio. WEB_SESSION_DAYS permite elegir entre 1 y 90 días. El mismo navegador reutiliza su sesión al abrir el panel desde Discord; al cerrar sesión o vencer el plazo se solicita iniciar de nuevo. Las cookies son HttpOnly, SameSite=Lax y Secure con HTTPS. La base guarda un hash de la sesión, no el token OAuth de Discord. Los permisos se comprueban con el bot en cada solicitud protegida; las mutaciones requieren CSRF y rechazan orígenes ajenos.
 
 Si OAuth2 no está configurado, la verificación por enlace personal y el acceso administrativo anterior siguen funcionando. Una vez configurado, la verificación exige la cuenta dueña del enlace y se deshabilita el acceso administrativo anterior. `ADMIN_LEGACY_LOGIN=true` permite habilitarlo expresamente como recuperación.
 

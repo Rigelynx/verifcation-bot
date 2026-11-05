@@ -24,6 +24,10 @@ function safeTarget(value) {
     if (typeof value !== 'string' || !/^\/(owner|portal|admin|asistente|patrullas|verify(?:\/[A-Za-z0-9_-]+)?)(?:\?guild=\d{17,20})?$/.test(value)) return '/patrullas';
     return value;
 }
+function sessionDurationMs(env=process.env){
+    const days=Number(env.WEB_SESSION_DAYS);
+    return (Number.isFinite(days)&&days>=1?Math.min(90,days):30)*86400000;
+}
 function installDiscordAuth(app, client, options = {}) {
     const httpFetch = options.oauthFetch || globalThis.fetch;
     db.db.exec(`CREATE TABLE IF NOT EXISTS discord_login_states (
@@ -47,12 +51,18 @@ function installDiscordAuth(app, client, options = {}) {
         const session = db.db.prepare('SELECT * FROM discord_web_sessions WHERE token_hash = ? AND expires_at > ?')
             .get(hash(token), Date.now());
         if (!session) return null;
-        return { id: session.discord_id, username: session.username, avatar: session.avatar, csrf: session.csrf_token, guildId: session.guild_id };
+        return { id: session.discord_id, username: session.username, avatar: session.avatar, csrf: session.csrf_token, guildId: session.guild_id,sessionExpiresAt:session.expires_at };
+    }
+    function renewSession(req,res){
+        const user=account(req);if(!user)return;
+        const duration=sessionDurationMs(),now=Date.now(),refreshInterval=Math.min(86400000,duration/2);
+        if(user.sessionExpiresAt>=now+duration-refreshInterval)return;
+        const changed=db.db.prepare('UPDATE discord_web_sessions SET expires_at=? WHERE token_hash=? AND expires_at>?').run(now+duration,hash(cookie(req,'usmc_discord')),now);
+        if(changed.changes)res.cookie('usmc_discord',cookie(req,'usmc_discord'),{...cookieOptions(),maxAge:duration});
     }
     async function identity(req, requiredGuild = null) {
         const accountUser = account(req);
         if (!accountUser) return null;
-        const token = cookie(req, 'usmc_discord');
         const selected = requiredGuild || req.headers['x-guild-id'] || req.query?.guild || accountUser.guildId;
         if (!/^\d{17,20}$/.test(String(selected || ''))) { const error = new Error('Elige una comunidad desde Mi espacio.'); error.status = 400; throw error; }
         const session = { discord_id: accountUser.id, guild_id: String(selected), username: accountUser.username, avatar: accountUser.avatar, csrf_token: accountUser.csrf };
@@ -62,7 +72,7 @@ function installDiscordAuth(app, client, options = {}) {
         let member;
         try { member = await guild.members.fetch({ user: session.discord_id, force: true }); }
         catch (error) {
-            if (error.code === 10007) { db.db.prepare('DELETE FROM discord_web_sessions WHERE token_hash = ?').run(hash(token)); return null; }
+            if (error.code === 10007) { const failure=new Error('Tu cuenta no pertenece a esta comunidad. Puedes seleccionar otra desde Mi espacio.');failure.status=403;throw failure; }
             const failure = new Error('No pude comprobar tus roles en Discord. Reintenta en unos segundos.'); failure.status = 503; throw failure;
         }
         const interaction = { guild, guildId: guild.id, member, user: { id: session.discord_id } };
@@ -85,6 +95,7 @@ function installDiscordAuth(app, client, options = {}) {
                 if (!user) return res.status(401).json({ success: false, message: 'Inicia sesión con Discord.', login_url: loginUrl('/portal') });
                 if (level !== 'member' && !user.access[level]) return res.status(403).json({ success: false, message: 'Tu rol no tiene acceso a esta sección.' });
                 if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !csrf(req, user)) return res.status(403).json({ success: false, message: 'La sesión del formulario cambió. Recarga la página antes de guardar.' });
+                renewSession(req,res);
                 req.discordIdentity = user;
                 req.guildId = user.guildId;
                 req.adminOperator = { operator_name: user.username, discord_id: user.id, operator_rank: user.access.admin ? 'ALTO MANDO DISCORD' : 'OFICIAL DISCORD', ip_address: req.ip };
@@ -101,8 +112,10 @@ function installDiscordAuth(app, client, options = {}) {
             login_url: loginUrl(target.pathname + target.search), setup_required: !config.enabled });
     });
     app.get('/auth/discord', (req, res) => {
+        res.set('Cache-Control','no-store');
         const config = oauthConfig();
         if (!config.enabled) return res.status(503).send('El inicio con Discord requiere CLIENT_ID, DISCORD_CLIENT_SECRET y WEB_URL con una dirección HTTP o HTTPS válida.');
+        if(account(req)){renewSession(req,res);return res.redirect(safeTarget(req.query.next));}
         const state = random();
         db.db.prepare('DELETE FROM discord_login_states WHERE expires_at < ?').run(Date.now());
         db.db.prepare('INSERT INTO discord_login_states VALUES (?, ?, ?)').run(hash(state), safeTarget(req.query.next), Date.now() + 300000);
@@ -134,8 +147,8 @@ function installDiscordAuth(app, client, options = {}) {
             const avatar = user.avatar && /^[a-zA-Z0-9_]+$/.test(user.avatar) ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png` : 'https://cdn.discordapp.com/embed/avatars/0.png';
             db.db.prepare('DELETE FROM discord_web_sessions WHERE expires_at < ?').run(Date.now());
             db.db.prepare('INSERT INTO discord_web_sessions VALUES (?, ?, ?, ?, ?, ?, ?)').run(hash(token), user.id,
-                selectedGuild, member?.nick || user.global_name || user.username, avatar, csrfToken, Date.now() + 4 * 3600000);
-            res.cookie('usmc_discord', token, { ...cookieOptions(), maxAge: 4 * 3600000 });
+                selectedGuild, member?.nick || user.global_name || user.username, avatar, csrfToken, Date.now() + sessionDurationMs());
+            res.cookie('usmc_discord', token, { ...cookieOptions(), maxAge: sessionDurationMs() });
             // Authentication is global to the account. Record it in a community only
             // after Discord confirms membership of that requested community.
             const targetGuild = client?.isReady() && client.guilds.cache.get(selectedGuild);
@@ -155,6 +168,7 @@ function installDiscordAuth(app, client, options = {}) {
         try {
             const user = await identity(req);
             if (!user) return res.status(401).json({ success: false });
+            renewSession(req,res);
             res.json({ success: true, guild: { id: user.guildId, name: user.guild.name }, user: { id: user.id, name: user.username, avatar: user.avatar }, access: user.access, csrf_token: user.csrf });
         } catch (error) { res.status(error.status || 503).json({ success: false, message: error.message }); }
     });
@@ -166,7 +180,7 @@ function installDiscordAuth(app, client, options = {}) {
         res.clearCookie('usmc_discord', cookieOptions());
         res.json({ success: true });
     });
-    return { account, identity, csrf, loginUrl, requireAccess, config: oauthConfig, hasCookie: req => Boolean(cookie(req, 'usmc_discord')) };
+    return { account, identity, csrf, loginUrl, requireAccess,renewSession, config: oauthConfig, hasCookie: req => Boolean(cookie(req, 'usmc_discord')) };
 }
 
-module.exports = { installDiscordAuth, oauthConfig };
+module.exports = { installDiscordAuth, oauthConfig,sessionDurationMs };

@@ -13,7 +13,7 @@ function installCommunityRoutes(app, auth) {
     app.put('/api/admin/branding', auth.requireAccess('admin'), (req, res) => {
         try {
             const profile = community.updateBranding(req.guildId, req.body);
-            db.addAdminAuditLog(req.adminOperator, 'EDITAR_IDENTIDAD', req.guildId, `Identidad: ${profile.display_name}; tema=${profile.theme}`);
+            db.addAdminAuditLog(req.adminOperator, 'EDITAR_IDENTIDAD', req.guildId, `Identidad: ${profile.display_name}; tema=${profile.theme}; tienda=${profile.shop_theme}`);
             res.json({ success: true, profile: community.publicProfile(profile) });
         } catch (error) { res.status(400).json({ success: false, message: error.message }); }
     });

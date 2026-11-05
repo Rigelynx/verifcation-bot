@@ -1,5 +1,6 @@
 const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
+const crypto=require('node:crypto');
 const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
 const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'usmc-discord-web-'));
 Object.assign(process.env, { USMC_DB_PATH: path.join(temporary, 'isolated.sqlite'), GUILD_ID: '999999999999999999',
@@ -182,7 +183,8 @@ test('only the event owner can take roll; attendance is shared with Discord and 
     assert.deepEqual(detail.roll_call, { total: 3, present: 1, absent: 1, no_response: 1, pending: 0 });
     assert.equal((await api(other, `/api/patrol/events/${event.id}`).then(res => res.json())).event.can_take_roll, false);
     const discordPanel = require('../src/bot/commands/eventos').buildEventRosterPanel(event);
-    const panelText = discordPanel.embeds[0].toJSON().description;
+    const serializedPanel=discordPanel.embeds[0].toJSON();
+    const panelText=[serializedPanel.description,...serializedPanel.fields.map(field=>field.value)].join('\n');
     for (const state of ['Presente', 'Ausente', 'No responde']) assert.ok(panelText.includes(state));
     assert.ok(discordPanel.components.some(row => row.toJSON().components.some(component => component.url?.endsWith(`?evento=${event.id}`))));
     const before = [participantId, recruitId, otherId].map(id => eco.getAccount(id, guild.id).wallet);
@@ -270,4 +272,51 @@ test('session logout rejects CSRF, revokes the cookie session and is independent
     assert.equal((await api(session, '/auth/logout', 'POST', {})).status, 200);
     assert.equal((await api(session, '/api/auth/session')).status, 401);
     members.get(otherId).roles.cache.set('officer', { id: 'officer' });
+});
+test('valid sessions reopen the admin link without another OAuth flow and prevent external redirects',async()=>{
+    const session=await login(adminId,'/admin');
+    const before=db.db.prepare('SELECT count(*) AS n FROM discord_login_states').get().n;
+    const response=await fetch(base+'/auth/discord?next='+encodeURIComponent(`/admin?guild=${guild.id}`),{redirect:'manual',headers:{Cookie:session.cookie}});
+    assert.equal(response.status,302);assert.equal(response.headers.get('location'),`/admin?guild=${guild.id}`);
+    assert.equal(db.db.prepare('SELECT count(*) AS n FROM discord_login_states').get().n,before);
+    assert.ok(!response.headers.getSetCookie().some(value=>value.startsWith('usmc_oauth_state=')));
+    const external=await fetch(base+'/auth/discord?next=https://evil.example',{redirect:'manual',headers:{Cookie:session.cookie}});
+    assert.equal(external.headers.get('location'),'/patrullas');
+});
+test('existing four-hour sessions renew to thirty days without changing the token or CSRF value',async()=>{
+    const session=await login(adminId,'/admin'),token=session.cookie.split('=')[1],digest=crypto.createHash('sha256').update(token).digest('hex');
+    db.db.prepare('UPDATE discord_web_sessions SET expires_at=? WHERE token_hash=?').run(Date.now()+4*3600000,digest);
+    const response=await api(session,'/api/admin/data');assert.equal(response.status,200);
+    const renewed=response.headers.getSetCookie().find(value=>value.startsWith('usmc_discord='));
+    assert.ok(renewed.startsWith(session.cookie+';'));assert.match(renewed,/Max-Age=2592000/);assert.match(renewed,/HttpOnly/);assert.match(renewed,/SameSite=Lax/i);assert.match(renewed,/Secure/);
+    const row=db.db.prepare('SELECT * FROM discord_web_sessions WHERE token_hash=?').get(digest);
+    assert.ok(row.expires_at>Date.now()+29*86400000);assert.equal(row.csrf_token,session.csrf);
+    const again=await api(session,'/api/auth/session');assert.equal((await again.json()).csrf_token,session.csrf);
+    assert.ok(!again.headers.getSetCookie().some(value=>value.startsWith('usmc_discord=')));
+});
+test('expired sessions cannot renew and a reused login still enforces live role revocation',async()=>{
+    const expired=await login(adminId),digest=crypto.createHash('sha256').update(expired.cookie.split('=')[1]).digest('hex');
+    db.db.prepare('UPDATE discord_web_sessions SET expires_at=? WHERE token_hash=?').run(Date.now()-1,digest);
+    const denied=await api(expired,'/api/auth/session');assert.equal(denied.status,401);assert.equal(denied.headers.getSetCookie().length,0);
+    const fresh=await fetch(base+'/auth/discord?next=%2Fadmin',{redirect:'manual',headers:{Cookie:expired.cookie}});assert.equal(new URL(fresh.headers.get('location')).hostname,'discord.com');
+    const officer=await login(officerId);members.get(officerId).roles.cache.clear();
+    try{assert.equal((await api(officer,'/api/patrol/events')).status,403);}finally{members.get(officerId).roles.cache.set('officer',{id:'officer'});}
+});
+test('remembered sessions survive recreating the web server and the Discord admin command links directly to its guild',async()=>{
+    const session=await login(adminId,'/admin');
+    const restarted=createWebServer(client,{oauthFetch,disableBackups:true}).listen(0,'127.0.0.1');await new Promise(resolve=>restarted.once('listening',resolve));
+    try{
+        const response=await fetch(`http://127.0.0.1:${restarted.address().port}/api/auth/session`,{headers:{Cookie:session.cookie}});
+        assert.equal(response.status,200);assert.equal((await response.json()).csrf_token,session.csrf);
+    }finally{await new Promise(resolve=>restarted.close(resolve));}
+    let payload;
+    await require('../src/bot/commands/admin').execute({guild,guildId:guild.id,user:{id:adminId},member:members.get(adminId),options:{getSubcommand:()=> 'panel-web'},reply:async value=>{payload=value;}});
+    const description=payload.embeds[0].toJSON().description;
+    assert.ok(description.includes(`/admin?guild=${guild.id}`));assert.ok(!description.includes('/auth/discord?'));
+});
+test('session duration is configurable with a bounded default',()=>{
+    const {sessionDurationMs}=require('../src/web/discordAuth');
+    assert.equal(sessionDurationMs({}),30*86400000);assert.equal(sessionDurationMs({WEB_SESSION_DAYS:'90'}),90*86400000);
+    assert.equal(sessionDurationMs({WEB_SESSION_DAYS:'200'}),90*86400000);assert.equal(sessionDurationMs({WEB_SESSION_DAYS:'1'}),86400000);
+    assert.equal(sessionDurationMs({WEB_SESSION_DAYS:'invalid'}),30*86400000);
 });

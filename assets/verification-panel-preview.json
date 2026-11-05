@@ -1,0 +1,70 @@
+{
+  "flags": 32768,
+  "components": [
+    {
+      "type": 17,
+      "accent_color": 8890027,
+      "components": [
+        {
+          "type": 12,
+          "items": [
+            {
+              "media": {
+                "url": "attachment://panel-header-verification.png"
+              },
+              "description": "Cabecera del panel"
+            }
+          ]
+        },
+        {
+          "type": 10,
+          "content": "-# Tu comunidad\n## Acceso a la comunidad\nPrepara tu solicitud de ingreso y consulta el proceso de verificación."
+        }
+      ]
+    },
+    {
+      "type": 17,
+      "accent_color": 8890027,
+      "components": [
+        {
+          "type": 10,
+          "content": "### 01 · Completa tu solicitud\nAbre tu enlace personal e inicia sesión con Discord. Responde las preguntas del formulario."
+        }
+      ]
+    },
+    {
+      "type": 17,
+      "accent_color": 8890027,
+      "components": [
+        {
+          "type": 10,
+          "content": "### 02 · Recibe tu acceso\nEl equipo de responsables revisará tu solicitud. Recibirás el resultado por mensaje privado."
+        }
+      ]
+    },
+    {
+      "type": 17,
+      "components": [
+        {
+          "type": 10,
+          "content": "-# Revisión manual · Puedes consultar el estado desde el botón"
+        },
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 2,
+              "emoji": {
+                "name": "🛡️",
+                "animated": false
+              },
+              "custom_id": "btn_start_verification",
+              "label": "Iniciar verificación",
+              "style": 1
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

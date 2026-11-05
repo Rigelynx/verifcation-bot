@@ -136,7 +136,7 @@ module.exports = {
             if (oauthConfig().enabled) {
                 return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xb8cba6)
                     .setTitle('🛡️ CENTRO DE MANDO · DISCORD')
-                    .setDescription(`[Entrar con tu cuenta de Discord](${webUrl.replace(/\/$/, '')}/auth/discord?next=${encodeURIComponent(`/admin?guild=${interaction.guildId}`)})\nTu rol de Administración se comprueba al acceder. Las acciones se registran bajo tu identidad.`)], flags: MessageFlags.Ephemeral });
+                    .setDescription(`[Abrir centro de mando](${webUrl.replace(/\/$/, '')}/admin?guild=${interaction.guildId})\nTu sesión se recuerda en este navegador. Tus permisos se comprueban al acceder y las acciones se registran bajo tu identidad.`)], flags: MessageFlags.Ephemeral });
             }
             if (interaction.guildId !== process.env.GUILD_ID) return interaction.reply({ content: 'Configura el inicio con Discord en el host para abrir el panel de esta comunidad.', flags: MessageFlags.Ephemeral });
             const adminKey = process.env.ADMIN_KEY || 'USMC-COMMAND-2026';

@@ -77,27 +77,34 @@ async function executeShop(name, args, context) {
             if (!channel || channel.guildId !== guild.id || !channel.isTextBased() || channel.isThread?.()
                 || ![member, bot].every(identity => channel.permissionsFor(identity)?.has([P.ViewChannel, P.SendMessages, P.EmbedLinks])))
                 throw new Error('El usuario y el bot necesitan ver y publicar embeds en ese canal de esta comunidad.');
-            if (args.kind === 'shop') payload = require('../bot/commands/tienda').buildShopPanel(guild.id);
+            if (args.kind === 'shop') {
+                if(![member,bot].every(identity=>channel.permissionsFor(identity)?.has(P.AttachFiles))) throw new Error('Necesitáis Adjuntar archivos para publicar la cabecera de la tienda.');
+                payload = require('../bot/commands/tienda').buildShopPanel(guild.id,1,'all',{title:args.title,description:args.description,color:args.color});
+            }
             else if (args.kind === 'bonus') {
                 before = args.panel_id ? eco.getBonusPanelById(args.panel_id) : null;
                 if (!before) throw new Error('Indica el ID de un panel de bonos de esta comunidad.');
-                payload = require('../bot/commands/bono').buildBonusPanelMessage(before, eco.getEconomySettings(guild.id));
-            } else payload = require('../bot/commands/panel').buildVerificationPanel(guild, require('../database/db').getConfig(guild.id));
+                payload = require('../bot/commands/bono').buildBonusPanelMessage(before, eco.getEconomySettings(guild.id),{title:args.title,description:args.description,color:args.color});
+            } else payload = require('../bot/commands/panel').buildVerificationPanel(guild, require('../database/db').getConfig(guild.id),{title:args.title,description:args.description,color:args.color});
             payload = { ...payload, allowedMentions: { parse: [] } };
+            if(!require('./../bot/utils/neutralPanels').isNative(payload)){
             const embed = EmbedBuilder.from(payload.embeds[0]);
             if (args.title !== undefined) embed.setTitle(args.title);
             if (args.description !== undefined) embed.setDescription(args.description || null);
             if (args.color) embed.setColor(args.color);
             payload.embeds = [embed, ...payload.embeds.slice(1)];
+            }
+            if(payload.files?.length&&![member,bot].every(identity=>channel.permissionsFor(identity)?.has(P.AttachFiles)))throw new Error('Necesitáis Adjuntar archivos para publicar la cabecera.');
             if (args.message_id) {
                 if (![member, bot].every(identity => channel.permissionsFor(identity)?.has(P.ReadMessageHistory))) throw new Error('Necesitas acceso al historial para editar el panel.');
                 message = await channel.messages.fetch(args.message_id);
-                const controls = (message.components || []).flatMap(row => (row.components || []).map(component => component.customId));
+                const collect=node=>[node.customId||node.custom_id,...(node.components||[]).flatMap(collect),...(node.accessory?collect(node.accessory):[])].filter(Boolean);
+                const controls=(message.components||[]).flatMap(collect);
                 const matches = args.kind === 'verification' ? controls.includes('btn_start_verification')
                     : args.kind === 'bonus' ? controls.includes(`claim_bonus_panel_${args.panel_id}`)
                     : controls.some(value => /^(shop_|tienda_)/.test(value || '') || value === 'btn_refresh_shop');
                 if (message.author?.id !== bot.id || !matches) throw new Error('Ese mensaje no es un panel del bot de este tipo.');
-                before = { id: message.id, embeds: message.embeds.map(embed => embed.toJSON()) };
+                before = { id: message.id, embeds: (message.embeds||[]).map(embed => embed.toJSON()) };
             }
         }
         context.audit('IA_CONFIGURACION_INICIO', name, JSON.stringify({ request_id: context.requestId, args, before }));
@@ -111,7 +118,7 @@ async function executeShop(name, args, context) {
             after = args.panel_id ? eco.saveBonusPanel(guild.id, { id: args.panel_id, ...args.fields }) : eco.createBonusPanel(guild.id, args.fields);
             result = { changed: true, created: !args.panel_id, updated: Boolean(args.panel_id), id: after.id, name: after.title, panel: after };
         } else {
-            const sent = message ? await message.edit(payload) : await channel.send(payload);
+            const sent = message ? await message.edit(require('../bot/utils/neutralPanels').normalizePanelUpdate(payload)) : await channel.send(payload);
             after = { id: sent.id, channel_id: channel.id, kind: args.kind };
             result = { changed: true, sent: true, updated: Boolean(message), id: sent.id, name: `Panel ${args.kind}`, channel_id: channel.id,
                 url: `https://discord.com/channels/${guild.id}/${channel.id}/${sent.id}` };

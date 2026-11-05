@@ -20,9 +20,9 @@ const EVENT_REPORT_TEAMS = [
     { key: 'charlie', label: 'Equipo Charlie', emoji: '🟦' },
     { key: 'delta', label: 'Equipo Delta', emoji: '🟨' },
     { key: 'echo', label: 'Equipo Echo', emoji: '🟧' },
-    { key: 'seal_red', label: 'SEAL Comms Red Team', emoji: '🔱' },
-    { key: 'seal_gold', label: 'SEAL Comms Gold Team', emoji: '🔱' },
-    { key: 'delta_force', label: 'Delta Force VC', emoji: '🐺' },
+    { key: 'seal_red', label: 'Equipo Rojo', emoji: '🔱' },
+    { key: 'seal_gold', label: 'Equipo Dorado', emoji: '🔱' },
+    { key: 'delta_force', label: 'Equipo de apoyo', emoji: '🐺' },
     { key: 'soar', label: '160-SOAR VC', emoji: '⚔️' },
     { key: 'ranger', label: 'Ranger Command', emoji: '🔰' }
 ];
@@ -31,153 +31,33 @@ const EVENT_REPORT_TEAMS = [
  * Genera el mensaje táctico del Panel de Registro / Convocatoria Militar
  */
 function buildRegistrationPanel(event, settings = null) {
-    const sym = settings ? settings.currency_symbol : '$';
-    const maxRecruitsText = event.max_participants > 0 ? `\`${event.max_participants} soldados\`` : '`Sin Límite (Ilimitado)`';
-    const isTraining = event.event_type === 'TRAINING';
-    const rewardText = isTraining
-        ? `> 🎓 **Rol para aprobados:** <@&${event.reward_role_id}>`
-        : `> 💰 **Paga de Misión:** \`${sym}${event.base_reward.toLocaleString()}\` *(+ Bonificación por Rango Militar)*\n> ⚡ **Liquidación:** \`Automática al finalizar\``;
-    const introText = isTraining
-        ? 'Todos los aspirantes deben registrarse. Al terminar, el oficial retirará de la lista a los reprobados y el rol se entregará a quienes permanezcan.'
-        : 'Todos los combatientes interesados en participar y hacerse acreedores a la asignación presupuestaria deben formalizar su inscripción pulsando el botón táctico inferior.';
-    const instructions = isTraining
-        ? '1. Pulsa **`[ 📝 REGISTRARSE EN LA OPERACIÓN ]`** para entrar en la lista.\n2. Al concluir, el oficial retirará del roster a quienes no aprobaron.\n3. Al finalizar el entrenamiento, recibirás automáticamente el rol configurado.'
-        : '1. Pulsa **`[ 📝 REGISTRARSE EN LA OPERACIÓN ]`** para entrar en la lista.\n2. Al concluir, el oficial retirará del roster a quienes no asistieron.\n3. Los soldados que permanezcan recibirán su paga automáticamente al finalizar.';
-
-    const embed = new EmbedBuilder()
-        .setColor(0x00b4d8) // Tactical Blue
-        .setTitle(`📋 [CONVOCATORIA MILITAR DE OPERACIÓN // ${event.name.toUpperCase()}]`)
-        .setDescription(`
-**El Mando Supremo de la Base Comunidad ha abierto la lista de alistamiento.**
-
-${introText}
-
-> 🎖️ **Misión:** \`${event.name}\`
-${rewardText}
-> 👥 **Cupo de Escuadrón:** ${maxRecruitsText}
-> 🛡️ **Fase Actual:** \`CONVOCATORIA Y ALISTAMIENTO ACTIVO\`
-        `)
-        .addFields(
-            { 
-                name: '📌 Instrucciones Tácticas', 
-                value: instructions,
-                inline: false 
-            }
-        )
-        .setFooter({ text: `Operación ID: #${event.id} • Comunidad Tactical Roster System` })
-        .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`event_register_${event.id}`)
-            .setLabel('REGISTRARSE EN LA OPERACIÓN')
-            .setStyle(ButtonStyle.Success)
-            .setEmoji('📝'),
-        new ButtonBuilder()
-            .setCustomId(`event_unregister_${event.id}`)
-            .setLabel('ANULAR REGISTRO')
-            .setStyle(ButtonStyle.Secondary)
-            .setEmoji('❌')
-    );
-
-    return { embeds: [embed], components: [row] };
+    const {nativePanel}=require('../utils/neutralPanels'),training=event.event_type==='TRAINING';
+    const reward=training?`Rol al aprobar: <@&${event.reward_role_id}>`:`Paga base: ${(settings?.currency_symbol||'$')}${Number(event.base_reward).toLocaleString('es-CO')}`;
+    return nativePanel({guildId:event.guild_id,kind:'events',hero:true,title:event.name,
+        description:training?'Inscríbete en el entrenamiento y sigue las indicaciones del responsable.':'Inscríbete para participar. La asistencia se revisa antes de entregar la recompensa.',
+        cards:[{title:training?'Entrenamiento':'Convocatoria',text:`**Recompensa:** ${reward}\n**Cupos:** ${event.max_participants>0?event.max_participants:'Sin límite'}\n**Estado:** Inscripción abierta`}],
+        footer:`Evento #${event.id} · Puedes anular tu inscripción mientras esté abierta.`,rows:[new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`event_register_${event.id}`).setLabel('Inscribirme').setStyle(ButtonStyle.Primary),
+            new ButtonBuilder().setCustomId(`event_unregister_${event.id}`).setLabel('Anular inscripción').setStyle(ButtonStyle.Secondary))]});
 }
-
-/**
- * Genera el mensaje táctico del Panel de Confirmación de Asistencia (Pase de Lista)
- */
 function buildConfirmationPanel(event, settings = null) {
-    const embed = new EmbedBuilder()
-        .setColor(0xffb000) // Tactical Amber / Warning
-        .setTitle(`📍 [PASE DE LISTA // CONFIRMAR ASISTENCIA // ${event.name.toUpperCase()}]`)
-        .setDescription(`
-**¡Atención personal comunitario convocado!**
-La operación ha concluido o se encuentra en fase de verificación de presencia en el terreno.
-
-Pulsa de inmediato el botón inferior para formalizar tu **asistencia táctica**. Solo los combatientes que confirmen su presencia serán acreditados para recibir sus haberes comunitarios.
-
-> 🎖️ **Operación:** \`${event.name}\`
-> 🛡️ **Estado:** \`VERIFICACIÓN DE ASISTENCIA EN VIVO\`
-> ⚡ **Aviso:** No demores tu confirmación. Los registros cerrarán al liquidar la nómina.
-        `)
-        .setFooter({ text: `Operación ID: #${event.id} • Pase de Lista Comunidad` })
-        .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`event_confirm_${event.id}`)
-            .setLabel('CONFIRMAR MI ASISTENCIA')
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji('✅')
-    );
-
-    return { embeds: [embed], components: [row] };
+    return require('../utils/neutralPanels').nativePanel({guildId:event.guild_id,kind:'events',title:'Confirmar asistencia',description:event.name,
+        cards:[{title:'Pase de lista abierto',text:'Confirma tu presencia. El responsable revisará la asistencia antes del cierre del evento.'}],footer:`Evento #${event.id}`,
+        rows:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`event_confirm_${event.id}`).setLabel('Confirmar mi asistencia').setStyle(ButtonStyle.Primary))]});
 }
-
-/**
- * Genera el mensaje táctico del Panel de Cobro / Reclamo de Paga Militar
- */
 function buildPayoutPanel(event, settings = null, claimExpiresAt = null) {
-    const sym = settings ? settings.currency_symbol : '$';
-    const expiresUnix = claimExpiresAt || event.claim_expires_at || (Math.floor(Date.now() / 1000) + ((event.claim_deadline_hours || 24) * 3600));
-    const expiresTimestamp = `<t:${expiresUnix}:R>`;
-
-    const embed = new EmbedBuilder()
-        .setColor(0x38e54d) // Emerald Green
-        .setTitle(`🎖️ [NÓMINA MILITAR LIBERADA // ${event.name.toUpperCase()}]`)
-        .setDescription(`
-**La misión comunitario ha concluido y el Mando ha autorizado la dispersión de fondos.**
-
-Todos los combatientes cuya asistencia fue confirmada pueden transferir su paga directamente a su cartera comunitario pulsando el botón inferior.
-
-> 💰 **Paga Base Asignada:** \`${sym}${event.base_reward.toLocaleString()}\` *(+ Escalafón de Rango)*
-> ⏳ **Plazo Límite de Cobro:** Expira en ${expiresTimestamp}
-> 🛡️ **Destino:** Cartera Militar Táctica (Efectivo)
-        `)
-        .addFields(
-            {
-                name: '📋 Requisitos de Cobro',
-                value: 'El sistema validará automáticamente que hayas confirmado tu asistencia o cumplido la permanencia mínima requerida.',
-                inline: false
-            }
-        )
-        .setFooter({ text: `Operación ID: #${event.id} • Tesorería de Operaciones Comunidad` })
-        .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId(`claim_event_${event.id}`)
-            .setLabel('RECLAMAR PAGA MILITAR')
-            .setStyle(ButtonStyle.Success)
-            .setEmoji('💵')
-    );
-
-    return { embeds: [embed], components: [row] };
+    const expires=claimExpiresAt||event.claim_expires_at||(Math.floor(Date.now()/1000)+(event.claim_deadline_hours||24)*3600);
+    return require('../utils/neutralPanels').nativePanel({guildId:event.guild_id,kind:'events',title:'Recompensa disponible',description:event.name,
+        cards:[{title:`${settings?.currency_symbol||'$'}${Number(event.base_reward).toLocaleString('es-CO')} de paga base`,text:`**Destino:** Cartera\n**Fin del plazo:** <t:${expires}:R>\nSe comprobarán tu asistencia y las bonificaciones que correspondan.`}],footer:`Evento #${event.id} · Una acreditación por participante`,
+        rows:[new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`claim_event_${event.id}`).setLabel('Reclamar recompensa').setStyle(ButtonStyle.Success))]});
 }
 
-/**
- * Genera el panel táctico de lista de miembros convocados con paginación y botones de baja
- */
 function buildEventRosterPanel(event, page = 1, settings = null) {
     const sym = settings ? settings.currency_symbol : '$';
     const roster = economyDb.getEventRegistrations(event.id); // Solo activos (excluye expulsados y cancelados)
     const registeredCount = roster.length;
-    const confirmedCount = roster.filter(r => r.attendance_confirmed === 1 || r.is_eligible === 1).length;
     const claimedCount = roster.filter(r => r.claimed === 1).length;
     const isTraining = event.event_type === 'TRAINING';
-    const rosterInstructions = isTraining
-        ? '*El encargado puede pasar lista en la web. Ausentes y quienes no responden quedan sin acreditar; puedes retirar a quienes reprobaron.*'
-        : '*El encargado puede pasar lista en la web: Presente / Ausente / No responde. Ausentes y quienes no responden quedan fuera del pago.*';
-    const approvedCount = roster.filter(r => !economyDb.isEventAttendeeRejected(r)).length;
-    const attendanceSummary = isTraining
-        ? `> 🎓 **Aprobados actuales:** \`${approvedCount}\``
-        : event.event_type === 'REGISTRATION'
-            ? `> ✅ **Asistentes aprobados:** \`${approvedCount}\``
-            : `> ✅ **Asistencia Elegible:** \`${confirmedCount}\``;
-    const rewardSummary = isTraining
-        ? `> 🎓 **Rol al finalizar:** <@&${event.reward_role_id}>`
-        : `> 💵 **Haberes Cobrados:** \`${claimedCount}\`\n> 💰 **Paga Base:** \`${sym}${event.base_reward.toLocaleString()}\``;
-
     const PAGE_SIZE = 5;
     const totalPages = Math.max(1, Math.ceil(roster.length / PAGE_SIZE));
     const currentPage = Math.min(Math.max(1, page), totalPages);
@@ -197,24 +77,11 @@ function buildEventRosterPanel(event, page = 1, settings = null) {
         }).join('\n\n');
     }
 
-    const embed = new EmbedBuilder()
-        .setColor(0x00b4d8)
-        .setTitle(`📋 [ROSTER TÁCTICO // OPERACIÓN #${event.id} // ${event.name.toUpperCase()}]`)
-        .setDescription(`
-**Panel de control de alistamiento comunitario en tiempo real.**
-${rosterInstructions}
-
-> 🎖️ **Operación:** \`${event.name}\` (\`${event.event_type}\`)
-> 🛡️ **Fase Actual:** \`${event.phase || event.status}\`
-> 👥 **Total Inscritos:** \`${registeredCount}\` ${event.max_participants > 0 ? `/ ${event.max_participants}` : ''}
-${attendanceSummary}
-${rewardSummary}
-
-**Soldados en esta Página (${currentPage}/${totalPages}):**
-${listText}
-        `)
-        .setFooter({ text: `Página ${currentPage} de ${totalPages} • Total: ${registeredCount} soldados • Pase de Lista Comunidad` })
-        .setTimestamp();
+    const embed=new EmbedBuilder().setColor(require('../utils/neutralPanels').panelProfile(event.guild_id).color)
+        .setTitle(`Participantes · ${String(event.name).slice(0,120)}`)
+        .setDescription(`${registeredCount} inscritos · ${claimedCount} recompensas entregadas\n${isTraining?'Entrenamiento':'Operación'} · ${({REGISTRATION:'Inscripción abierta',ACTIVE:'En curso',ENDED:'Finalizado'})[event.phase||event.status]||'En preparación'}`)
+        .addFields({name:'Asistencia',value:listText.slice(0,1024),inline:false},{name:'Recompensa',value:isTraining?`Rol para aprobados: <@&${event.reward_role_id}>`:`Paga base: ${sym}${event.base_reward.toLocaleString()}`,inline:false})
+        .setFooter({text:`Página ${currentPage}/${totalPages} · Evento #${event.id} · Retirar participantes afecta su elegibilidad`});
 
     const components = [];
 
@@ -227,7 +94,7 @@ ${listText}
             expelRow.addComponents(
                 new ButtonBuilder()
                     .setCustomId(`event_expel_${event.id}_${r.discord_id}_${currentPage}`)
-                    .setLabel(`🗑️ #${slot}`)
+                    .setLabel(`Retirar ${String(r.username||r.discord_id).slice(0,18)}`)
                     .setStyle(ButtonStyle.Danger)
             );
         }

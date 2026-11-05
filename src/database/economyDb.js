@@ -224,7 +224,7 @@ function initEconomyTables() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             guild_id TEXT NOT NULL,
             title TEXT DEFAULT '🎖️ [BONO MILITAR EXTRAORDINARIO // ASIGNACIÓN DE MANDO]',
-            description TEXT DEFAULT 'El Estado Mayor de la Base USMC ha autorizado una asignación financiera especial para el personal militar en servicio activo.',
+            description TEXT DEFAULT 'Una recompensa de la comunidad para quienes cumplan los requisitos del bono.',
             amount INTEGER DEFAULT 500,
             claim_mode TEXT DEFAULT 'ONCE',       -- 'ONCE' (1 sola vez por combatiente), 'COOLDOWN' (periódico con tiempo de espera)
             cooldown_seconds INTEGER DEFAULT 86400,
@@ -1108,7 +1108,7 @@ function purchaseShopItemInTransaction(discordId, itemId, userRoleIds, guildId, 
     }
 
     // 2. Validar límite por usuario
-    if (item.max_per_user !== -1) {
+    if (item.max_per_user > 0) {
         const userOwns = getUserItemCount(discordId, itemId);
         if (userOwns >= item.max_per_user) {
             return {
@@ -2184,7 +2184,7 @@ function createBonusPanel(guildId = currentGuild(), data = {}) {
     const info = stmt.run(
         guildId,
         data.title || '🎖️ [BONO MILITAR EXTRAORDINARIO // ASIGNACIÓN DE MANDO]',
-        data.description || 'El Estado Mayor de la Base USMC ha autorizado una asignación financiera especial para el personal militar en servicio activo.',
+        data.description || 'Una recompensa de la comunidad para quienes cumplan los requisitos del bono.',
         data.amount !== undefined ? parseInt(data.amount, 10) : 500,
         data.claim_mode || 'ONCE',
         data.cooldown_seconds !== undefined ? parseInt(data.cooldown_seconds, 10) : 86400,
@@ -2322,7 +2322,7 @@ function claimPanelBonus(panelId, discordId, memberRoles = []) {
     };
 }
 
-function giveBonus(discordId, amount, reason = '', target = 'wallet', issuerTag = 'Oficial USMC') {
+function giveBonus(discordId, amount, reason = '', target = 'wallet', issuerTag = 'Responsable') {
     getAccount(discordId);
     const col = target === 'bank' ? 'bank' : 'wallet';
     const num = Math.max(1, parseInt(amount, 10));
@@ -2332,7 +2332,7 @@ function giveBonus(discordId, amount, reason = '', target = 'wallet', issuerTag 
     return getAccount(discordId);
 }
 
-function giveMassBonus(amount, reason = '', issuerTag = 'Mando USMC') {
+function giveMassBonus(amount, reason = '', issuerTag = 'Administración') {
     const num = Math.max(1, parseInt(amount, 10));
     const stmt = db.prepare(`
         UPDATE economy_accounts

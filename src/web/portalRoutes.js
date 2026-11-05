@@ -47,6 +47,7 @@ function installPortalRoutes(app, client, auth) {
         res.set('Cache-Control', 'no-store');
         const user = auth.account(req);
         if (!user) { res.status(401).json({ success: false, message: 'Inicia sesión con Discord.', login_url: auth.loginUrl(req.path.startsWith('/api/owner') ? '/owner' : '/portal') }); return null; }
+        auth.renewSession(req,res);
         return user;
     }
     const presentUser = user => ({ id: user.id, name: user.username, avatar: user.avatar });

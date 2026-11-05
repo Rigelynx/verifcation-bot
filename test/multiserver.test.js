@@ -86,7 +86,8 @@ test('overlapping async requests preserve the selected community', async () => {
     assert.ok(data[0].verifications.every(row => row.guild_id === A)); assert.ok(data[1].verifications.every(row => row.guild_id === B));
 });
 test('web rejects forged guild selection and isolates branding changes and uploads', async () => {
-    assert.equal((await api(B, '/api/admin/data', 'GET', undefined, outsider)).status, 401);
+    assert.equal((await api(B, '/api/admin/data', 'GET', undefined, outsider)).status, 403);
+    assert.equal((await api(A,'/api/auth/session','GET',undefined,outsider)).status,200);
     const profile = communities.ensureCommunity(B);
     const save = await api(B, '/api/admin/branding', 'PUT', { ...profile, theme: 'ukaf', accent: '#b84048', display_name: 'UKAF' });
     assert.equal(save.status, 200); assert.equal(communities.ensureCommunity(A).theme, 'usmc');
@@ -97,6 +98,25 @@ test('web rejects forged guild selection and isolates branding changes and uploa
     assert.equal((await fetch(base + valid.url)).status, 200);
     const auth = await api(B, '/api/auth/config?next=%2Fadmin').then(res => res.json());
     assert.equal(new URL(auth.login_url, base).searchParams.get('next'), `/admin?guild=${B}`);
+});
+test('shop selector saves through the dashboard API independently per guild and enforces CSRF and admin access',async()=>{
+    const a=(await(await api(A,'/api/community/profile')).json()).profile;
+    const b=(await(await api(B,'/api/community/profile')).json()).profile;
+    assert.equal(a.shop_theme,'neutral');assert.equal(b.shop_theme,'neutral');
+    assert.equal((await api(A,'/api/admin/branding','PUT',{...a,shop_theme:'baf'})).status,200);
+    assert.equal((await api(B,'/api/admin/branding','PUT',{...b,guild_id:A,shop_theme:'paf'})).status,200);
+    const savedA=(await(await api(A,'/api/community/profile')).json()).profile;
+    const savedB=(await(await api(B,'/api/community/profile')).json()).profile;
+    assert.equal(savedA.shop_theme,'baf');assert.equal(savedB.shop_theme,'paf');
+    const {buildShopPanel}=require('../src/bot/commands/tienda');
+    assert.equal(withGuild(A,()=>buildShopPanel(A)).files[0].name,'shop-header-baf.png');
+    assert.equal(withGuild(B,()=>buildShopPanel(B)).files[0].name,'shop-header-paf.png');
+    assert.equal((await api(A,'/api/admin/branding','PUT',{...savedA,shop_theme:'../paf'})).status,400);
+    const who=sessions.get(user);
+    const denied=await fetch(base+'/api/admin/branding',{method:'PUT',headers:{Cookie:who.cookie,'X-Guild-Id':A,'Content-Type':'application/json'},body:JSON.stringify({...savedA,shop_theme:'paf'})});
+    assert.equal(denied.status,403);
+    assert.ok([401,403].includes((await api(B,'/api/admin/branding','PUT',{...savedB,shop_theme:'usmc'},outsider)).status));
+    assert.equal(communities.ensureCommunity(A).shop_theme,'baf');
 });
 test('only bot owner can distribute AI; guild settings never expose keys', async () => {
     const payload = { enabled: true, provider: 'deepseek', daily_limit: 5, allowed_ids: [user], create_channels: false, create_roles: false };

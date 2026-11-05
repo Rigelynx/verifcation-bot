@@ -37,6 +37,18 @@ test('revoked capability and denied intent prevent configuration writes; plans r
     context.assistantPolicy.configure_branding=true;
     assert.deepEqual(validatePlan([{tool:'configure_branding',args}]),[{tool:'configure_branding',args}]);
 }));
+test('shop design is neutral by default, saved per guild and preserved when older callers omit it',async()=>withGuild(guildId,async()=>{
+    assert.equal(community.ensureCommunity(guildId).shop_theme,'neutral');
+    await executeTool('configure_branding',{fields:{shop_theme:'paf'}},context);
+    assert.equal(community.ensureCommunity(guildId).shop_theme,'paf');
+    assert.equal(community.ensureCommunity('900000000000000002').shop_theme,'neutral');
+    const {shop_theme,...fields}=community.publicProfile(community.ensureCommunity(guildId));
+    community.updateBranding(guildId,{...fields,short_name:'P.A.F.'});
+    assert.equal(community.ensureCommunity(guildId).shop_theme,'paf');
+    assert.throws(()=>community.updateBranding(guildId,{...fields,shop_theme:'invalid'}),/tienda inválido/);
+    assert.equal(community.ensureCommunity(guildId).shop_theme,'paf');
+}));
+
 test('budget reports are claimed once, isolated per community and keep historic snapshots',async()=>withGuild(guildId,async()=>{
     const id=budget.saveItem({category:'armamento',name:'Equipo',planned:100,actual:70}).id;
     const schedule=budget.saveSchedule({channel_id:channelId,enabled:true,next_at:Date.now()+60000});

@@ -8,7 +8,7 @@ const {
 } = require('discord.js');
 const economyDb = require('../../database/economyDb');
 const community = require('../../database/communityDb');
-const {renderShopPanel,buildPurchasePreview,identity}=require('../utils/shopPresentation');
+const {renderShopPanel,buildPurchasePreview,identity,asShopUpdate}=require('../utils/shopPresentation');
 
 /**
  * Función central de procesamiento de compra para comandos, botones y select menus
@@ -90,8 +90,8 @@ function formatRoleMentions(roles) {
 }
 
 /** Catálogo compacto con identidad de la comunidad, filtros y paginación. */
-function buildShopPanel(guildId, page = 1, category = 'all') {
-    return renderShopPanel(economyDb.getShopItems(guildId,true),economyDb.getEconomySettings(guildId),community.ensureCommunity(guildId),page,category);
+function buildShopPanel(guildId, page = 1, category = 'all', presentation={}) {
+    return renderShopPanel(economyDb.getShopItems(guildId,true),economyDb.getEconomySettings(guildId),community.ensureCommunity(guildId),page,category,presentation);
 }
 
 module.exports = {
@@ -115,6 +115,7 @@ module.exports = {
 
     processShopPurchase,
     buildShopPanel,
+    asShopUpdate,
 
     async execute(interaction) {
         const guildId = interaction.guildId || 'GLOBAL';
@@ -163,40 +164,7 @@ module.exports = {
         // ==========================================
         if (sub === 'inventario') {
             const targetUser = interaction.options.getUser('usuario') || interaction.user;
-            const inventory = economyDb.getUserInventory(targetUser.id);
-
-            if (inventory.length === 0) {
-                return interaction.reply({
-                    content: targetUser.id === interaction.user.id 
-                        ? '🎒 Tu mochila táctica está vacía. Escribe `/tienda panel` para ver el catálogo y ascender de rango.'
-                        : `🎒 La mochila táctica de <@${targetUser.id}> no contiene suministros adquiridos.`,
-                    flags: MessageFlags.Ephemeral
-                });
-            }
-
-            const embed = new EmbedBuilder()
-                .setColor(0x38e54d)
-                .setTitle(`🎒 [EQUIPAMIENTO E INVENTARIO // ${targetUser.tag.toUpperCase()}]`)
-                .setThumbnail(targetUser.displayAvatarURL())
-                .setDescription(`Lista de pertrechos, suministros e insignias en posesión:`)
-                .setFooter({ text: `${identity(community.ensureCommunity(guildId)).name} · Inventario` })
-                .setTimestamp();
-
-            for (const row of inventory) {
-                let extra = '';
-                const gives = formatRoleMentions(row.roles_to_give);
-                if (gives) {
-                    extra += ` • Rango: ${gives}`;
-                }
-
-                embed.addFields({
-                    name: `${row.icon || '🎖️'} ${row.name} (x${row.quantity})`,
-                    value: `*${row.description || 'Sin especificaciones'}*\n> 🏷️ Valor de catálogo: \`${sym}${row.price.toLocaleString()}\`${extra}`,
-                    inline: false
-                });
-            }
-
-            return interaction.reply({ embeds: [embed] });
+            return interaction.reply({ ...require('../utils/personalPanels').inventoryPanel(targetUser,guildId),flags:MessageFlags.IsComponentsV2|MessageFlags.Ephemeral });
         }
     }
 };

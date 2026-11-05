@@ -1,0 +1,113 @@
+{
+  "flags": 32768,
+  "components": [
+    {
+      "type": 17,
+      "accent_color": 8890027,
+      "components": [
+        {
+          "type": 12,
+          "items": [
+            {
+              "media": {
+                "url": "attachment://panel-header-servers.png"
+              },
+              "description": "Cabecera del panel"
+            }
+          ]
+        },
+        {
+          "type": 10,
+          "content": "-# Tu comunidad\n## Centro de despliegue\n**1 disponibles** · **1 en uso** · 2 registrados"
+        }
+      ]
+    },
+    {
+      "type": 17,
+      "accent_color": 8890027,
+      "components": [
+        {
+          "type": 9,
+          "components": [
+            {
+              "type": 10,
+              "content": "### 🔴 Servidor Alpha\n**Estado:** En uso\n**Zona:** Zona norte\n**Responsable:** <@100000000000000001>\n**Misión:** Patrullaje de reconocimiento\n**Desde:** Hace 1 min"
+            }
+          ],
+          "accessory": {
+            "type": 2,
+            "custom_id": "srv_details_1",
+            "label": "Detalles",
+            "style": 2
+          }
+        }
+      ]
+    },
+    {
+      "type": 17,
+      "accent_color": 8890027,
+      "components": [
+        {
+          "type": 9,
+          "components": [
+            {
+              "type": 10,
+              "content": "### 🟢 Servidor Bravo\n**Estado:** Disponible\n**Zona:** Zona sur\nListo para una nueva misión."
+            }
+          ],
+          "accessory": {
+            "type": 2,
+            "custom_id": "srv_details_2",
+            "label": "Detalles",
+            "style": 2
+          }
+        }
+      ]
+    },
+    {
+      "type": 17,
+      "components": [
+        {
+          "type": 10,
+          "content": "-# Página 1/1 · Los códigos de acceso se muestran de forma privada a responsables."
+        },
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 2,
+              "custom_id": "srv_page_-1",
+              "label": "Anterior",
+              "style": 2,
+              "disabled": true
+            },
+            {
+              "type": 2,
+              "custom_id": "srv_board_refresh",
+              "label": "Actualizar",
+              "style": 2
+            },
+            {
+              "type": 2,
+              "custom_id": "srv_page_1",
+              "label": "Siguiente",
+              "style": 2,
+              "disabled": true
+            }
+          ]
+        },
+        {
+          "type": 1,
+          "components": [
+            {
+              "type": 2,
+              "custom_id": "srv_release_all_mine",
+              "label": "Liberar mis servidores",
+              "style": 2
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

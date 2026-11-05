@@ -41,9 +41,9 @@ test('board reference survives an empty catalog and all pages serialize', () => 
     for (let i = 0; i < 28; i++) server();
     const build = require('../src/bot/commands/servidor').buildPrivateServersPanel;
     const panel = build('test-guild', 6);
-    assert.ok(panel.embeds[0].toJSON().fields.length <= 4);
+    assert.ok(panel.components.length<=5);assert.equal(panel.flags,32768);
     panel.components.forEach(row => row.toJSON());
-    assert.ok(build('empty-guild').embeds[0].toJSON().fields[0].value);
+    assert.ok(JSON.stringify(build('empty-guild').components.map(row=>row.toJSON())).includes('Sin servidores registrados'));
 });
 test('shop refunds restore balance, stock and inventory once only', () => {
     eco.getAccount('buyer', 'test-guild'); eco.addWallet('buyer', 1000);
@@ -169,7 +169,8 @@ test('patrulla command gives authorized officers a direct portal button', async 
         let payload;
         await command.execute({ guild: { ownerId: '123456789012345678' }, guildId: 'test-guild', member: {},
             user: { id: '123456789012345678' }, reply: async data => { payload = data; } });
-        assert.equal(payload.components[0].toJSON().components[0].url, 'https://unit.example/patrullas?guild=test-guild');
-        assert.equal(payload.embeds[0].toJSON().image.url, 'https://unit.example/media/patrol-field.png');
+        const walk=node=>[node,...(node.components||[]).flatMap(walk)];
+        assert.ok(payload.components.map(row=>row.toJSON()).flatMap(walk).some(node=>node.url==='https://unit.example/patrullas?guild=test-guild'));
+        assert.equal(payload.flags,32768|64);assert.ok(JSON.stringify(payload.components.map(row=>row.toJSON())).includes('Portal de operaciones'));
     } finally { if (previous === undefined) delete process.env.WEB_URL; else process.env.WEB_URL = previous; }
 });

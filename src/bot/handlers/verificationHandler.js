@@ -22,42 +22,7 @@ async function handleNewSubmission(client, guildId, record, mode) {
         if (config.review_channel_id) {
             const reviewChannel = guild.channels.cache.get(config.review_channel_id);
             if (reviewChannel && reviewChannel.isTextBased()) {
-                const embed = new EmbedBuilder()
-                    .setColor(0x38e54d)
-                    .setTitle(`🛡️ [NUEVO EXPEDIENTE DE RECLUTA] // ${record.username.toUpperCase()}`)
-                    .setDescription(`Un aspirante ha completado el formulario táctico y espera resolución de mando.`)
-                    .setThumbnail(record.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png')
-                    .addFields(
-                        { name: '👤 Aspirante', value: `<@${record.discord_id}> (\`${record.discord_id}\`)`, inline: true },
-                        { name: '📅 Fecha Zulu', value: `<t:${Math.floor(Date.now() / 1000)}:R>`, inline: true },
-                        { name: '📋 Estado', value: `\`PENDIENTE DE RESOLUCIÓN\``, inline: true }
-                    );
-
-                // Agregar respuestas del cuestionario
-                for (const [preg, resp] of Object.entries(record.answers || {})) {
-                    embed.addFields({
-                        name: `🔹 ${preg}`,
-                        value: String(resp).substring(0, 1024) || 'Sin respuesta',
-                        inline: false
-                    });
-                }
-
-                embed.setFooter({ text: 'Sistema de la comunidad • Terminal de Oficiales', iconURL: guild.iconURL() });
-
-                const row = new ActionRowBuilder().addComponents(
-                    new ButtonBuilder()
-                        .setCustomId(`approve_verify_${record.discord_id}`)
-                        .setLabel('APROBAR ACCESO')
-                        .setStyle(ButtonStyle.Success)
-                        .setEmoji('✅'),
-                    new ButtonBuilder()
-                        .setCustomId(`reject_verify_${record.discord_id}`)
-                        .setLabel('DENEGAR ACCESO')
-                        .setStyle(ButtonStyle.Danger)
-                        .setEmoji('❌')
-                );
-
-                await reviewChannel.send({ embeds: [embed], components: [row] });
+                await reviewChannel.send(require('../utils/verificationReview').buildVerificationReview(record,guild));
             }
         }
 
